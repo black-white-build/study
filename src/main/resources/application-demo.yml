@@ -1,0 +1,9 @@
+spring:
+  ai:
+    mcp:
+      client:
+        enabled: true
+
+app:
+  agent:
+    react-enabled: true

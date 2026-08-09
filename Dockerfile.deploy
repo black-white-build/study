@@ -1,0 +1,10 @@
+FROM amazoncorretto:21-alpine
+WORKDIR /app
+RUN addgroup -S heartpilot \
+    && adduser -S heartpilot -G heartpilot \
+    && mkdir -p /app/data/files \
+    && chown -R heartpilot:heartpilot /app
+COPY target/heart-pilot-backend-0.0.1-SNAPSHOT.jar /app/app.jar
+USER heartpilot
+EXPOSE 8123
+ENTRYPOINT ["java","-XX:MaxRAMPercentage=75","-jar","/app/app.jar","--spring.profiles.active=prod"]

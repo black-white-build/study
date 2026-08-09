@@ -1,0 +1,101 @@
+spring:
+  application:
+    name: heart-pilot
+  datasource:
+    url: ${DATABASE_URL:jdbc:h2:file:./data/heart-pilot;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH}
+    username: ${DATABASE_USERNAME:sa}
+    password: ${DATABASE_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  flyway:
+    enabled: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 1s
+      repositories.enabled: false
+  servlet:
+    multipart:
+      max-file-size: 30MB
+      max-request-size: 30MB
+  ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:not-configured}
+      chat.options:
+        model: ${AI_CHAT_MODEL:qwen-plus}
+        temperature: 0.55
+      embedding.options.model: ${AI_EMBEDDING_MODEL:text-embedding-v3}
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat.enabled: false
+    mcp:
+      client:
+        enabled: ${MCP_ENABLED:false}
+        request-timeout: 20s
+        stdio:
+          connections:
+            amap-maps:
+              command: ${MCP_NPX_COMMAND:npx}
+              args: ["-y", "@amap/amap-maps-mcp-server"]
+              env:
+                AMAP_MAPS_API_KEY: ${AMAP_MAPS_API_KEY:}
+server:
+  port: ${SERVER_PORT:8123}
+  servlet.context-path: /api
+  error.include-message: never
+app:
+  jwt:
+    secret: ${JWT_SECRET:local-development-secret-change-me-32-bytes}
+    access-token-minutes: ${JWT_ACCESS_TOKEN_MINUTES:120}
+  cors.allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3001,http://127.0.0.1:3001,http://localhost:5173,http://127.0.0.1:5173}
+  rate-limit.requests-per-minute: ${RATE_LIMIT_PER_MINUTE:120}
+  rate-limit.redis-enabled: ${REDIS_ENABLED:false}
+  chat:
+    max-context-messages: ${CHAT_MAX_CONTEXT_MESSAGES:20}
+    max-context-characters: ${CHAT_MAX_CONTEXT_CHARACTERS:16000}
+    max-retries: ${CHAT_MAX_RETRIES:2}
+    input-cny-per-million-tokens: ${AI_INPUT_CNY_PER_MILLION_TOKENS:0.8}
+    output-cny-per-million-tokens: ${AI_OUTPUT_CNY_PER_MILLION_TOKENS:2.0}
+  cache:
+    redis-enabled: ${REDIS_ENABLED:false}
+    knowledge-ttl-minutes: ${KNOWLEDGE_CACHE_TTL_MINUTES:30}
+    model-ttl-minutes: ${MODEL_CACHE_TTL_MINUTES:60}
+  agent:
+    max-steps: ${AGENT_MAX_STEPS:10}
+    tool-timeout-seconds: ${AGENT_TOOL_TIMEOUT_SECONDS:30}
+    tool-max-attempts: ${AGENT_TOOL_MAX_ATTEMPTS:2}
+    max-task-retries: ${AGENT_MAX_TASK_RETRIES:2}
+    recovery-scan-millis: ${AGENT_RECOVERY_SCAN_MILLIS:30000}
+    react-enabled: ${AGENT_REACT_ENABLED:true}
+  storage:
+    provider: ${STORAGE_PROVIDER:local}
+    local-directory: ${STORAGE_LOCAL_DIRECTORY:./data/files}
+    minio:
+      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${MINIO_SECRET_KEY:minioadmin}
+      bucket: ${MINIO_BUCKET:heart-pilot}
+search-api.api-key: ${SEARCH_API_KEY:}
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs.path: /v3/api-docs
+  group-configs:
+    - group: heart-pilot
+      paths-to-match: /**
+      packages-to-scan: com.heartpilot.controller
+knife4j:
+  enable: true
+  setting.language: zh_cn
+management.endpoints.web.exposure.include: health,info,metrics,prometheus
+logging.level:
+  org.springframework.ai: INFO
+  org.springframework.security: INFO

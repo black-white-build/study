@@ -1,0 +1,34 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:heart-pilot-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: create-drop
+  flyway:
+    enabled: false
+  ai:
+    dashscope:
+      api-key: not-configured
+    mcp:
+      client:
+        enabled: false
+app:
+  jwt:
+    secret: test-only-jwt-secret-that-is-at-least-32-bytes
+    access-token-minutes: 120
+  cors:
+    allowed-origins: http://localhost:3001
+  storage:
+    provider: local
+    local-directory: ./target/test-files
+  rate-limit:
+    redis-enabled: false
+  agent:
+    react-enabled: false
+    recovery-scan-millis: 3600000
+logging:
+  level:
+    root: WARN

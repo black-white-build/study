@@ -1,0 +1,11 @@
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://postgres:5432/heart_pilot}
+    username: ${DATABASE_USERNAME:heart_pilot}
+    password: ${DATABASE_PASSWORD}
+  jpa.hibernate.ddl-auto: validate
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+app.storage.provider: ${STORAGE_PROVIDER:minio}
+logging.level.root: INFO

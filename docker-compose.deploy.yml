@@ -1,0 +1,9 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy
+  frontend:
+    build:
+      context: ./heart-pilot-frontend
+      dockerfile: Dockerfile.deploy

@@ -1,0 +1,1 @@
+ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS plan_preview TEXT;

@@ -1,0 +1,14 @@
+spring:
+  ai:
+    mcp:
+      client:
+        stdio:
+          connections:
+            yu-image-search:
+              command: ${MCP_JAVA_COMMAND:java}
+              args:
+                - "-Dspring.ai.mcp.server.stdio=true"
+                - "-Dspring.main.web-application-type=none"
+                - "-Dlogging.pattern.console="
+                - "-jar"
+                - "heart-pilot-image-mcp-server/target/heart-pilot-image-mcp-server-0.0.1-SNAPSHOT.jar"
