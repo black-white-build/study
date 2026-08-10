@@ -15,11 +15,14 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
 public class PlaceSearchService {
+    private static final Logger log = LoggerFactory.getLogger(PlaceSearchService.class);
     private static final String AMAP_URL = "https://restapi.amap.com/v3/place/text";
     private static final String AMAP_WALKING_URL = "https://restapi.amap.com/v3/direction/walking";
     private static final String AMAP_BICYCLING_URL =
@@ -43,9 +46,7 @@ public class PlaceSearchService {
         Map<String, Place> allPlaces = new LinkedHashMap<>();
         for (SearchTopic topic : topics) {
             List<Place> places =
-                    amapKey == null || amapKey.isBlank()
-                            ? List.of()
-                            : searchAmap(city, topic.query());
+                    amapKey == null || amapKey.isBlank() ? List.of() : searchAmap(city, topic);
             places.forEach(
                     place ->
                             allPlaces.putIfAbsent(
@@ -54,7 +55,15 @@ public class PlaceSearchService {
                                             : place.poiId(),
                                     place));
             String webSources = webSearch.searchLocalPlaces(city, topic.query(), topic.label(), 4);
-            groups.add(new SearchGroup(topic.label(), topic.query(), places, webSources));
+            groups.add(
+                    new SearchGroup(
+                            topic.label(),
+                            topic.query(),
+                            places,
+                            webSources,
+                            topic.intentCategory(),
+                            topic.amapTypeCodes(),
+                            topic.searchKeywords()));
         }
         String keywords = String.join("、", topics.stream().map(SearchTopic::label).toList());
         return new SearchResult(
@@ -249,20 +258,31 @@ public class PlaceSearchService {
         return 6_371_000 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
     }
 
-    private List<Place> searchAmap(String city, String keywords) {
+    private List<Place> searchAmap(String city, SearchTopic topic) {
+        String keywords = topic.query();
         try {
-            String response =
-                    HttpUtil.get(
-                            AMAP_URL,
-                            Map.of(
-                                    "key", amapKey,
-                                    "keywords", city + " " + keywords,
-                                    "city", city,
-                                    "citylimit", "true",
-                                    "offset", "12",
-                                    "page", "1",
-                                    "extensions", "all"));
+            Map<String, Object> parameters = new LinkedHashMap<>();
+            parameters.put("key", amapKey);
+            parameters.put("keywords", city + " " + keywords);
+            parameters.put("city", city);
+            parameters.put("citylimit", "true");
+            parameters.put("offset", "12");
+            parameters.put("page", "1");
+            parameters.put("extensions", "all");
+            if (!topic.amapTypeCodes().isEmpty()) {
+                parameters.put("types", String.join("|", topic.amapTypeCodes()));
+            }
+            String response = HttpUtil.get(AMAP_URL, parameters);
             JSONObject root = JSONUtil.parseObj(response);
+            if (!"1".equals(root.getStr("status", ""))) {
+                log.warn(
+                        "AMap place search failed: city={}, keywords={}, info={}, infocode={}",
+                        city,
+                        keywords,
+                        root.getStr("info", "unknown"),
+                        root.getStr("infocode", "unknown"));
+                return List.of();
+            }
             JSONArray pois = root.getJSONArray("pois");
             Map<String, Place> uniquePlaces = new LinkedHashMap<>();
             if (pois != null) {
@@ -273,8 +293,9 @@ public class PlaceSearchService {
                     String address = poi.getStr("address", "地址待确认");
                     String location = poi.getStr("location", "");
                     String type = poi.getStr("type", "本地生活");
+                    String typeCode = poi.getStr("typecode", "");
                     String tel = poi.getStr("tel", "");
-                    if (!matchesTopic(keywords, name, type)) continue;
+                    if (!matchesTopic(keywords, name, type, typeCode)) continue;
                     String provinceName = poi.getStr("pname", "");
                     String cityName = poi.getStr("cityname", "");
                     String districtName = poi.getStr("adname", "");
@@ -326,11 +347,18 @@ public class PlaceSearchService {
                                     businessHours,
                                     businessStatus,
                                     checkedAt,
-                                    photoUrl));
+                                    photoUrl,
+                                    topic.intentCategory(),
+                                    typeCode));
                 }
             }
             return new ArrayList<>(uniquePlaces.values());
         } catch (Exception e) {
+            log.warn(
+                    "AMap place search request failed: city={}, keywords={}, error={}",
+                    city,
+                    keywords,
+                    e.toString());
             return List.of();
         }
     }
@@ -358,20 +386,15 @@ public class PlaceSearchService {
     }
 
     static boolean matchesTopic(String topic, String name, String type) {
-        String combined = (name == null ? "" : name) + " " + (type == null ? "" : type);
-        if (containsAnyStatic(topic, "游泳", "泳池")) {
-            return containsAnyStatic(combined, "游泳", "泳池", "游泳馆", "游泳场", "水上运动");
-        }
-        if (containsAnyStatic(topic, "游艇", "帆船")) {
-            return containsAnyStatic(combined, "游艇", "帆船", "游船", "码头", "船艇", "航海");
-        }
-        String keyword = normalizeIntent(topic);
-        return !keyword.isBlank() && combined.contains(keyword);
+        return matchesTopic(topic, name, type, "");
     }
 
-    private static boolean containsAnyStatic(String text, String... values) {
-        for (String value : values) if (text.contains(value)) return true;
-        return false;
+    static boolean matchesTopic(String topic, String name, String type, String typeCode) {
+        var category = LocalPlaceIntentCatalog.classify(topic);
+        if (category.isPresent()) return category.get().matches(topic, name, type, typeCode);
+        String combined = (name == null ? "" : name) + " " + (type == null ? "" : type);
+        String keyword = normalizeIntent(topic);
+        return !keyword.isBlank() && combined.contains(keyword);
     }
 
     private static String normalizeRegion(String value) {
@@ -395,7 +418,17 @@ public class PlaceSearchService {
             String intent = normalizeIntent(clause);
             if (intent.isBlank()) intent = clause;
             String label = shorten(intent, 24);
-            topics.putIfAbsent(label, new SearchTopic(label, label));
+            var category = LocalPlaceIntentCatalog.classify(intent);
+            topics.putIfAbsent(
+                    label,
+                    new SearchTopic(
+                            label,
+                            label,
+                            category.map(Enum::name).orElse("CUSTOM"),
+                            category.map(LocalPlaceIntentCatalog::amapTypesForRequest)
+                                    .orElseGet(List::of),
+                            category.map(LocalPlaceIntentCatalog::searchKeywords)
+                                    .orElseGet(() -> List.of(label))));
             if (topics.size() >= MAX_TOPICS) break;
         }
         return new ArrayList<>(topics.values());
@@ -480,7 +513,12 @@ public class PlaceSearchService {
 
     private record TopicRule(String label, List<String> aliases) {}
 
-    private record SearchTopic(String label, String query) {}
+    private record SearchTopic(
+            String label,
+            String query,
+            String intentCategory,
+            List<String> amapTypeCodes,
+            List<String> searchKeywords) {}
 
     public record Place(
             String poiId,
@@ -494,7 +532,44 @@ public class PlaceSearchService {
             String businessHours,
             String businessStatus,
             String statusCheckedAt,
-            String photoUrl) {
+            String photoUrl,
+            String intentCategory,
+            String amapTypeCode) {
+        public Place {
+            intentCategory = intentCategory == null ? "CUSTOM" : intentCategory;
+            amapTypeCode = amapTypeCode == null ? "" : amapTypeCode;
+        }
+
+        public Place(
+                String poiId,
+                String name,
+                String address,
+                String type,
+                String tel,
+                String location,
+                String mapUrl,
+                String rating,
+                String businessHours,
+                String businessStatus,
+                String statusCheckedAt,
+                String photoUrl) {
+            this(
+                    poiId,
+                    name,
+                    address,
+                    type,
+                    tel,
+                    location,
+                    mapUrl,
+                    rating,
+                    businessHours,
+                    businessStatus,
+                    statusCheckedAt,
+                    photoUrl,
+                    "CUSTOM",
+                    "");
+        }
+
         public Place(
                 String poiId,
                 String name,
@@ -503,11 +578,30 @@ public class PlaceSearchService {
                 String tel,
                 String location,
                 String mapUrl) {
-            this(poiId, name, address, type, tel, location, mapUrl, "", "", "UNKNOWN", "", "");
+            this(
+                    poiId, name, address, type, tel, location, mapUrl, "", "", "UNKNOWN", "", "",
+                    "CUSTOM", "");
         }
     }
 
-    public record SearchGroup(String label, String query, List<Place> places, String webSources) {}
+    public record SearchGroup(
+            String label,
+            String query,
+            List<Place> places,
+            String webSources,
+            String intentCategory,
+            List<String> amapTypeCodes,
+            List<String> searchKeywords) {
+        public SearchGroup {
+            intentCategory = intentCategory == null ? "CUSTOM" : intentCategory;
+            amapTypeCodes = amapTypeCodes == null ? List.of() : amapTypeCodes;
+            searchKeywords = searchKeywords == null ? List.of() : searchKeywords;
+        }
+
+        public SearchGroup(String label, String query, List<Place> places, String webSources) {
+            this(label, query, places, webSources, "CUSTOM", List.of(), List.of(query));
+        }
+    }
 
     public record SearchResult(
             String provider,

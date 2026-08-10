@@ -69,4 +69,35 @@ class PlaceSearchServiceTest {
         assertEquals(false, PlaceSearchService.matchesTopic("睡觉", "天津市", "地名地址信息;省级地名"));
         assertEquals(false, PlaceSearchService.matchesTopic("睡觉", "天津市第一中学", "学校"));
     }
+
+    @Test
+    void commonLocalLifeTopicsMatchAmapCategoryNames() {
+        assertTrue(PlaceSearchService.matchesTopic("美食", "青岛菜馆", "餐饮服务;中餐厅"));
+        assertTrue(PlaceSearchService.matchesTopic("景点", "栈桥", "风景名胜;风景名胜相关"));
+        assertTrue(PlaceSearchService.matchesTopic("住宿", "青岛海景酒店", "住宿服务;宾馆酒店"));
+        assertTrue(PlaceSearchService.matchesTopic("海鲜", "海鲜大排档", "餐饮服务;中餐厅"));
+        assertEquals(false, PlaceSearchService.matchesTopic("景点", "青岛商场", "购物服务;商场"));
+    }
+
+    @Test
+    void unifiedIntentCatalogSupportsAmapTypeCodes() {
+        assertTrue(PlaceSearchService.matchesTopic("逛街", "万象城", "", "060100"));
+        assertTrue(PlaceSearchService.matchesTopic("看电影", "某影城", "", "080601"));
+        assertTrue(PlaceSearchService.matchesTopic("健身", "市民健身中心", "", "070100"));
+        assertTrue(PlaceSearchService.matchesTopic("看展", "城市展览馆", "", "140200"));
+        assertTrue(PlaceSearchService.matchesTopic("酒吧", "海边清吧", "", "080500"));
+        assertTrue(PlaceSearchService.matchesTopic("停车", "地下停车场", "", "150900"));
+    }
+
+    @Test
+    void unknownIntentKeepsExactKeywordFallback() {
+        assertTrue(PlaceSearchService.matchesTopic("宠物摄影", "岛城宠物摄影馆", "生活服务", ""));
+        assertEquals(false, PlaceSearchService.matchesTopic("宠物摄影", "岛城照相馆", "生活服务", ""));
+
+        PlaceSearchService service = new PlaceSearchService("", new WebSearchTool(""));
+        PlaceSearchService.SearchGroup group = service.search("青岛市", "宠物摄影").groups().getFirst();
+        assertEquals("CUSTOM", group.intentCategory());
+        assertEquals(List.of("宠物摄影"), group.searchKeywords());
+        assertTrue(group.amapTypeCodes().isEmpty());
+    }
 }

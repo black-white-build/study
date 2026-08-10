@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,6 +18,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class WebSearchTool {
+    private static final Logger log = LoggerFactory.getLogger(WebSearchTool.class);
     private static final String URL = "https://www.searchapi.io/api/v1/search";
     private static final Set<String> IRRELEVANT = Set.of("世界卫生组织", "心理健康", "精神卫生", "医学论文", "学术文档");
     private final String apiKey;
@@ -76,7 +79,10 @@ public class WebSearchTool {
             String response =
                     HttpUtil.get(URL, Map.of("q", query, "api_key", apiKey, "engine", "baidu"));
             JSONObject root = JSONUtil.parseObj(response);
-            if (root.containsKey("error")) return List.of();
+            if (root.containsKey("error")) {
+                log.warn("Web search API returned an error: {}", root.get("error"));
+                return List.of();
+            }
             JSONArray items = root.getJSONArray("organic_results");
             if (items == null || items.isEmpty()) return List.of();
             List<WebResult> results = new ArrayList<>();
@@ -89,13 +95,36 @@ public class WebSearchTool {
                 if (IRRELEVANT.stream().anyMatch(combined::contains)) continue;
                 if (requiredCity != null
                         && !requiredCity.isBlank()
-                        && !combined.contains(requiredCity)) continue;
+                        && !containsRequestedLocation(combined, requiredCity)) continue;
                 if (!link.isBlank()) results.add(new WebResult(title, snippet, link));
             }
             return results;
         } catch (Exception e) {
+            log.warn(
+                    "Web search request failed: requiredCity={}, error={}",
+                    requiredCity,
+                    e.toString());
             return List.of();
         }
+    }
+
+    static boolean containsRequestedLocation(String text, String requestedLocation) {
+        String keyword = mostSpecificLocationName(requestedLocation);
+        return !keyword.isBlank() && normalizeLocationText(text).contains(keyword);
+    }
+
+    static String mostSpecificLocationName(String value) {
+        if (value == null) return "";
+        String location = value.replaceAll("[\\s,，、/\\-|]+", "").trim();
+        location = location.replaceFirst("^.*?(?:特别行政区|壮族自治区|回族自治区|维吾尔自治区|自治区|省)", "");
+        return normalizeLocationText(location);
+    }
+
+    private static String normalizeLocationText(String value) {
+        if (value == null) return "";
+        return value.replaceAll("[\\s,，、/\\-|]+", "")
+                .replaceAll("(?:特别行政区|壮族自治区|回族自治区|维吾尔自治区|自治区|自治州|地区|盟|省|市|区|县)", "")
+                .trim();
     }
 
     private String format(List<WebResult> results, String requiredCity) {

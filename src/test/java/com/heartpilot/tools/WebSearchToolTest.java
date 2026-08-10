@@ -1,6 +1,8 @@
 package com.heartpilot.tools;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
@@ -18,5 +20,12 @@ class WebSearchToolTest {
         String result = webSearchTool.searchWeb(query);
         assertNotNull(result);
         System.out.println("搜索结果：" + result);
+    }
+
+    @Test
+    void compositeAdministrativeNameMatchesCommonCityName() {
+        assertEquals("青岛", WebSearchTool.mostSpecificLocationName("山东省青岛市"));
+        assertTrue(WebSearchTool.containsRequestedLocation("青岛美食和景点推荐", "山东省青岛市"));
+        assertEquals(false, WebSearchTool.containsRequestedLocation("济南美食和景点推荐", "山东省青岛市"));
     }
 }
