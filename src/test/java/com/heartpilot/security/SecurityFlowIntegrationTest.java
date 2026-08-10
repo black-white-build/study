@@ -48,7 +48,7 @@ class SecurityFlowIntegrationTest {
         String payload =
                 """
                 {"title":"南宁行动计划","objective":"周末在南宁安排一次安静散步",
-                 "parameters":{"city":"南宁","budget":300}}
+                 "parameters":{"province":"广西壮族自治区","city":"南宁市","budget":300,"questions":["安静散步"]}}
                 """;
         String first = createTask(token, "resume-demo-key", payload);
         String second = createTask(token, "resume-demo-key", payload);

@@ -29,6 +29,7 @@ public final class AgentTaskDtos {
     public record ConfirmRequest(
             boolean approved,
             @Size(max = 2_000) String note,
+            @Size(max = 30) String province,
             @Size(max = 80) String city,
             BigDecimal budget,
             List<@Size(max = 500) String> questions) {}

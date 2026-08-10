@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -103,6 +104,11 @@ public class AgentTaskController {
         return service.run(id, current.id());
     }
 
+    @GetMapping("/region-cities")
+    List<String> regionCities(@RequestParam String province) {
+        return service.cityOptions(province);
+    }
+
     @PostMapping(value = "/{id}/confirm", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     SseEmitter confirm(
             @PathVariable Long id, @Valid @RequestBody AgentTaskDtos.ConfirmRequest request) {
@@ -111,6 +117,7 @@ public class AgentTaskController {
                 current.id(),
                 request.approved(),
                 request.note(),
+                request.province(),
                 request.city(),
                 request.budget(),
                 request.questions());

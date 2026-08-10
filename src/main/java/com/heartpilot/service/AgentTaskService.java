@@ -63,6 +63,7 @@ public class AgentTaskService {
     private final AgentJourneyResearchService journeyResearch;
     private final AgentTaskStepService taskSteps;
     private final AgentFinalReportService finalReports;
+    private final AgentRequirementAnalysisService requirementAnalysis;
     private final int maxSteps;
     private final int maxTaskRetries;
     private final ExecutorService executor;
@@ -83,6 +84,7 @@ public class AgentTaskService {
             AgentJourneyResearchService journeyResearch,
             AgentTaskStepService taskSteps,
             AgentFinalReportService finalReports,
+            AgentRequirementAnalysisService requirementAnalysis,
             @Value("${app.agent.max-steps:10}") int maxSteps,
             @Value("${app.agent.max-task-retries:2}") int maxTaskRetries,
             @Qualifier("agentTaskExecutor") ExecutorService executor,
@@ -100,6 +102,7 @@ public class AgentTaskService {
         this.journeyResearch = journeyResearch;
         this.taskSteps = taskSteps;
         this.finalReports = finalReports;
+        this.requirementAnalysis = requirementAnalysis;
         this.maxSteps = maxSteps;
         this.maxTaskRetries = maxTaskRetries;
         this.executor = executor;
@@ -152,6 +155,10 @@ public class AgentTaskService {
         return tasks.findByUserId(userId, pageable);
     }
 
+    public List<String> cityOptions(String province) {
+        return taskInput.cityOptions(province);
+    }
+
     public TaskDetail get(Long id, Long userId) {
         AgentTask task = owned(id, userId);
         GeneratedFile pdfFile =
@@ -180,11 +187,13 @@ public class AgentTaskService {
         }
         Map<String, Object> parameters =
                 new LinkedHashMap<>(inputParameters == null ? Map.of() : inputParameters);
-        String city = taskInput.resolveCity(parameters, objective);
-        if (city.isBlank()) throw ApiException.badRequest("请填写行动地点或城市，例如：南宁");
-        parameters.put("city", city);
+        String city = taskInput.validateAndResolveRegion(parameters);
+        parameters.put("searchRegion", city);
         taskInput.normalizeStoredBudget(parameters);
-        parameters.put("questions", taskInput.asStringList(parameters.get("questions")));
+        List<String> searchQuestions = taskInput.asStringList(parameters.get("questions"));
+        if (searchQuestions.isEmpty())
+            throw ApiException.badRequest("请至少填写一个需要方案逐项回答的问题，搜索关键词只从这里提取");
+        parameters.put("questions", searchQuestions);
         parameters.putIfAbsent("revisions", new ArrayList<String>());
 
         AgentTask task = new AgentTask();
@@ -254,7 +263,11 @@ public class AgentTaskService {
             List<String> questions = taskInput.asStringList(parameters.get("questions"));
             List<String> revisions = taskInput.asStringList(parameters.get("revisions"));
             String revision = revisions.isEmpty() ? "无" : String.join("；", revisions);
-            String requirements = taskInput.combinedRequirements(task, parameters);
+            AgentRequirementAnalysisService.Analysis analyzed =
+                    requirementAnalysis.analyze(task, city, budget, questions, revisions);
+            String requirements = analyzed.searchText();
+            parameters.put("searchKeywords", analyzed.keywords());
+            task.setParametersJson(taskInput.writeParameters(parameters));
 
             stateMachine.transition(task, AgentTaskStatus.RUNNING);
             task.setErrorMessage(null);
@@ -280,9 +293,10 @@ public class AgentTaskService {
                     AgentExecutionPhase.ANALYZE,
                     AgentExecutionEventType.THOUGHT,
                     AgentExecutionEventStatus.SUCCEEDED,
-                    "已理解行程需求",
-                    "城市：" + city + "；预算：" + budget + "；待回答问题：" + questions.size() + " 个。",
-                    "ReAct",
+                    "已完成结构化需求分析",
+                    "城市：" + city + "；预算：" + budget + "；提取检索意图："
+                            + String.join("、", analyzed.keywords()) + "。",
+                    analyzed.aiGenerated() ? "DashScope" : "规则降级",
                     null,
                     questions.size(),
                     null,
@@ -291,7 +305,9 @@ public class AgentTaskService {
                             "city", city,
                             "budget", budget,
                             "questionCount", questions.size(),
-                            "questions", questions));
+                            "questions", questions,
+                            "searchKeywords", analyzed.keywords(),
+                            "aiGenerated", analyzed.aiGenerated()));
 
             AgentJourneyResearchService.JourneyResearch journey =
                     journeyResearch.researchJourney(
@@ -318,6 +334,10 @@ public class AgentTaskService {
             task.setCurrentStep(5);
             stateMachine.transition(task, AgentTaskStatus.AWAITING_CONFIRMATION);
             event(emitter, "confirmation", Map.of("step", confirmation, "planPreview", preview));
+            // The client may render the confirmation event immediately. Release execution
+            // ownership before completing the stream so an immediate click cannot race this
+            // worker's finally block and receive TASK_ALREADY_RUNNING.
+            lock.close();
             emitter.complete();
         } catch (Exception e) {
             fail(task, e, emitter);
@@ -332,6 +352,7 @@ public class AgentTaskService {
             Long userId,
             boolean approved,
             String note,
+            String province,
             String city,
             BigDecimal budget,
             List<String> questions) {
@@ -344,40 +365,46 @@ public class AgentTaskService {
 
         SseEmitter emitter = new SseEmitter(180_000L);
         if (approved) {
-            Future<?> future = executor.submit(() -> finish(task, note, questions, emitter, lock));
-            activeFutures.put(id, future);
+            try {
+                Future<?> future = executor.submit(() -> finish(task, note, questions, emitter, lock));
+                activeFutures.put(id, future);
+            } catch (RuntimeException submissionFailure) {
+                lock.close();
+                throw submissionFailure;
+            }
         } else {
-            Map<String, Object> current = taskInput.readParameters(task);
-            boolean editorSubmission = city != null || questions != null;
-            String currentCity = taskInput.resolveCity(current, task.getObjective());
-            String requestedCity = city == null ? currentCity : city.trim().replace("市", "");
-            if (editorSubmission && requestedCity.isBlank()) {
+            try {
+                Map<String, Object> current = taskInput.readParameters(task);
+                boolean editorSubmission = province != null || city != null || questions != null;
+                String currentCity = taskInput.resolveCity(current, task.getObjective());
+                String requestedCity = currentCity;
+                if (province != null || city != null) {
+                    Map<String, Object> requestedRegion = new LinkedHashMap<>();
+                    requestedRegion.put("province", province == null ? "" : province);
+                    requestedRegion.put("city", city == null ? "" : city);
+                    requestedCity = taskInput.validateAndResolveRegion(requestedRegion);
+                }
+                if (editorSubmission && requestedCity.isBlank())
+                    throw ApiException.badRequest("地点 / 城市不能为空");
+                if (budget != null && budget.signum() < 0)
+                    throw ApiException.badRequest("预算不能小于 0");
+                String currentBudget = taskInput.parameterText(current.get("budget"), "");
+                String requestedBudget =
+                        budget == null ? "" : taskInput.normalizeBudget(budget).toPlainString();
+                boolean cityChanged = !requestedCity.equals(currentCity);
+                boolean budgetChanged = editorSubmission && !requestedBudget.equals(currentBudget);
+                boolean questionsChanged =
+                        questions != null
+                                && !taskInput.asStringList(questions)
+                                        .equals(taskInput.asStringList(current.get("questions")));
+                if ((note == null || note.isBlank()) && !cityChanged && !budgetChanged && !questionsChanged)
+                    throw ApiException.badRequest("请至少修改地点、预算、问题或补充说明中的一项");
+                reviseAndRestart(
+                        task, note == null ? "" : note.trim(), province, city, budget, questions, emitter, lock);
+            } catch (RuntimeException preparationFailure) {
                 lock.close();
-                throw ApiException.badRequest("地点 / 城市不能为空");
+                throw preparationFailure;
             }
-            if (budget != null && budget.signum() < 0) {
-                lock.close();
-                throw ApiException.badRequest("预算不能小于 0");
-            }
-            String currentBudget = taskInput.parameterText(current.get("budget"), "");
-            String requestedBudget =
-                    budget == null ? "" : taskInput.normalizeBudget(budget).toPlainString();
-            boolean cityChanged = !requestedCity.equals(currentCity);
-            boolean budgetChanged = editorSubmission && !requestedBudget.equals(currentBudget);
-            boolean questionsChanged =
-                    questions != null
-                            && !taskInput
-                                    .asStringList(questions)
-                                    .equals(taskInput.asStringList(current.get("questions")));
-            if ((note == null || note.isBlank())
-                    && !cityChanged
-                    && !budgetChanged
-                    && !questionsChanged) {
-                lock.close();
-                throw ApiException.badRequest("请至少修改地点、预算、问题或补充说明中的一项");
-            }
-            reviseAndRestart(
-                    task, note == null ? "" : note.trim(), city, budget, questions, emitter, lock);
         }
         return emitter;
     }
@@ -385,6 +412,7 @@ public class AgentTaskService {
     private void reviseAndRestart(
             AgentTask task,
             String note,
+            String province,
             String city,
             BigDecimal budget,
             List<String> incomingQuestions,
@@ -394,10 +422,15 @@ public class AgentTaskService {
         List<String> revisions = taskInput.asStringList(parameters.get("revisions"));
         if (!note.isBlank()) revisions.add(note);
         parameters.put("revisions", revisions);
-        String revisedCity = city == null ? "" : city.trim().replace("市", "");
-        if (revisedCity.isBlank()) revisedCity = taskInput.findKnownCity(note);
-        if (!revisedCity.isBlank()) parameters.put("city", revisedCity);
-        boolean editorSubmission = city != null || incomingQuestions != null;
+        if (province != null || city != null) {
+            Map<String, Object> requestedRegion = new LinkedHashMap<>();
+            requestedRegion.put("province", province == null ? "" : province);
+            requestedRegion.put("city", city == null ? "" : city);
+            String revisedRegion = taskInput.validateAndResolveRegion(requestedRegion);
+            parameters.putAll(requestedRegion);
+            parameters.put("searchRegion", revisedRegion);
+        }
+        boolean editorSubmission = province != null || city != null || incomingQuestions != null;
         if (budget == null && editorSubmission) parameters.remove("budget");
         else if (budget != null && budget.signum() >= 0)
             parameters.put("budget", taskInput.normalizeBudget(budget));
@@ -459,9 +492,14 @@ public class AgentTaskService {
             String city = taskInput.resolveCity(parameters, task.getObjective());
             String budget = taskInput.parameterText(parameters.get("budget"), "未限定");
             List<String> revisions = taskInput.asStringList(parameters.get("revisions"));
+            AgentRequirementAnalysisService.Analysis analyzed =
+                    requirementAnalysis.analyze(task, city, budget, questions, revisions);
+            String searchRequirements = analyzed.searchText();
+            parameters.put("searchKeywords", analyzed.keywords());
+            task.setParametersJson(taskInput.writeParameters(parameters));
             AgentJourneyResearchService.JourneyResearch journey =
                     journeyResearch.researchJourney(
-                            task, 6, city, allRequirements, "confirmation-live-journey-search");
+                            task, 6, city, searchRequirements, "confirmation-live-journey-search");
             String liveSearch = journey.formatted();
             task.setPlanPreview(
                     taskInput.buildPreview(task, city, budget, liveSearch, questions, revisions));

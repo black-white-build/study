@@ -33,12 +33,14 @@ class AgentTaskExecutionIntegrationTest {
         user.setPasswordHash("not-used-in-this-test");
         user.setNickname("测试用户");
         user = users.save(user);
+        long savedUserId = user.getId();
         AgentTask task =
                 tasks.create(
-                        user.getId(),
+                        savedUserId,
                         "南宁周末计划",
                         "在南宁安排一次安静散步",
-                        Map.of("city", "南宁", "budget", 300),
+                        Map.of("province", "广西壮族自治区", "city", "南宁市", "budget", 300,
+                                "questions", List.of("安静散步")),
                         "execution-" + System.nanoTime());
 
         tasks.run(task.getId(), user.getId());
@@ -68,12 +70,25 @@ class AgentTaskExecutionIntegrationTest {
                 detail.executionEvents().stream()
                         .anyMatch(event -> event.getPhase().name().equals("ROUTE")));
 
+        org.junit.jupiter.api.Assertions.assertThrows(
+                com.heartpilot.web.ApiException.class,
+                () -> tasks.confirm(
+                        task.getId(),
+                        savedUserId,
+                        false,
+                        "",
+                        "广西壮族自治区",
+                        "南宁市",
+                        new BigDecimal("-1"),
+                        List.of("只回答最后一次修改后的问题")));
+
         tasks.confirm(
                 task.getId(),
                 user.getId(),
                 false,
                 "",
-                "南宁",
+                "广西壮族自治区",
+                "南宁市",
                 new BigDecimal("7000.00"),
                 List.of("只回答最后一次修改后的问题"));
         deadline = Instant.now().plus(Duration.ofSeconds(8));

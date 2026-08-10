@@ -91,9 +91,21 @@
       </div>
       <div class="grid-2">
         <div class="field">
-          <label>城市（用于严格限制搜索范围）</label
-          ><input v-model="form.city" class="input" required placeholder="例如：南宁" />
+          <label>省 / 直辖市</label>
+          <select v-model="form.province" class="select" required>
+            <option value="" disabled>请选择省级行政区</option>
+            <option v-for="province in provinces" :key="province" :value="province">{{ province }}</option>
+          </select>
         </div>
+        <div class="field">
+          <label>城市</label>
+          <select v-model="form.city" class="select" required :disabled="!form.province || citiesLoading">
+            <option value="" disabled>{{ citiesLoading ? '加载城市中…' : '请选择城市' }}</option>
+            <option v-for="city in cityOptions" :key="city" :value="city">{{ city }}</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid-2">
         <div class="field">
           <label>预算（元）</label
           ><input
@@ -110,6 +122,7 @@
         ><textarea
           v-model="form.questionsText"
           class="textarea questions"
+          required
           placeholder="哪家店适合安静聊天？&#10;两个地点之间怎么走？&#10;下雨时有什么室内备选？"
         ></textarea>
       </div>
@@ -125,7 +138,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, streamSSE } from '../api'
 const router = useRouter(),
@@ -134,14 +147,52 @@ const router = useRouter(),
   showCreate = ref(false),
   creating = ref(false),
   createError = ref(''),
-  form = reactive({ title: '', objective: '', city: '', budget: null, questionsText: '' })
+  cityOptions = ref([]),
+  citiesLoading = ref(false),
+  form = reactive({ title: '', objective: '', province: '', city: '', budget: null, questionsText: '' }),
+  provinces = ['北京市','天津市','上海市','重庆市','河北省','山西省','辽宁省','吉林省','黑龙江省','江苏省','浙江省','安徽省','福建省','江西省','山东省','河南省','湖北省','湖南省','广东省','海南省','四川省','贵州省','云南省','陕西省','甘肃省','青海省','台湾省','内蒙古自治区','广西壮族自治区','西藏自治区','宁夏回族自治区','新疆维吾尔自治区','香港特别行政区','澳门特别行政区']
 const filtered = computed(() =>
   filter.value ? tasks.value.filter((x) => x.status === filter.value) : tasks.value
 )
 onMounted(load)
+watch(
+  () => form.province,
+  async (province) => {
+    form.city = ''
+    cityOptions.value = []
+    if (!province) return
+    citiesLoading.value = true
+    try {
+      cityOptions.value = await api.get('/agent-tasks/region-cities', { params: { province } })
+      if (cityOptions.value.length === 1) form.city = cityOptions.value[0]
+    } catch (e) {
+      createError.value = e.response?.data?.message || '城市列表加载失败'
+    } finally {
+      citiesLoading.value = false
+    }
+  }
+)
 async function load() {
   const page = await api.get('/agent-tasks')
   tasks.value = page.content
+}
+function createIdempotencyKey() {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID()
+  }
+
+  const bytes = new Uint8Array(16)
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues(bytes)
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256)
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 async function create() {
   creating.value = true
@@ -151,13 +202,13 @@ async function create() {
       .split(/\n/)
       .map((x) => x.trim())
       .filter(Boolean)
-    const key = crypto.randomUUID()
+    const key = createIdempotencyKey()
     const t = await api.post(
       '/agent-tasks',
       {
         title: form.title,
         objective: form.objective,
-        parameters: { city: form.city.trim(), budget: form.budget, questions }
+        parameters: { province: form.province, city: form.city.trim(), budget: form.budget, questions }
       },
       { headers: { 'Idempotency-Key': key } }
     )
@@ -332,14 +383,33 @@ function statusClass(s) {
   display: grid;
   place-items: center;
   padding: 20px;
+  overflow: hidden;
   background: rgba(27, 27, 25, 0.42);
   backdrop-filter: blur(5px);
 }
 .modal {
   width: min(640px, 100%);
+  max-height: calc(100dvh - 40px);
   padding: 32px;
   display: grid;
   gap: 19px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: #aaa69c #eeece5;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.modal::-webkit-scrollbar {
+  width: 7px;
+}
+.modal::-webkit-scrollbar-track {
+  border-radius: 10px;
+  background: #eeece5;
+}
+.modal::-webkit-scrollbar-thumb {
+  border-radius: 10px;
+  background: #aaa69c;
 }
 .modal header {
   display: flex;
@@ -400,7 +470,23 @@ function statusClass(s) {
     display: none;
   }
   .modal {
-    padding: 24px;
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    padding: 24px 18px;
+    gap: 17px;
+  }
+  .modal-backdrop {
+    place-items: center;
+    padding: 12px;
+  }
+  .modal footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+    padding-bottom: max(2px, env(safe-area-inset-bottom));
+  }
+  .modal footer .btn {
+    width: 100%;
+    min-width: 0;
   }
 }
 .questions {

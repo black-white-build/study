@@ -134,13 +134,18 @@ public class AgentJourneyResearchService {
                 evidence.routes().isEmpty() ? "实时路线暂不可用" : "已计算地点间路线",
                 routeDetail,
                 "高德地图",
-                "walking-route",
+                "distance-aware-route",
                 evidence.routes().size(),
                 durationMs,
                 evidence.routes().isEmpty()
                         ? "https://www.amap.com"
                         : evidence.routes().getFirst().navigationUrl(),
-                Map.of("mode", "WALKING"));
+                Map.of(
+                        "modes",
+                        evidence.routes().stream()
+                                .map(PlaceSearchService.RoutePlan::mode)
+                                .distinct()
+                                .toList()));
         return new JourneyResearch(result.formatted(), evidence);
     }
 

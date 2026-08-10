@@ -25,7 +25,7 @@
         </div>
         <div class="capability-badges">
           <span :class="['capability', evidence.sourceStatus === 'LIVE' ? 'online' : 'offline']"
-            >地图 {{ evidence.sourceStatus === 'LIVE' ? '实时' : '待配置' }}</span
+            >地图 {{ evidence.sourceStatus === 'LIVE' ? '实时' : '暂无合格结果' }}</span
           ><span :class="['capability', reactState === '已参与' ? 'online' : 'offline']"
             >ReAct/MCP {{ reactState }}</span
           >
@@ -111,6 +111,50 @@
         </section>
       </div>
     </section>
+    <div class="summary-grid">
+      <section class="panel panel-pad">
+        <h3>任务信息</h3>
+        <dl class="task-info">
+          <div>
+            <dt>任务 ID</dt>
+            <dd>#{{ detail.task.id }}</dd>
+          </div>
+          <div>
+            <dt>城市</dt>
+            <dd>{{ parameters.city || '—' }}</dd>
+          </div>
+          <div>
+            <dt>预算</dt>
+            <dd>{{ budgetText(parameters.budget) }}</dd>
+          </div>
+          <div>
+            <dt>问题数量</dt>
+            <dd>{{ (parameters.questions || []).length }} 个</dd>
+          </div>
+          <div>
+            <dt>创建时间</dt>
+            <dd>{{ date(detail.task.createdAt) }}</dd>
+          </div>
+          <div>
+            <dt>工具调用</dt>
+            <dd>{{ detail.toolCalls.length }} 次</dd>
+          </div>
+        </dl>
+      </section>
+      <section class="panel panel-pad tool-log">
+        <h3>工具审计</h3>
+        <div v-if="!detail.toolCalls.length" class="muted">尚未调用工具</div>
+        <div class="tool-items">
+          <article v-for="c in detail.toolCalls" :key="c.id">
+            <span>↗</span>
+            <div>
+              <b>{{ c.toolName }}</b
+              ><small>{{ c.status }} · {{ c.durationMs || 0 }}ms</small>
+            </div>
+          </article>
+        </div>
+      </section>
+    </div>
     <div class="detail-grid">
       <section class="panel steps-panel">
         <header>
@@ -162,9 +206,20 @@
             </div>
             <div class="grid-2">
               <div class="field">
-                <label>地点 / 城市</label
-                ><input v-model="editor.city" class="input" placeholder="例如：南宁青秀区" />
+                <label>省 / 直辖市</label>
+                <select v-model="editor.province" class="select">
+                  <option v-for="province in provinces" :key="province" :value="province">{{ province }}</option>
+                </select>
               </div>
+              <div class="field">
+                <label>城市</label>
+                <select v-model="editor.city" class="select" :disabled="!editor.province || citiesLoading">
+                  <option value="" disabled>{{ citiesLoading ? '加载城市中…' : '请选择城市' }}</option>
+                  <option v-for="city in cityOptions" :key="city" :value="city">{{ city }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid-2">
               <div class="field">
                 <label>预算（元）</label
                 ><input
@@ -200,48 +255,6 @@
           </div>
         </div>
       </section>
-      <aside>
-        <section class="panel panel-pad">
-          <h3>任务信息</h3>
-          <dl class="task-info">
-            <div>
-              <dt>任务 ID</dt>
-              <dd>#{{ detail.task.id }}</dd>
-            </div>
-            <div>
-              <dt>城市</dt>
-              <dd>{{ parameters.city || '—' }}</dd>
-            </div>
-            <div>
-              <dt>预算</dt>
-              <dd>{{ budgetText(parameters.budget) }}</dd>
-            </div>
-            <div>
-              <dt>问题数量</dt>
-              <dd>{{ (parameters.questions || []).length }} 个</dd>
-            </div>
-            <div>
-              <dt>创建时间</dt>
-              <dd>{{ date(detail.task.createdAt) }}</dd>
-            </div>
-            <div>
-              <dt>工具调用</dt>
-              <dd>{{ detail.toolCalls.length }} 次</dd>
-            </div>
-          </dl>
-        </section>
-        <section class="panel panel-pad tool-log">
-          <h3>工具审计</h3>
-          <div v-if="!detail.toolCalls.length" class="muted">尚未调用工具</div>
-          <article v-for="c in detail.toolCalls" :key="c.id">
-            <span>↗</span>
-            <div>
-              <b>{{ c.toolName }}</b
-              ><small>{{ c.status }} · {{ c.durationMs || 0 }}ms</small>
-            </div>
-          </article>
-        </section>
-      </aside>
     </div>
     <section v-if="detail.task.evidenceUpdatedAt" class="panel evidence-panel">
       <div class="evidence-head">
@@ -272,14 +285,14 @@
             >在高德地图中查看 ↗</a
           >
           <div v-if="place.routeFromPrevious" class="card-route">
-            从上一站步行 {{ formatDistance(place.routeFromPrevious.distanceMeters) }} · 约
+            从上一站{{ routeModeText(place.routeFromPrevious) }}
+            {{ formatDistance(place.routeFromPrevious.distanceMeters) }} · 约
             {{ place.routeFromPrevious.durationMinutes }} 分钟
           </div>
         </article>
       </div>
       <div v-else class="evidence-empty">
-        没有取得可核验的地图地点，因此页面不会展示虚构地点。请配置
-        <code>AMAP_MAPS_API_KEY</code> 后重新执行任务。
+        {{ evidence.notice || '没有取得符合当前地点范围的可核验地图地点。' }}
       </div>
       <div v-if="evidence.routes?.length" class="route-list">
         <h3>地点间路线</h3>
@@ -288,7 +301,7 @@
             <div><b>路线总览</b><small>A → B → C → D 按行程顺序连接</small></div>
             <small>轨迹与底图来自高德地图</small>
           </div>
-          <img v-if="routeMapUrl" :src="routeMapUrl" alt="地点间步行路线总览图" />
+          <img v-if="routeMapUrl" :src="routeMapUrl" alt="地点间路线总览图" />
           <div v-else-if="routeMapLoading" class="route-map-placeholder">正在生成路线图…</div>
           <div v-else class="route-map-placeholder">
             {{
@@ -302,17 +315,17 @@
         >
           <div class="route-points">
             <b>{{ route.originName }}</b
-            ><span>步行</span><b>{{ route.destinationName }}</b>
+            ><span>{{ routeModeText(route) }}</span><b>{{ route.destinationName }}</b>
           </div>
           <div class="route-stats">
             <strong>{{ formatDistance(route.distanceMeters) }}</strong
             ><strong>约 {{ route.durationMinutes }} 分钟</strong
             ><small v-if="route.routeCheckedAt">实时刷新：{{ route.routeCheckedAt }}</small
-            ><a :href="route.navigationUrl" target="_blank" rel="noreferrer">打开导航 ↗</a>
+            ><a :href="routeNavigationUrl(route)" target="_blank" rel="noreferrer">打开导航 ↗</a>
           </div>
         </article>
       </div>
-      <p class="evidence-notice">{{ evidence.notice }}</p>
+      <p v-if="mapCards.length" class="evidence-notice">{{ evidence.notice }}</p>
     </section>
     <section v-if="detail.task.finalResult" class="panel result">
       <span class="eyebrow">行动报告已生成</span>
@@ -343,7 +356,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, streamSSE } from '../api'
 import ExpandableText from '../components/ExpandableText.vue'
@@ -365,7 +378,26 @@ const routeMapUrl = ref('')
 const routeMapKey = ref('')
 const routeMapLoading = ref(false)
 const routeMapUnavailable = ref(false)
-const editor = reactive({ city: '', budget: null, questionsText: '' })
+const editor = reactive({ province: '', city: '', budget: null, questionsText: '' })
+const cityOptions = ref([])
+const citiesLoading = ref(false)
+const provinces = ['北京市','天津市','上海市','重庆市','河北省','山西省','辽宁省','吉林省','黑龙江省','江苏省','浙江省','安徽省','福建省','江西省','山东省','河南省','湖北省','湖南省','广东省','海南省','四川省','贵州省','云南省','陕西省','甘肃省','青海省','台湾省','内蒙古自治区','广西壮族自治区','西藏自治区','宁夏回族自治区','新疆维吾尔自治区','香港特别行政区','澳门特别行政区']
+watch(
+  () => editor.province,
+  async (province, previousProvince) => {
+    if (!province) return
+    citiesLoading.value = true
+    try {
+      cityOptions.value = await api.get('/agent-tasks/region-cities', { params: { province } })
+      if (previousProvince && previousProvince !== province) editor.city = ''
+      if (cityOptions.value.length === 1) editor.city = cityOptions.value[0]
+    } catch (requestError) {
+      showError(requestError.response?.data?.message || '城市列表加载失败')
+    } finally {
+      citiesLoading.value = false
+    }
+  }
+)
 
 const phaseDefinitions = [
   { code: 'ANALYZE', label: '分析行程需求' },
@@ -456,8 +488,9 @@ const enteredQuestions = computed(() =>
 )
 const canRevise = computed(
   () =>
-    Boolean(editor.city.trim()) &&
-    (editor.city.trim() !== (parameters.value.city || '') ||
+    Boolean(editor.province) && Boolean(editor.city.trim()) &&
+    (editor.province !== (parameters.value.province || '') ||
+      editor.city.trim() !== (parameters.value.city || '') ||
       normalizeBudgetValue(editor.budget) !== normalizeBudgetValue(parameters.value.budget) ||
       JSON.stringify(enteredQuestions.value) !== JSON.stringify(originalQuestions.value))
 )
@@ -531,6 +564,7 @@ function startPolling() {
 function hydrateEditor() {
   const key = `${detail.value.task.id}:${detail.value.task.versionNo}`
   if (hydratedKey.value === key) return
+  editor.province = parameters.value.province || ''
   editor.city = parameters.value.city || ''
   editor.budget = parameters.value.budget ?? null
   editor.questionsText = originalQuestions.value.join('\n')
@@ -593,6 +627,7 @@ async function confirmTask(approved) {
   const payload = {
     approved,
     note: '',
+    province: approved ? null : editor.province,
     city: approved ? null : editor.city.trim(),
     budget: approved ? null : editor.budget === '' ? null : editor.budget,
     questions: enteredQuestions.value
@@ -600,7 +635,7 @@ async function confirmTask(approved) {
   optimisticRun(approved)
   startPolling()
   try {
-    await streamSSE(`/agent-tasks/${route.params.id}/confirm`, payload, {
+    const stream = await streamSSE(`/agent-tasks/${route.params.id}/confirm`, payload, {
       step: load,
       revision: load,
       confirmation: load,
@@ -615,6 +650,7 @@ async function confirmTask(approved) {
         startPolling()
       }
     })
+    await stream.completed
   } catch (requestError) {
     await load()
     if (['RUNNING', 'SUCCEEDED'].includes(detail.value?.task.status)) return
@@ -648,6 +684,25 @@ function eventIcon(event) {
 }
 function formatDistance(meters) {
   return meters >= 1000 ? `${(meters / 1000).toFixed(1)} 公里` : `${meters} 米`
+}
+function effectiveRouteMode(route) {
+  if (route.mode && route.mode !== 'WALKING') return route.mode
+  if (route.distanceMeters <= 1800) return 'WALKING'
+  if (route.distanceMeters <= 6000) return 'BICYCLING'
+  return 'DRIVING'
+}
+function routeModeText(route) {
+  return (
+    { WALKING: '步行', BICYCLING: '骑行', TRANSIT: '地铁/公交', DRIVING: '驾车' }[
+      effectiveRouteMode(route)
+    ] || '出行'
+  )
+}
+function routeNavigationUrl(route) {
+  const mode = { WALKING: 'walk', BICYCLING: 'ride', TRANSIT: 'bus', DRIVING: 'car' }[
+    effectiveRouteMode(route)
+  ]
+  return route.navigationUrl?.replace(/([?&]mode=)[^&]*/, `$1${mode}`) || '#'
 }
 function businessStatus(status) {
   return { OPEN: '营业中', CLOSED: '已打烊', UNKNOWN: '营业状态待核验' }[status] || '营业状态待核验'
@@ -1258,8 +1313,23 @@ function time(value) {
 }
 .detail-grid {
   display: grid;
-  grid-template-columns: 1fr 310px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  margin-bottom: 20px;
+}
+.summary-grid h3 {
+  margin: 0 0 17px;
+  font-size: 16px;
+}
+.tool-items {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
 }
 .steps-panel {
   padding: 28px;
@@ -1747,7 +1817,7 @@ aside h3 {
   font-size: 14px;
 }
 .detail-grid {
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 22px;
 }
 .steps-panel {
@@ -1781,7 +1851,7 @@ aside h3 {
 .editor-title small {
   font-size: 13px;
 }
-aside h3 {
+.summary-grid h3 {
   font-size: 18px;
 }
 .task-info {
@@ -1821,10 +1891,130 @@ aside h3 {
   .detail-grid {
     grid-template-columns: 1fr;
   }
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
   .agent-observer,
   .evidence-panel,
   .steps-panel {
     padding: 24px;
+  }
+}
+@media (max-width: 550px) {
+  .tool-items {
+    grid-template-columns: 1fr;
+  }
+}
+/* Keep the final responsive overrides after the dense desktop typography rules above. */
+@media (max-width: 700px) {
+  :deep(*) {
+    min-width: 0;
+  }
+  .observer-head,
+  .evidence-head,
+  .route-map-title,
+  .stream-title,
+  .running-box {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .agent-observer,
+  .evidence-panel,
+  .steps-panel {
+    padding: 18px;
+  }
+  .event-stream,
+  .confirm-box,
+  .plan-editor,
+  .preview {
+    padding: 14px;
+  }
+  .phase-flow,
+  .summary-grid,
+  .tool-items,
+  .place-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .branch-row {
+    grid-template-columns: 4px 31px minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+  .branch-keywords {
+    grid-column: 3 / -1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .branch-status {
+    grid-row: 1;
+    grid-column: 4;
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .branch-toggle {
+    grid-row: 2;
+    grid-column: 4;
+  }
+  .branch-events {
+    padding-left: 8px;
+  }
+  .event-card {
+    grid-template-columns: 33px minmax(0, 1fr);
+  }
+  .event-body > div,
+  .route-list article,
+  .route-points,
+  .route-stats,
+  .result-actions,
+  .confirm-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .event-body time,
+  .stream-title small {
+    margin-left: 0;
+  }
+  .event-body p,
+  .event-body footer,
+  .timeline p,
+  .route-points b,
+  .route-stats small,
+  .task-info dd {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .confirm-actions .btn,
+  .result-actions .btn {
+    width: 100%;
+    white-space: normal;
+  }
+  .route-map-overview > img {
+    height: auto;
+  }
+  .toast {
+    right: 14px;
+    bottom: 14px;
+    left: 14px;
+  }
+}
+@media (max-width: 420px) {
+  .agent-observer,
+  .evidence-panel,
+  .steps-panel,
+  .summary-grid .panel-pad,
+  .result {
+    padding: 15px;
+  }
+  .phase-card b,
+  .phase-card small {
+    white-space: normal;
+  }
+  .task-info div {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .task-info dd {
+    text-align: right;
   }
 }
 </style>

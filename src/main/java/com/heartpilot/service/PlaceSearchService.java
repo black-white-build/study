@@ -22,24 +22,12 @@ import org.springframework.stereotype.Service;
 public class PlaceSearchService {
     private static final String AMAP_URL = "https://restapi.amap.com/v3/place/text";
     private static final String AMAP_WALKING_URL = "https://restapi.amap.com/v3/direction/walking";
+    private static final String AMAP_BICYCLING_URL =
+            "https://restapi.amap.com/v4/direction/bicycling";
+    private static final String AMAP_DRIVING_URL = "https://restapi.amap.com/v3/direction/driving";
     private static final DateTimeFormatter SEARCH_TIME =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final int MAX_TOPICS = 5;
-    private static final List<TopicRule> TOPIC_RULES =
-            List.of(
-                    new TopicRule("餐厅", List.of("吃", "美食", "餐厅", "饭店", "午餐", "晚餐", "用餐")),
-                    new TopicRule("酒店", List.of("酒店", "宾馆", "住宿", "民宿", "旅馆")),
-                    new TopicRule("超市", List.of("超市", "便利店", "买东西", "采购")),
-                    new TopicRule("景点", List.of("景点", "公园", "展馆", "博物馆", "游览", "参观", "散步")),
-                    new TopicRule("停车", List.of("停车", "车位", "停车场", "开车")),
-                    new TopicRule("咖啡", List.of("咖啡", "下午茶", "聊天")),
-                    new TopicRule("影院", List.of("电影", "影院", "电影院")),
-                    new TopicRule("商场", List.of("商场", "购物中心", "逛街")),
-                    new TopicRule("交通", List.of("地铁", "公交", "打车", "路线", "怎么走", "交通")),
-                    new TopicRule("医疗", List.of("医院", "诊所", "急诊", "药店")),
-                    new TopicRule("学校", List.of("学校", "大学", "学院", "校园")),
-                    new TopicRule("运动", List.of("健身", "运动", "球馆", "游泳")),
-                    new TopicRule("演出活动", List.of("演出", "音乐会", "展览", "活动")));
     private final String amapKey;
     private final WebSearchTool webSearch;
 
@@ -57,7 +45,7 @@ public class PlaceSearchService {
             List<Place> places =
                     amapKey == null || amapKey.isBlank()
                             ? List.of()
-                            : searchAmap(city, topic.label());
+                            : searchAmap(city, topic.query());
             places.forEach(
                     place ->
                             allPlaces.putIfAbsent(
@@ -65,7 +53,7 @@ public class PlaceSearchService {
                                             ? place.name() + "|" + place.address()
                                             : place.poiId(),
                                     place));
-            String webSources = webSearch.searchLocalPlaces(city, topic.query(), 4);
+            String webSources = webSearch.searchLocalPlaces(city, topic.query(), topic.label(), 4);
             groups.add(new SearchGroup(topic.label(), topic.query(), places, webSources));
         }
         String keywords = String.join("、", topics.stream().map(SearchTopic::label).toList());
@@ -83,20 +71,22 @@ public class PlaceSearchService {
         List<RoutePlan> routes = new ArrayList<>();
         if (amapKey != null && !amapKey.isBlank()) {
             for (int i = 0; i + 1 < selectedPlaces.size(); i++) {
-                RoutePlan route =
-                        planWalkingRoute(selectedPlaces.get(i), selectedPlaces.get(i + 1));
+                RoutePlan route = planRoute(selectedPlaces.get(i), selectedPlaces.get(i + 1));
                 if (route != null) routes.add(route);
             }
         }
         String notice;
         if (selectedPlaces.isEmpty()) {
-            notice = "当前未取得可核验的地图地点，请检查高德地图密钥或调整检索条件。";
+            notice =
+                    amapKey == null || amapKey.isBlank()
+                            ? "未配置高德地图密钥，暂时无法检索可核验的地图地点。"
+                            : "高德地图服务已配置，但按当前地点范围严格筛选后没有合格结果；请检查地点范围是否包含多个城市，或调整检索条件后重试。";
         } else if (selectedPlaces.size() == 1) {
             notice = "已取得一个真实地点，至少需要两个地点才能计算地点间路线。";
         } else if (routes.isEmpty()) {
             notice = "地点已取得，但实时路线暂不可用；出发前请打开地图链接核验。";
         } else {
-            notice = "距离和耗时来自高德地图实时步行路线，出发前仍建议核验路况与营业状态。";
+            notice = "距离、耗时和出行方式来自高德地图实时路线；短途步行，中途骑行，较远路程驾车，出发前仍建议核验路况与营业状态。";
         }
         return new JourneyEvidence(
                 searchResult.provider(),
@@ -163,23 +153,33 @@ public class PlaceSearchService {
                 : place.poiId();
     }
 
-    private RoutePlan planWalkingRoute(Place origin, Place destination) {
+    private RoutePlan planRoute(Place origin, Place destination) {
         if (origin.location().isBlank() || destination.location().isBlank()) return null;
         try {
+            String mode =
+                    modeForDistance(
+                            directDistanceMeters(origin.location(), destination.location()));
+            String endpoint =
+                    switch (mode) {
+                        case "BICYCLING" -> AMAP_BICYCLING_URL;
+                        case "DRIVING" -> AMAP_DRIVING_URL;
+                        default -> AMAP_WALKING_URL;
+                    };
             String response =
                     HttpUtil.get(
-                            AMAP_WALKING_URL,
+                            endpoint,
                             Map.of(
                                     "key",
                                     amapKey,
                                     "origin",
                                     origin.location(),
                                     "destination",
-                                    destination.location(),
-                                    "show_fields",
-                                    "cost"));
+                                    destination.location()));
             JSONObject root = JSONUtil.parseObj(response);
-            JSONObject route = root.getJSONObject("route");
+            JSONObject route =
+                    "BICYCLING".equals(mode)
+                            ? root.getJSONObject("data")
+                            : root.getJSONObject("route");
             JSONArray paths = route == null ? null : route.getJSONArray("paths");
             if (paths == null || paths.isEmpty()) return null;
             JSONObject path = paths.getJSONObject(0);
@@ -196,22 +196,57 @@ public class PlaceSearchService {
                             + destination.location()
                             + ","
                             + URLEncoder.encode(destination.name(), StandardCharsets.UTF_8)
-                            + "&mode=walk&policy=1&src=heart-pilot&coordinate=gaode&callnative=0";
+                            + "&mode="
+                            + navigationMode(mode)
+                            + "&policy=1&src=heart-pilot&coordinate=gaode&callnative=0";
             return new RoutePlan(
                     origin.name(),
                     destination.name(),
                     distanceMeters,
                     Math.max(1, Math.round(durationSeconds / 60.0)),
-                    "WALKING",
+                    mode,
                     navigationUrl,
                     "LIVE",
                     SEARCH_TIME.format(ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))),
                     "高德地图",
-                    "FASTEST_WALKING",
+                    "RECOMMENDED_" + mode,
                     polyline);
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    static String modeForDistance(double distanceMeters) {
+        if (distanceMeters <= 1_800) return "WALKING";
+        if (distanceMeters <= 6_000) return "BICYCLING";
+        return "DRIVING";
+    }
+
+    private String navigationMode(String mode) {
+        return switch (mode) {
+            case "BICYCLING" -> "ride";
+            case "DRIVING" -> "car";
+            default -> "walk";
+        };
+    }
+
+    private double directDistanceMeters(String origin, String destination) {
+        String[] from = origin.split(",", 2);
+        String[] to = destination.split(",", 2);
+        if (from.length < 2 || to.length < 2) return Double.MAX_VALUE;
+        double fromLng = Math.toRadians(Double.parseDouble(from[0]));
+        double fromLat = Math.toRadians(Double.parseDouble(from[1]));
+        double toLng = Math.toRadians(Double.parseDouble(to[0]));
+        double toLat = Math.toRadians(Double.parseDouble(to[1]));
+        double latDelta = toLat - fromLat;
+        double lngDelta = toLng - fromLng;
+        double value =
+                Math.sin(latDelta / 2) * Math.sin(latDelta / 2)
+                        + Math.cos(fromLat)
+                                * Math.cos(toLat)
+                                * Math.sin(lngDelta / 2)
+                                * Math.sin(lngDelta / 2);
+        return 6_371_000 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
     }
 
     private List<Place> searchAmap(String city, String keywords) {
@@ -221,7 +256,7 @@ public class PlaceSearchService {
                             AMAP_URL,
                             Map.of(
                                     "key", amapKey,
-                                    "keywords", keywords,
+                                    "keywords", city + " " + keywords,
                                     "city", city,
                                     "citylimit", "true",
                                     "offset", "12",
@@ -239,6 +274,12 @@ public class PlaceSearchService {
                     String location = poi.getStr("location", "");
                     String type = poi.getStr("type", "本地生活");
                     String tel = poi.getStr("tel", "");
+                    if (!matchesTopic(keywords, name, type)) continue;
+                    String provinceName = poi.getStr("pname", "");
+                    String cityName = poi.getStr("cityname", "");
+                    String districtName = poi.getStr("adname", "");
+                    if (!matchesRequestedScope(city, provinceName, cityName, districtName, address))
+                        continue;
                     JSONObject business = poi.getJSONObject("business");
                     JSONObject bizExt = poi.getJSONObject("biz_ext");
                     String businessHours =
@@ -294,50 +335,80 @@ public class PlaceSearchService {
         }
     }
 
+    static boolean matchesRequestedScope(
+            String requestedScope,
+            String provinceName,
+            String cityName,
+            String districtName,
+            String address) {
+        String requested = normalizeRegion(requestedScope);
+        if (requested.isBlank()) return false;
+        String province = normalizeRegion(provinceName);
+        String city = normalizeRegion(cityName);
+        String district = normalizeRegion(districtName);
+        String fullAddress = normalizeRegion(address);
+
+        // AMap can ignore citylimit when a free-form composite scope cannot be resolved. Never
+        // accept a POI unless its returned administrative area is explicitly part of the scope.
+        if (!district.isBlank() && requested.contains(district)) return true;
+        if (!city.isBlank() && requested.contains(city)) return true;
+        if (!province.isBlank() && requested.equals(province)) return true;
+        return !fullAddress.isBlank()
+                && (fullAddress.contains(requested) || requested.contains(fullAddress));
+    }
+
+    static boolean matchesTopic(String topic, String name, String type) {
+        String combined = (name == null ? "" : name) + " " + (type == null ? "" : type);
+        if (containsAnyStatic(topic, "游泳", "泳池")) {
+            return containsAnyStatic(combined, "游泳", "泳池", "游泳馆", "游泳场", "水上运动");
+        }
+        if (containsAnyStatic(topic, "游艇", "帆船")) {
+            return containsAnyStatic(combined, "游艇", "帆船", "游船", "码头", "船艇", "航海");
+        }
+        String keyword = normalizeIntent(topic);
+        return !keyword.isBlank() && combined.contains(keyword);
+    }
+
+    private static boolean containsAnyStatic(String text, String... values) {
+        for (String value : values) if (text.contains(value)) return true;
+        return false;
+    }
+
+    private static String normalizeRegion(String value) {
+        if (value == null) return "";
+        return value.replaceAll("[\\s,，、/\\-|]+", "")
+                .replaceAll("(?:壮族自治区|回族自治区|维吾尔自治区|特别行政区|自治区|自治州|地区|盟|省|市|区|县)$", "")
+                .trim();
+    }
+
     private List<SearchTopic> inferTopics(String objective) {
         String safeObjective = objective == null ? "" : objective.trim();
-        String cleanedObjective = fallbackKeywords(safeObjective);
-        String constraints =
-                List.of(safeObjective.split("[｜；。！？?\\n]+")).stream()
-                        .filter(value -> value.trim().matches("^关系档案偏好：.*"))
-                        .map(this::fallbackKeywords)
-                        .filter(value -> !value.isBlank())
-                        .reduce((left, right) -> left + " " + right)
-                        .orElse("");
         List<String> clauses =
-                List.of(safeObjective.split("[｜；。！？?\\n]+")).stream()
-                        .filter(value -> !value.trim().matches("^(?:地点|预算|关系档案偏好|必须遵守的关系边界)：.*"))
-                        .map(this::fallbackKeywords)
+                List.of(safeObjective.split("[｜；。！？，,？?\\n]+")).stream()
+                        .filter(value -> !value.trim().matches("^(?:不|不要|别|避免|排除|拒绝|不能).*"))
+                        .map(String::trim)
                         .filter(value -> !value.isBlank())
                         .toList();
-        String primaryContext = clauses.isEmpty() ? cleanedObjective : clauses.getFirst();
         Map<String, SearchTopic> topics = new LinkedHashMap<>();
         for (String clause : clauses) {
-            for (TopicRule rule : TOPIC_RULES) {
-                if (containsAny(clause, rule.aliases().toArray(String[]::new))) {
-                    String query =
-                            rule.label()
-                                    + " "
-                                    + shorten(
-                                            primaryContext + " " + clause + " " + constraints, 100);
-                    topics.putIfAbsent(rule.label(), new SearchTopic(rule.label(), query.trim()));
-                    if (topics.size() >= MAX_TOPICS) return new ArrayList<>(topics.values());
-                }
-            }
+            if (clause.matches("^(?:\\d+(?:\\.\\d+)?元?|未限定)$")) continue;
+            String intent = normalizeIntent(clause);
+            if (intent.isBlank()) intent = clause;
+            String label = shorten(intent, 24);
+            topics.putIfAbsent(label, new SearchTopic(label, label));
+            if (topics.size() >= MAX_TOPICS) break;
         }
-        if (topics.isEmpty()) {
-            for (String clause : clauses) {
-                if (clause.matches("^(?:\\d+(?:\\.\\d+)?元?|未限定)$")) continue;
-                String label = shorten(clause.replaceAll("^(?:请问|我想知道|帮我找|有没有|有哪些)", ""), 18);
-                if (label.isBlank()) continue;
-                topics.putIfAbsent(
-                        label,
-                        new SearchTopic(label, shorten(clause + " " + constraints, 100).trim()));
-                if (topics.size() >= 3) break;
-            }
-        }
-        if (topics.isEmpty()) topics.put("本地信息", new SearchTopic("本地信息", "本地信息"));
         return new ArrayList<>(topics.values());
+    }
+
+    private static String normalizeIntent(String value) {
+        if (value == null) return "";
+        return value.trim()
+                .replaceFirst("^(?:请问|我想知道|我想|想要|想|帮我找|帮我|请帮我找|请帮我|有没有|有|有哪些|哪里有|哪里可以|去|玩|喝|吃|找)+", "")
+                .replaceFirst("^(?:地方|地点)", "")
+                .replaceAll("(?:的地方|相关地点|相关信息|哪里有|哪里可以|怎么样|怎么安排|推荐一下|推荐|吗|呢)$", "")
+                .replaceAll("^[\\d.、\\s]+", "")
+                .trim();
     }
 
     private String fallbackKeywords(String objective) {
@@ -490,6 +561,8 @@ public class PlaceSearchService {
                                 out.append("   地图：").append(p.mapUrl()).append("\n");
                         }
                     }
+                    if (group.places().isEmpty())
+                        out.append("地图地点：未找到与“").append(group.label()).append("”相关且位于指定城市的地点。\n");
                     out.append("公开网页来源：\n").append(group.webSources()).append("\n\n");
                 }
             } else {
@@ -540,7 +613,14 @@ public class PlaceSearchService {
             return originName
                     + " → "
                     + destinationName
-                    + "：步行约 "
+                    + "："
+                    + switch (mode) {
+                        case "BICYCLING" -> "骑行";
+                        case "DRIVING" -> "驾车";
+                        case "TRANSIT" -> "地铁/公交";
+                        default -> "步行";
+                    }
+                    + "约 "
                     + distance
                     + "，约 "
                     + durationMinutes

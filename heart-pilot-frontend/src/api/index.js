@@ -86,7 +86,7 @@ export async function streamSSE(url, data, handlers = {}) {
     handlers.all?.(event, parsed)
   }
 
-  ;(async () => {
+  controller.completed = (async () => {
     try {
       while (true) {
         const { value, done } = await reader.read()

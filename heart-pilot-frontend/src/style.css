@@ -33,6 +33,7 @@ body,
 }
 body {
   min-height: 100vh;
+  overflow-x: clip;
   font-size: 16px;
   line-height: 1.6;
 }
@@ -459,22 +460,43 @@ button {
 }
 
 @media (max-width: 620px) {
+  .workspace,
+  .page-wrap,
+  .page-wrap > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .page-wrap {
+    padding: 18px 12px;
+    overflow-x: clip;
+  }
   .grid-2,
   .grid-3 {
     grid-template-columns: 1fr;
   }
   .page-head {
+    width: 100%;
     align-items: flex-start;
     flex-direction: column;
     margin-bottom: 24px;
   }
   .top-action {
     padding: 9px 12px;
+    white-space: nowrap;
   }
   .page-head h1 {
     font-size: 28px;
   }
   .panel-pad {
     padding: 20px;
+  }
+  .btn {
+    max-width: 100%;
+    white-space: normal;
+  }
+  .toast {
+    right: 12px;
+    left: 12px;
+    overflow-wrap: anywhere;
   }
 }

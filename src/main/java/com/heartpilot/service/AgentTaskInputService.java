@@ -12,6 +12,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import cn.hutool.http.HttpUtil;
+import cn.hutool.json.JSONUtil;
 
 /** Normalizes task input and composes the user-facing plan preview. */
 @Service
@@ -25,10 +28,19 @@ public class AgentTaskInputService {
 
     private final ProfileRepository profiles;
     private final ObjectMapper json;
+    private final String amapKey;
+    private static final List<String> PROVINCES = List.of(
+            "北京市", "天津市", "上海市", "重庆市", "河北省", "山西省", "辽宁省", "吉林省", "黑龙江省",
+            "江苏省", "浙江省", "安徽省", "福建省", "江西省", "山东省", "河南省", "湖北省", "湖南省",
+            "广东省", "海南省", "四川省", "贵州省", "云南省", "陕西省", "甘肃省", "青海省", "台湾省",
+            "内蒙古自治区", "广西壮族自治区", "西藏自治区", "宁夏回族自治区", "新疆维吾尔自治区",
+            "香港特别行政区", "澳门特别行政区");
 
-    public AgentTaskInputService(ProfileRepository profiles, ObjectMapper json) {
+    public AgentTaskInputService(ProfileRepository profiles, ObjectMapper json,
+            @Value("${AMAP_MAPS_API_KEY:}") String amapKey) {
         this.profiles = profiles;
         this.json = json;
+        this.amapKey = amapKey;
     }
 
     public String buildPreview(
@@ -90,6 +102,35 @@ public class AgentTaskInputService {
             }
         }
         return String.join("｜", parts);
+    }
+
+    /** External place searches use only the user's explicit question list. */
+    public String searchRequirements(Map<String, Object> parameters) {
+        return String.join("\n", asStringList(parameters.get("questions")));
+    }
+
+    public List<String> cityOptions(String province) {
+        String normalized = province == null ? "" : province.trim();
+        if (!PROVINCES.contains(normalized)) throw ApiException.badRequest("请选择有效的省级行政区");
+        if (normalized.endsWith("市") || normalized.endsWith("特别行政区")) return List.of(normalized);
+        if (amapKey.isBlank()) throw ApiException.badRequest("未配置高德地图密钥，无法加载城市列表");
+        try {
+            String response = HttpUtil.get("https://restapi.amap.com/v3/config/district",
+                    Map.of("key", amapKey, "keywords", normalized, "subdistrict", "1", "extensions", "base"));
+            var districts = JSONUtil.parseObj(response).getJSONArray("districts");
+            if (districts == null || districts.isEmpty()) throw new IllegalStateException();
+            var children = districts.getJSONObject(0).getJSONArray("districts");
+            if (children == null) throw new IllegalStateException();
+            List<String> cities = new ArrayList<>();
+            for (int index = 0; index < children.size(); index++) {
+                String name = children.getJSONObject(index).getStr("name", "").trim();
+                if (!name.isBlank() && !cities.contains(name)) cities.add(name);
+            }
+            if (cities.isEmpty()) throw new IllegalStateException();
+            return cities;
+        } catch (Exception ignored) {
+            throw ApiException.badRequest("城市列表加载失败，请稍后重试");
+        }
     }
 
     public List<String> asStringList(Object raw) {
@@ -193,9 +234,23 @@ public class AgentTaskInputService {
     }
 
     public String resolveCity(Map<String, Object> parameters, String text) {
+        String searchRegion = String.valueOf(parameters.getOrDefault("searchRegion", "")).trim();
+        if (!searchRegion.isBlank() && !"null".equalsIgnoreCase(searchRegion)) return searchRegion;
         String city = String.valueOf(parameters.getOrDefault("city", "")).trim();
-        if (!city.isBlank() && !"null".equalsIgnoreCase(city)) return city.replace("市", "");
+        if (!city.isBlank() && !"null".equalsIgnoreCase(city)) return city;
         return findKnownCity(text);
+    }
+
+    public String validateAndResolveRegion(Map<String, Object> parameters) {
+        String province = String.valueOf(parameters.getOrDefault("province", "")).trim();
+        String city = String.valueOf(parameters.getOrDefault("city", "")).trim();
+        if (!PROVINCES.contains(province)) throw ApiException.badRequest("请选择有效的省级行政区");
+        if (!city.matches("[\\p{IsHan}·]{2,20}(?:市|自治州|地区|盟|特别行政区)")) {
+            throw ApiException.badRequest("请输入完整城市名称，例如：上海市、南宁市");
+        }
+        parameters.put("province", province);
+        parameters.put("city", city);
+        return province.equals(city) ? city : province + city;
     }
 
     public String findKnownCity(String text) {

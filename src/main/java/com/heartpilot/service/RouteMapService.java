@@ -14,7 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
-/** Builds an authenticated AMap static image from persisted POIs and walking polylines. */
+/** Builds an authenticated AMap static image from persisted POIs and route polylines. */
 @Service
 public class RouteMapService {
     private static final String STATIC_MAP_URL = "https://restapi.amap.com/v3/staticmap";
