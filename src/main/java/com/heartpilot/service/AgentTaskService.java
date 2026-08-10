@@ -294,20 +294,31 @@ public class AgentTaskService {
                     AgentExecutionEventType.THOUGHT,
                     AgentExecutionEventStatus.SUCCEEDED,
                     "已完成结构化需求分析",
-                    "城市：" + city + "；预算：" + budget + "；提取检索意图："
-                            + String.join("、", analyzed.keywords()) + "。",
+                    "城市："
+                            + city
+                            + "；预算："
+                            + budget
+                            + "；提取检索意图："
+                            + String.join("、", analyzed.keywords())
+                            + "。",
                     analyzed.aiGenerated() ? "DashScope" : "规则降级",
                     null,
                     questions.size(),
                     null,
                     null,
                     Map.of(
-                            "city", city,
-                            "budget", budget,
-                            "questionCount", questions.size(),
-                            "questions", questions,
-                            "searchKeywords", analyzed.keywords(),
-                            "aiGenerated", analyzed.aiGenerated()));
+                            "city",
+                            city,
+                            "budget",
+                            budget,
+                            "questionCount",
+                            questions.size(),
+                            "questions",
+                            questions,
+                            "searchKeywords",
+                            analyzed.keywords(),
+                            "aiGenerated",
+                            analyzed.aiGenerated()));
 
             AgentJourneyResearchService.JourneyResearch journey =
                     journeyResearch.researchJourney(
@@ -366,7 +377,8 @@ public class AgentTaskService {
         SseEmitter emitter = new SseEmitter(180_000L);
         if (approved) {
             try {
-                Future<?> future = executor.submit(() -> finish(task, note, questions, emitter, lock));
+                Future<?> future =
+                        executor.submit(() -> finish(task, note, questions, emitter, lock));
                 activeFutures.put(id, future);
             } catch (RuntimeException submissionFailure) {
                 lock.close();
@@ -395,12 +407,23 @@ public class AgentTaskService {
                 boolean budgetChanged = editorSubmission && !requestedBudget.equals(currentBudget);
                 boolean questionsChanged =
                         questions != null
-                                && !taskInput.asStringList(questions)
+                                && !taskInput
+                                        .asStringList(questions)
                                         .equals(taskInput.asStringList(current.get("questions")));
-                if ((note == null || note.isBlank()) && !cityChanged && !budgetChanged && !questionsChanged)
+                if ((note == null || note.isBlank())
+                        && !cityChanged
+                        && !budgetChanged
+                        && !questionsChanged)
                     throw ApiException.badRequest("请至少修改地点、预算、问题或补充说明中的一项");
                 reviseAndRestart(
-                        task, note == null ? "" : note.trim(), province, city, budget, questions, emitter, lock);
+                        task,
+                        note == null ? "" : note.trim(),
+                        province,
+                        city,
+                        budget,
+                        questions,
+                        emitter,
+                        lock);
             } catch (RuntimeException preparationFailure) {
                 lock.close();
                 throw preparationFailure;

@@ -94,12 +94,19 @@
           <label>省 / 直辖市</label>
           <select v-model="form.province" class="select" required>
             <option value="" disabled>请选择省级行政区</option>
-            <option v-for="province in provinces" :key="province" :value="province">{{ province }}</option>
+            <option v-for="province in provinces" :key="province" :value="province">
+              {{ province }}
+            </option>
           </select>
         </div>
         <div class="field">
           <label>城市</label>
-          <select v-model="form.city" class="select" required :disabled="!form.province || citiesLoading">
+          <select
+            v-model="form.city"
+            class="select"
+            required
+            :disabled="!form.province || citiesLoading"
+          >
             <option value="" disabled>{{ citiesLoading ? '加载城市中…' : '请选择城市' }}</option>
             <option v-for="city in cityOptions" :key="city" :value="city">{{ city }}</option>
           </select>
@@ -149,8 +156,50 @@ const router = useRouter(),
   createError = ref(''),
   cityOptions = ref([]),
   citiesLoading = ref(false),
-  form = reactive({ title: '', objective: '', province: '', city: '', budget: null, questionsText: '' }),
-  provinces = ['北京市','天津市','上海市','重庆市','河北省','山西省','辽宁省','吉林省','黑龙江省','江苏省','浙江省','安徽省','福建省','江西省','山东省','河南省','湖北省','湖南省','广东省','海南省','四川省','贵州省','云南省','陕西省','甘肃省','青海省','台湾省','内蒙古自治区','广西壮族自治区','西藏自治区','宁夏回族自治区','新疆维吾尔自治区','香港特别行政区','澳门特别行政区']
+  form = reactive({
+    title: '',
+    objective: '',
+    province: '',
+    city: '',
+    budget: null,
+    questionsText: ''
+  }),
+  provinces = [
+    '北京市',
+    '天津市',
+    '上海市',
+    '重庆市',
+    '河北省',
+    '山西省',
+    '辽宁省',
+    '吉林省',
+    '黑龙江省',
+    '江苏省',
+    '浙江省',
+    '安徽省',
+    '福建省',
+    '江西省',
+    '山东省',
+    '河南省',
+    '湖北省',
+    '湖南省',
+    '广东省',
+    '海南省',
+    '四川省',
+    '贵州省',
+    '云南省',
+    '陕西省',
+    '甘肃省',
+    '青海省',
+    '台湾省',
+    '内蒙古自治区',
+    '广西壮族自治区',
+    '西藏自治区',
+    '宁夏回族自治区',
+    '新疆维吾尔自治区',
+    '香港特别行政区',
+    '澳门特别行政区'
+  ]
 const filtered = computed(() =>
   filter.value ? tasks.value.filter((x) => x.status === filter.value) : tasks.value
 )
@@ -208,7 +257,12 @@ async function create() {
       {
         title: form.title,
         objective: form.objective,
-        parameters: { province: form.province, city: form.city.trim(), budget: form.budget, questions }
+        parameters: {
+          province: form.province,
+          city: form.city.trim(),
+          budget: form.budget,
+          questions
+        }
       },
       { headers: { 'Idempotency-Key': key } }
     )

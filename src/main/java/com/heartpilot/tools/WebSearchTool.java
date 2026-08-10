@@ -44,12 +44,22 @@ public class WebSearchTool {
         return format(searchResults(query, city, limit), city);
     }
 
-    public String searchLocalPlaces(String city, String keywords, String requiredKeyword, int limit) {
-        String query = city + " " + keywords + " " + LocalDate.now().getYear()
-                + " 最新营业状态 地址 本地推荐 高德地图 大众点评";
-        List<WebResult> results = searchResults(query, city, limit).stream()
-                .filter(result -> (result.title() + " " + result.snippet()).contains(requiredKeyword))
-                .toList();
+    public String searchLocalPlaces(
+            String city, String keywords, String requiredKeyword, int limit) {
+        String query =
+                city
+                        + " "
+                        + keywords
+                        + " "
+                        + LocalDate.now().getYear()
+                        + " 最新营业状态 地址 本地推荐 高德地图 大众点评";
+        List<WebResult> results =
+                searchResults(query, city, limit).stream()
+                        .filter(
+                                result ->
+                                        (result.title() + " " + result.snippet())
+                                                .contains(requiredKeyword))
+                        .toList();
         if (results.isEmpty()) return "暂未检索到同时包含“" + city + "”和“" + requiredKeyword + "”的可靠公开来源。";
         return format(results, city);
     }

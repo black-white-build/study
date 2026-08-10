@@ -208,13 +208,21 @@
               <div class="field">
                 <label>省 / 直辖市</label>
                 <select v-model="editor.province" class="select">
-                  <option v-for="province in provinces" :key="province" :value="province">{{ province }}</option>
+                  <option v-for="province in provinces" :key="province" :value="province">
+                    {{ province }}
+                  </option>
                 </select>
               </div>
               <div class="field">
                 <label>城市</label>
-                <select v-model="editor.city" class="select" :disabled="!editor.province || citiesLoading">
-                  <option value="" disabled>{{ citiesLoading ? '加载城市中…' : '请选择城市' }}</option>
+                <select
+                  v-model="editor.city"
+                  class="select"
+                  :disabled="!editor.province || citiesLoading"
+                >
+                  <option value="" disabled>
+                    {{ citiesLoading ? '加载城市中…' : '请选择城市' }}
+                  </option>
                   <option v-for="city in cityOptions" :key="city" :value="city">{{ city }}</option>
                 </select>
               </div>
@@ -315,7 +323,8 @@
         >
           <div class="route-points">
             <b>{{ route.originName }}</b
-            ><span>{{ routeModeText(route) }}</span><b>{{ route.destinationName }}</b>
+            ><span>{{ routeModeText(route) }}</span
+            ><b>{{ route.destinationName }}</b>
           </div>
           <div class="route-stats">
             <strong>{{ formatDistance(route.distanceMeters) }}</strong
@@ -381,7 +390,42 @@ const routeMapUnavailable = ref(false)
 const editor = reactive({ province: '', city: '', budget: null, questionsText: '' })
 const cityOptions = ref([])
 const citiesLoading = ref(false)
-const provinces = ['北京市','天津市','上海市','重庆市','河北省','山西省','辽宁省','吉林省','黑龙江省','江苏省','浙江省','安徽省','福建省','江西省','山东省','河南省','湖北省','湖南省','广东省','海南省','四川省','贵州省','云南省','陕西省','甘肃省','青海省','台湾省','内蒙古自治区','广西壮族自治区','西藏自治区','宁夏回族自治区','新疆维吾尔自治区','香港特别行政区','澳门特别行政区']
+const provinces = [
+  '北京市',
+  '天津市',
+  '上海市',
+  '重庆市',
+  '河北省',
+  '山西省',
+  '辽宁省',
+  '吉林省',
+  '黑龙江省',
+  '江苏省',
+  '浙江省',
+  '安徽省',
+  '福建省',
+  '江西省',
+  '山东省',
+  '河南省',
+  '湖北省',
+  '湖南省',
+  '广东省',
+  '海南省',
+  '四川省',
+  '贵州省',
+  '云南省',
+  '陕西省',
+  '甘肃省',
+  '青海省',
+  '台湾省',
+  '内蒙古自治区',
+  '广西壮族自治区',
+  '西藏自治区',
+  '宁夏回族自治区',
+  '新疆维吾尔自治区',
+  '香港特别行政区',
+  '澳门特别行政区'
+]
 watch(
   () => editor.province,
   async (province, previousProvince) => {
@@ -488,7 +532,8 @@ const enteredQuestions = computed(() =>
 )
 const canRevise = computed(
   () =>
-    Boolean(editor.province) && Boolean(editor.city.trim()) &&
+    Boolean(editor.province) &&
+    Boolean(editor.city.trim()) &&
     (editor.province !== (parameters.value.province || '') ||
       editor.city.trim() !== (parameters.value.city || '') ||
       normalizeBudgetValue(editor.budget) !== normalizeBudgetValue(parameters.value.budget) ||

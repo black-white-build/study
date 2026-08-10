@@ -39,8 +39,15 @@ class AgentTaskExecutionIntegrationTest {
                         savedUserId,
                         "南宁周末计划",
                         "在南宁安排一次安静散步",
-                        Map.of("province", "广西壮族自治区", "city", "南宁市", "budget", 300,
-                                "questions", List.of("安静散步")),
+                        Map.of(
+                                "province",
+                                "广西壮族自治区",
+                                "city",
+                                "南宁市",
+                                "budget",
+                                300,
+                                "questions",
+                                List.of("安静散步")),
                         "execution-" + System.nanoTime());
 
         tasks.run(task.getId(), user.getId());
@@ -72,15 +79,16 @@ class AgentTaskExecutionIntegrationTest {
 
         org.junit.jupiter.api.Assertions.assertThrows(
                 com.heartpilot.web.ApiException.class,
-                () -> tasks.confirm(
-                        task.getId(),
-                        savedUserId,
-                        false,
-                        "",
-                        "广西壮族自治区",
-                        "南宁市",
-                        new BigDecimal("-1"),
-                        List.of("只回答最后一次修改后的问题")));
+                () ->
+                        tasks.confirm(
+                                task.getId(),
+                                savedUserId,
+                                false,
+                                "",
+                                "广西壮族自治区",
+                                "南宁市",
+                                new BigDecimal("-1"),
+                                List.of("只回答最后一次修改后的问题")));
 
         tasks.confirm(
                 task.getId(),

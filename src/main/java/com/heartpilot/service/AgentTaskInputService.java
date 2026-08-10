@@ -1,5 +1,7 @@
 package com.heartpilot.service;
 
+import cn.hutool.http.HttpUtil;
+import cn.hutool.json.JSONUtil;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heartpilot.domain.AgentTask;
@@ -11,10 +13,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
-import cn.hutool.http.HttpUtil;
-import cn.hutool.json.JSONUtil;
+import org.springframework.stereotype.Service;
 
 /** Normalizes task input and composes the user-facing plan preview. */
 @Service
@@ -29,14 +29,46 @@ public class AgentTaskInputService {
     private final ProfileRepository profiles;
     private final ObjectMapper json;
     private final String amapKey;
-    private static final List<String> PROVINCES = List.of(
-            "北京市", "天津市", "上海市", "重庆市", "河北省", "山西省", "辽宁省", "吉林省", "黑龙江省",
-            "江苏省", "浙江省", "安徽省", "福建省", "江西省", "山东省", "河南省", "湖北省", "湖南省",
-            "广东省", "海南省", "四川省", "贵州省", "云南省", "陕西省", "甘肃省", "青海省", "台湾省",
-            "内蒙古自治区", "广西壮族自治区", "西藏自治区", "宁夏回族自治区", "新疆维吾尔自治区",
-            "香港特别行政区", "澳门特别行政区");
+    private static final List<String> PROVINCES =
+            List.of(
+                    "北京市",
+                    "天津市",
+                    "上海市",
+                    "重庆市",
+                    "河北省",
+                    "山西省",
+                    "辽宁省",
+                    "吉林省",
+                    "黑龙江省",
+                    "江苏省",
+                    "浙江省",
+                    "安徽省",
+                    "福建省",
+                    "江西省",
+                    "山东省",
+                    "河南省",
+                    "湖北省",
+                    "湖南省",
+                    "广东省",
+                    "海南省",
+                    "四川省",
+                    "贵州省",
+                    "云南省",
+                    "陕西省",
+                    "甘肃省",
+                    "青海省",
+                    "台湾省",
+                    "内蒙古自治区",
+                    "广西壮族自治区",
+                    "西藏自治区",
+                    "宁夏回族自治区",
+                    "新疆维吾尔自治区",
+                    "香港特别行政区",
+                    "澳门特别行政区");
 
-    public AgentTaskInputService(ProfileRepository profiles, ObjectMapper json,
+    public AgentTaskInputService(
+            ProfileRepository profiles,
+            ObjectMapper json,
             @Value("${AMAP_MAPS_API_KEY:}") String amapKey) {
         this.profiles = profiles;
         this.json = json;
@@ -115,8 +147,18 @@ public class AgentTaskInputService {
         if (normalized.endsWith("市") || normalized.endsWith("特别行政区")) return List.of(normalized);
         if (amapKey.isBlank()) throw ApiException.badRequest("未配置高德地图密钥，无法加载城市列表");
         try {
-            String response = HttpUtil.get("https://restapi.amap.com/v3/config/district",
-                    Map.of("key", amapKey, "keywords", normalized, "subdistrict", "1", "extensions", "base"));
+            String response =
+                    HttpUtil.get(
+                            "https://restapi.amap.com/v3/config/district",
+                            Map.of(
+                                    "key",
+                                    amapKey,
+                                    "keywords",
+                                    normalized,
+                                    "subdistrict",
+                                    "1",
+                                    "extensions",
+                                    "base"));
             var districts = JSONUtil.parseObj(response).getJSONArray("districts");
             if (districts == null || districts.isEmpty()) throw new IllegalStateException();
             var children = districts.getJSONObject(0).getJSONArray("districts");

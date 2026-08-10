@@ -404,7 +404,8 @@ public class PlaceSearchService {
     private static String normalizeIntent(String value) {
         if (value == null) return "";
         return value.trim()
-                .replaceFirst("^(?:请问|我想知道|我想|想要|想|帮我找|帮我|请帮我找|请帮我|有没有|有|有哪些|哪里有|哪里可以|去|玩|喝|吃|找)+", "")
+                .replaceFirst(
+                        "^(?:请问|我想知道|我想|想要|想|帮我找|帮我|请帮我找|请帮我|有没有|有|有哪些|哪里有|哪里可以|去|玩|喝|吃|找)+", "")
                 .replaceFirst("^(?:地方|地点)", "")
                 .replaceAll("(?:的地方|相关地点|相关信息|哪里有|哪里可以|怎么样|怎么安排|推荐一下|推荐|吗|呢)$", "")
                 .replaceAll("^[\\d.、\\s]+", "")

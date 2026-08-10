@@ -36,9 +36,7 @@ class PlaceSearchServiceTest {
     @Test
     void swimmingSearchRejectsUnrelatedShoppingMalls() {
         assertTrue(PlaceSearchService.matchesTopic("游泳馆", "广西体育中心游泳馆", "体育休闲服务;运动场馆"));
-        assertEquals(
-                false,
-                PlaceSearchService.matchesTopic("游泳馆", "某某健身中心", "体育休闲服务;健身中心"));
+        assertEquals(false, PlaceSearchService.matchesTopic("游泳馆", "某某健身中心", "体育休闲服务;健身中心"));
         assertEquals(false, PlaceSearchService.matchesTopic("游泳馆", "万象城", "购物服务;购物中心"));
     }
 
@@ -59,7 +57,8 @@ class PlaceSearchServiceTest {
 
         PlaceSearchService.SearchResult result = service.search("天津市", "有摩天轮，去酒吧\n喝啤酒");
 
-        assertEquals(List.of("摩天轮", "酒吧", "啤酒"),
+        assertEquals(
+                List.of("摩天轮", "酒吧", "啤酒"),
                 result.groups().stream().map(PlaceSearchService.SearchGroup::label).toList());
         assertEquals(false, result.keywords().contains("目标"));
         assertEquals(false, result.keywords().contains("优先"));

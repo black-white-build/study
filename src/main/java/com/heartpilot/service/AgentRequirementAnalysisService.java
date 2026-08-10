@@ -13,7 +13,8 @@ import org.springframework.stereotype.Service;
 /** Converts free-form task context into a small, structured set of searchable intents. */
 @Service
 public class AgentRequirementAnalysisService {
-    private static final String SYSTEM_PROMPT = """
+    private static final String SYSTEM_PROMPT =
+            """
             你是本地生活需求分析器，只负责把用户需求转换成可用于地图和网页检索的结构化意图。
             必须遵守：
             1. 同时分析“计划目标”和“需要逐项回答的问题”；地点只作为范围，预算只作为约束。
@@ -65,16 +66,26 @@ public class AgentRequirementAnalysisService {
                                                     task.getObjective(),
                                                     city,
                                                     budget,
-                                                    revisions.isEmpty() ? "无" : String.join("；", revisions),
+                                                    revisions.isEmpty()
+                                                            ? "无"
+                                                            : String.join("；", revisions),
                                                     String.join(
                                                             "\n",
-                                                            java.util.stream.IntStream.range(0, questions.size())
-                                                                    .mapToObj(index -> (index + 1) + ". " + questions.get(index))
+                                                            java.util.stream.IntStream.range(
+                                                                            0, questions.size())
+                                                                    .mapToObj(
+                                                                            index ->
+                                                                                    (index + 1)
+                                                                                            + ". "
+                                                                                            + questions
+                                                                                                    .get(
+                                                                                                            index))
                                                                     .toList())))
                             .call()
                             .entity(ModelAnalysis.class);
             List<String> keywords = sanitizeModel(result);
-            if (keywords.isEmpty()) return new Analysis(String.join("\n", fallback), fallback, false);
+            if (keywords.isEmpty())
+                return new Analysis(String.join("\n", fallback), fallback, false);
             return new Analysis(String.join("\n", keywords), keywords, true);
         } catch (Exception ignored) {
             return new Analysis(String.join("\n", fallback), fallback, false);
@@ -94,8 +105,7 @@ public class AgentRequirementAnalysisService {
             for (String part : value.split("\\s+")) {
                 String keyword = part.trim();
                 if (keyword.length() < 2 || keyword.length() > 20) continue;
-                if (keyword.matches(".*(?:当前有效参数|初始目标|最高优先级|目标|优先|地点|预算|问题|分析).*"))
-                    continue;
+                if (keyword.matches(".*(?:当前有效参数|初始目标|最高优先级|目标|优先|地点|预算|问题|分析).*")) continue;
                 result.add(keyword);
             }
         }
