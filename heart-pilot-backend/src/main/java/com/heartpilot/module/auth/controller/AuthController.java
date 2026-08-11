@@ -1,7 +1,7 @@
 package com.heartpilot.module.auth.controller;
 
 import com.heartpilot.module.auth.dto.AuthDtos;
-import com.heartpilot.module.auth.service.impl.AuthService;
+import com.heartpilot.module.auth.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;

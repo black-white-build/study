@@ -1,7 +1,7 @@
 package com.heartpilot.module.usage.controller;
 
 import com.heartpilot.module.usage.dto.UsageDtos;
-import com.heartpilot.module.usage.service.impl.UsageCostService;
+import com.heartpilot.module.usage.service.UsageCostService;
 import com.heartpilot.security.CurrentUser;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

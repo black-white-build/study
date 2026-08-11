@@ -2,7 +2,7 @@ package com.heartpilot.module.knowledge.controller;
 
 import com.heartpilot.common.api.PageResponse;
 import com.heartpilot.module.file.dto.ResourceDtos;
-import com.heartpilot.module.knowledge.service.impl.KnowledgeService;
+import com.heartpilot.module.knowledge.service.KnowledgeService;
 import com.heartpilot.security.CurrentUser;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;

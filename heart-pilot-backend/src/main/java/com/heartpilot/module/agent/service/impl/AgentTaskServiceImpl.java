@@ -2,10 +2,8 @@ package com.heartpilot.module.agent.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heartpilot.common.exception.ApiException;
-import com.heartpilot.module.agent.entity.AgentExecutionEvent;
 import com.heartpilot.module.agent.entity.AgentTask;
 import com.heartpilot.module.agent.entity.AgentTaskStep;
-import com.heartpilot.module.agent.entity.ToolCallRecord;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionEventStatus;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionEventType;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionPhase;
@@ -14,6 +12,15 @@ import com.heartpilot.module.agent.entity.enums.AgentTaskStepStatus;
 import com.heartpilot.module.agent.repository.TaskRepository;
 import com.heartpilot.module.agent.repository.TaskStepRepository;
 import com.heartpilot.module.agent.repository.ToolCallRepository;
+import com.heartpilot.module.agent.service.AgentExecutionTraceService;
+import com.heartpilot.module.agent.service.AgentFinalReportService;
+import com.heartpilot.module.agent.service.AgentJourneyResearchService;
+import com.heartpilot.module.agent.service.AgentRequirementAnalysisService;
+import com.heartpilot.module.agent.service.AgentTaskInputService;
+import com.heartpilot.module.agent.service.AgentTaskPdfService;
+import com.heartpilot.module.agent.service.AgentTaskService;
+import com.heartpilot.module.agent.service.AgentTaskStepService;
+import com.heartpilot.module.agent.service.DistributedTaskLockService;
 import com.heartpilot.module.file.entity.GeneratedFile;
 import com.heartpilot.module.file.repository.GeneratedFileRepository;
 import com.heartpilot.module.file.service.StorageService;
@@ -44,7 +51,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Service
-public class AgentTaskService {
+public class AgentTaskServiceImpl implements AgentTaskService {
     private static final List<String> FLOW =
             List.of(
                     "正在分析用户需求",
@@ -74,7 +81,7 @@ public class AgentTaskService {
     private final AgentExecutionTraceService executionTrace;
     private final Map<Long, Future<?>> activeFutures = new ConcurrentHashMap<>();
 
-    public AgentTaskService(
+    public AgentTaskServiceImpl(
             TaskRepository tasks,
             TaskStepRepository steps,
             ToolCallRepository calls,
@@ -114,11 +121,13 @@ public class AgentTaskService {
     }
 
     @EventListener(ApplicationReadyEvent.class)
+    @Override
     public void recoverInterruptedTasks() {
         recoverStaleTasks(Instant.now().minusSeconds(90));
     }
 
     @Scheduled(fixedDelayString = "${app.agent.recovery-scan-millis:30000}")
+    @Override
     public void recoverAndRetryTasks() {
         recoverStaleTasks(Instant.now().minusSeconds(90));
         for (AgentTask task :
@@ -152,14 +161,17 @@ public class AgentTaskService {
         }
     }
 
+    @Override
     public Page<AgentTask> list(Long userId, Pageable pageable) {
         return tasks.findByUserId(userId, pageable);
     }
 
+    @Override
     public List<String> cityOptions(String province) {
         return taskInput.cityOptions(province);
     }
 
+    @Override
     public TaskDetail get(Long id, Long userId) {
         AgentTask task = owned(id, userId);
         GeneratedFile pdfFile =
@@ -174,6 +186,7 @@ public class AgentTaskService {
                 pdfFile);
     }
 
+    @Override
     public AgentTask create(
             Long userId,
             String title,
@@ -240,6 +253,7 @@ public class AgentTaskService {
         return task;
     }
 
+    @Override
     public SseEmitter run(Long id, Long userId) {
         AgentTask task = owned(id, userId);
         if (!Set.of(AgentTaskStatus.WAITING, AgentTaskStatus.FAILED).contains(task.getStatus())) {
@@ -359,6 +373,7 @@ public class AgentTaskService {
         }
     }
 
+    @Override
     public SseEmitter confirm(
             Long id,
             Long userId,
@@ -565,16 +580,19 @@ public class AgentTaskService {
         }
     }
 
+    @Override
     public GeneratedFile generatePdf(Long id, Long userId) {
         AgentTask task = owned(id, userId);
         return pdfService.generate(task);
     }
 
+    @Override
     public GeneratedFile getPdf(Long id, Long userId) {
         owned(id, userId);
         return pdfService.get(userId, id);
     }
 
+    @Override
     public AgentTask cancel(Long id, Long userId) {
         AgentTask task = owned(id, userId);
         if (task.getStatus().isTerminal()) return task;
@@ -585,6 +603,7 @@ public class AgentTaskService {
     }
 
     @Transactional
+    @Override
     public void delete(Long id, Long userId) {
         AgentTask task = owned(id, userId);
         if (task.getStatus() == AgentTaskStatus.RUNNING)
@@ -704,11 +723,4 @@ public class AgentTaskService {
         } catch (IOException ignored) {
         }
     }
-
-    public record TaskDetail(
-            AgentTask task,
-            List<AgentTaskStep> steps,
-            List<ToolCallRecord> toolCalls,
-            List<AgentExecutionEvent> executionEvents,
-            GeneratedFile pdfFile) {}
 }

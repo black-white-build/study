@@ -4,6 +4,7 @@ import cn.hutool.http.HttpUtil;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.heartpilot.module.agent.service.AmbienceImageService;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,16 +14,17 @@ import org.springframework.stereotype.Service;
 
 /** Retrieves mood images without sending the user's original plan or location to Pexels. */
 @Service
-public class AmbienceImageService {
+public class AmbienceImageServiceImpl implements AmbienceImageService {
     private static final String API_URL = "https://api.pexels.com/v1/search";
     private static final String LICENSE_URL = "https://www.pexels.com/license/";
 
     private final String apiKey;
 
-    public AmbienceImageService(@Value("${PEXELS_API_KEY:}") String apiKey) {
+    public AmbienceImageServiceImpl(@Value("${PEXELS_API_KEY:}") String apiKey) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
     }
 
+    @Override
     public SearchResult search(String objective, int limit) {
         String query = safeAtmosphereQuery(objective);
         if (apiKey.isBlank()) {
@@ -99,33 +101,4 @@ public class AmbienceImageService {
         for (String value : values) if (text.contains(value)) return true;
         return false;
     }
-
-    public record SearchResult(
-            String provider,
-            String query,
-            List<AmbienceImage> images,
-            String sourceStatus,
-            String notice,
-            Instant searchedAt) {
-        public SearchResult {
-            images = images == null ? List.of() : images;
-        }
-    }
-
-    public record AmbienceImage(
-            long id,
-            String imageUrl,
-            String thumbnailUrl,
-            String pageUrl,
-            String photographer,
-            String photographerUrl,
-            String alt,
-            String averageColor,
-            int width,
-            int height,
-            String licenseName,
-            String licenseUrl,
-            boolean attributionRequired,
-            String usageNotice,
-            Instant licenseCheckedAt) {}
 }

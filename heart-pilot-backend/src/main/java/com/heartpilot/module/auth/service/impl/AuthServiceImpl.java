@@ -2,6 +2,7 @@ package com.heartpilot.module.auth.service.impl;
 
 import com.heartpilot.common.exception.ApiException;
 import com.heartpilot.module.auth.dto.AuthDtos;
+import com.heartpilot.module.auth.service.AuthService;
 import com.heartpilot.module.user.dto.UserDtos;
 import com.heartpilot.module.user.entity.AppUser;
 import com.heartpilot.module.user.repository.AppUserRepository;
@@ -12,18 +13,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class AuthService {
+public class AuthServiceImpl implements AuthService {
     private final AppUserRepository users;
     private final PasswordEncoder encoder;
     private final JwtService jwt;
 
-    public AuthService(AppUserRepository users, PasswordEncoder encoder, JwtService jwt) {
+    public AuthServiceImpl(AppUserRepository users, PasswordEncoder encoder, JwtService jwt) {
         this.users = users;
         this.encoder = encoder;
         this.jwt = jwt;
     }
 
     @Transactional
+    @Override
     public AuthDtos.SessionResponse register(String username, String password, String nickname) {
         String normalized = username.trim().toLowerCase();
         if (users.existsByUsernameIgnoreCase(normalized)) {
@@ -36,6 +38,7 @@ public class AuthService {
         return session(users.save(user));
     }
 
+    @Override
     public AuthDtos.SessionResponse login(String username, String password) {
         AppUser user =
                 users.findByUsernameIgnoreCase(username.trim())

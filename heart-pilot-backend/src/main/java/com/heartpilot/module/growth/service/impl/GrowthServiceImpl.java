@@ -13,6 +13,7 @@ import com.heartpilot.module.growth.entity.RelationshipEvent;
 import com.heartpilot.module.growth.repository.CheckinRepository;
 import com.heartpilot.module.growth.repository.EventRepository;
 import com.heartpilot.module.growth.repository.PlanRepository;
+import com.heartpilot.module.growth.service.GrowthService;
 import com.heartpilot.module.report.entity.EmotionReport;
 import com.heartpilot.module.report.repository.ReportRepository;
 import com.heartpilot.module.user.entity.AppUser;
@@ -28,7 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class GrowthService {
+public class GrowthServiceImpl implements GrowthService {
     private static final List<String> DAILY_QUESTIONS =
             List.of(
                     "今天哪一个瞬间让你感到被理解？",
@@ -68,7 +69,7 @@ public class GrowthService {
     private final Map<Long, Integer> topicRefreshCounts =
             new java.util.concurrent.ConcurrentHashMap<>();
 
-    public GrowthService(
+    public GrowthServiceImpl(
             EventRepository events,
             PlanRepository plans,
             CheckinRepository checkins,
@@ -91,14 +92,17 @@ public class GrowthService {
         this.users = users;
     }
 
+    @Override
     public List<RelationshipEvent> events(Long userId) {
         return events.findByUserIdOrderByHappenedAtDesc(userId);
     }
 
+    @Override
     public Page<RelationshipEvent> events(Long userId, Pageable pageable) {
         return events.findByUserId(userId, pageable);
     }
 
+    @Override
     public RelationshipEvent addEvent(
             Long userId, String title, String description, String emotion, Instant happenedAt) {
         RelationshipEvent event = new RelationshipEvent();
@@ -110,6 +114,7 @@ public class GrowthService {
         return events.save(event);
     }
 
+    @Override
     public RelationshipEvent pulse(
             Long userId, int closeness, int stress, String emotion, String answer) {
         if (closeness < 1 || closeness > 5 || stress < 1 || stress > 5) {
@@ -132,6 +137,7 @@ public class GrowthService {
         return addEvent(userId, "每日关系脉搏", description, value(emotion, "平静"), Instant.now());
     }
 
+    @Override
     public List<PlanView> plans(Long userId) {
         return plans.findByUserIdOrderByCreatedAtDesc(userId).stream()
                 .map(
@@ -143,6 +149,7 @@ public class GrowthService {
                 .toList();
     }
 
+    @Override
     public ActionPlan createPlan(
             Long userId, String title, String goal, LocalDate start, List<String> actions) {
         RelationshipProfile profile = profiles.findByUserId(userId).orElse(null);
@@ -166,6 +173,7 @@ public class GrowthService {
         return plans.save(plan);
     }
 
+    @Override
     public ActionPlan createFromReport(Long userId, Long reportId) {
         EmotionReport report =
                 reports.findByIdAndUserId(reportId, userId)
@@ -180,6 +188,7 @@ public class GrowthService {
     }
 
     @Transactional
+    @Override
     public ActionCheckin checkin(
             Long userId,
             Long planId,
@@ -201,6 +210,7 @@ public class GrowthService {
         return checkins.save(checkin);
     }
 
+    @Override
     public Dashboard dashboard(Long userId) {
         RelationshipProfile profile = profiles.findByUserId(userId).orElse(null);
         List<PlanView> allPlans = plans(userId);
@@ -232,6 +242,7 @@ public class GrowthService {
                 profile, focus, topic.question(), topic, eventCount, completed, latestReview);
     }
 
+    @Override
     public EmotionReport weeklyReview(Long userId) {
         RelationshipProfile profile = profiles.findByUserId(userId).orElse(null);
         Instant since = Instant.now().minus(7, ChronoUnit.DAYS);
@@ -327,6 +338,7 @@ public class GrowthService {
         return DAILY_QUESTIONS.get(offset);
     }
 
+    @Override
     public DailyTopic refreshDailyTopic(Long userId) {
         RelationshipProfile profile = profiles.findByUserId(userId).orElse(null);
         String emotion = users.findById(userId).map(AppUser::getEmotionStatus).orElse("未设置");
@@ -482,22 +494,4 @@ public class GrowthService {
     private String shorten(String text, int length) {
         return text == null ? "" : text.substring(0, Math.min(length, text.length()));
     }
-
-    public record PlanView(ActionPlan plan, List<ActionCheckin> checkins) {}
-
-    public record DailyTopic(
-            String question,
-            String context,
-            List<WebSearchTool.WebResult> sources,
-            Instant updatedAt,
-            boolean live) {}
-
-    public record Dashboard(
-            RelationshipProfile profile,
-            String focus,
-            String dailyQuestion,
-            DailyTopic dailyTopic,
-            long weeklyEvents,
-            long weeklyCompleted,
-            EmotionReport latestWeeklyReview) {}
 }

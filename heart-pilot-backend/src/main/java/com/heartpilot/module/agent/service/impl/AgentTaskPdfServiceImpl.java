@@ -2,6 +2,7 @@ package com.heartpilot.module.agent.service.impl;
 
 import com.heartpilot.common.exception.ApiException;
 import com.heartpilot.module.agent.entity.AgentTask;
+import com.heartpilot.module.agent.service.AgentTaskPdfService;
 import com.heartpilot.module.file.entity.GeneratedFile;
 import com.heartpilot.module.file.repository.GeneratedFileRepository;
 import com.heartpilot.module.file.service.StorageService;
@@ -16,15 +17,16 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 @Service
-public class AgentTaskPdfService {
+public class AgentTaskPdfServiceImpl implements AgentTaskPdfService {
     private final GeneratedFileRepository files;
     private final StorageService storage;
 
-    public AgentTaskPdfService(GeneratedFileRepository files, StorageService storage) {
+    public AgentTaskPdfServiceImpl(GeneratedFileRepository files, StorageService storage) {
         this.files = files;
         this.storage = storage;
     }
 
+    @Override
     public GeneratedFile generate(AgentTask task) {
         if (task.getFinalResult() == null || task.getFinalResult().isBlank()) {
             throw ApiException.badRequest("最终方案尚未生成");
@@ -34,12 +36,14 @@ public class AgentTaskPdfService {
                 .orElseGet(() -> create(task));
     }
 
+    @Override
     public GeneratedFile get(Long userId, Long taskId) {
         return files.findFirstByUserIdAndBusinessTypeAndBusinessIdOrderByCreatedAtDesc(
                         userId, "AGENT_TASK", taskId)
                 .orElseThrow(() -> ApiException.badRequest("请先生成 PDF 文件"));
     }
 
+    @Override
     public void invalidate(AgentTask task) {
         for (GeneratedFile file :
                 files.findByUserIdAndBusinessTypeAndBusinessId(

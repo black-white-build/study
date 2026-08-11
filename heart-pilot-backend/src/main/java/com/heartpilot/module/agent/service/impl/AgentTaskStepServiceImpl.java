@@ -6,6 +6,7 @@ import com.heartpilot.module.agent.entity.enums.AgentTaskStatus;
 import com.heartpilot.module.agent.entity.enums.AgentTaskStepStatus;
 import com.heartpilot.module.agent.repository.TaskRepository;
 import com.heartpilot.module.agent.repository.TaskStepRepository;
+import com.heartpilot.module.agent.service.AgentTaskStepService;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.concurrent.CancellationException;
@@ -14,24 +15,26 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /** Applies task-step transitions and keeps task heartbeats in sync with SSE progress events. */
 @Service
-public class AgentTaskStepService {
+public class AgentTaskStepServiceImpl implements AgentTaskStepService {
     private final TaskRepository tasks;
     private final TaskStepRepository steps;
     private final AgentTaskStateMachine stateMachine;
 
-    public AgentTaskStepService(
+    public AgentTaskStepServiceImpl(
             TaskRepository tasks, TaskStepRepository steps, AgentTaskStateMachine stateMachine) {
         this.tasks = tasks;
         this.steps = steps;
         this.stateMachine = stateMachine;
     }
 
+    @Override
     public void complete(AgentTask task, int number, String detail, SseEmitter emitter) {
         assertNotCancelled(task.getId());
         start(task, number, "正在执行…", emitter);
         finish(task, number, detail, emitter);
     }
 
+    @Override
     public void start(AgentTask task, int number, String detail, SseEmitter emitter) {
         assertNotCancelled(task.getId());
         AgentTaskStep step = steps.findByTaskIdAndStepNo(task.getId(), number).orElseThrow();
@@ -49,6 +52,7 @@ public class AgentTaskStepService {
         event(emitter, step);
     }
 
+    @Override
     public void finish(AgentTask task, int number, String detail, SseEmitter emitter) {
         AgentTaskStep step = steps.findByTaskIdAndStepNo(task.getId(), number).orElseThrow();
         step.setStatus(AgentTaskStepStatus.COMPLETED);
@@ -60,6 +64,7 @@ public class AgentTaskStepService {
         event(emitter, step);
     }
 
+    @Override
     public void reset(Long taskId) {
         for (AgentTaskStep step : steps.findByTaskIdOrderByStepNoAsc(taskId)) {
             step.setStatus(AgentTaskStepStatus.PENDING);

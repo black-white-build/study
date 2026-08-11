@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heartpilot.common.exception.ApiException;
 import com.heartpilot.module.agent.entity.AgentTask;
+import com.heartpilot.module.agent.service.AgentTaskInputService;
 import com.heartpilot.module.user.entity.RelationshipProfile;
 import com.heartpilot.module.user.repository.ProfileRepository;
 import java.math.BigDecimal;
@@ -18,7 +19,7 @@ import org.springframework.stereotype.Service;
 
 /** Normalizes task input and composes the user-facing plan preview. */
 @Service
-public class AgentTaskInputService {
+public class AgentTaskInputServiceImpl implements AgentTaskInputService {
     private static final List<String> KNOWN_CITIES =
             List.of(
                     "北京", "上海", "天津", "重庆", "广州", "深圳", "南宁", "柳州", "桂林", "成都", "杭州", "南京", "武汉",
@@ -66,7 +67,7 @@ public class AgentTaskInputService {
                     "香港特别行政区",
                     "澳门特别行政区");
 
-    public AgentTaskInputService(
+    public AgentTaskInputServiceImpl(
             ProfileRepository profiles,
             ObjectMapper json,
             @Value("${AMAP_MAPS_API_KEY:}") String amapKey) {
@@ -75,6 +76,7 @@ public class AgentTaskInputService {
         this.amapKey = amapKey;
     }
 
+    @Override
     public String buildPreview(
             AgentTask task,
             String city,
@@ -114,6 +116,7 @@ public class AgentTaskInputService {
                         shorten(places, 5_000));
     }
 
+    @Override
     public String combinedRequirements(AgentTask task, Map<String, Object> parameters) {
         List<String> parts = new ArrayList<>();
         String city = resolveCity(parameters, task.getObjective());
@@ -137,10 +140,12 @@ public class AgentTaskInputService {
     }
 
     /** External place searches use only the user's explicit question list. */
+    @Override
     public String searchRequirements(Map<String, Object> parameters) {
         return String.join("\n", asStringList(parameters.get("questions")));
     }
 
+    @Override
     public List<String> cityOptions(String province) {
         String normalized = province == null ? "" : province.trim();
         if (!PROVINCES.contains(normalized)) throw ApiException.badRequest("请选择有效的省级行政区");
@@ -175,6 +180,7 @@ public class AgentTaskInputService {
         }
     }
 
+    @Override
     public List<String> asStringList(Object raw) {
         if (raw == null) return new ArrayList<>();
         List<?> values = raw instanceof List<?> list ? list : List.of(raw);
@@ -188,6 +194,7 @@ public class AgentTaskInputService {
         return result;
     }
 
+    @Override
     public List<String> mergeQuestions(List<String> existing, List<String> incoming) {
         List<String> merged = new ArrayList<>(existing);
         if (incoming != null) {
@@ -199,6 +206,7 @@ public class AgentTaskInputService {
         return merged;
     }
 
+    @Override
     public List<String> extractQuestions(String note) {
         if (note == null || note.isBlank()) return List.of();
         List<String> extracted = new ArrayList<>();
@@ -216,6 +224,7 @@ public class AgentTaskInputService {
         return extracted;
     }
 
+    @Override
     public String searchCategories(String searchResult) {
         if (searchResult == null || searchResult.isBlank()) return "按问题动态提取";
         for (String line : searchResult.split("\\R")) {
@@ -224,6 +233,7 @@ public class AgentTaskInputService {
         return "按问题动态提取";
     }
 
+    @Override
     public String parameterText(Object value, String fallback) {
         if (value == null) return fallback;
         String text = String.valueOf(value).trim();
@@ -235,10 +245,12 @@ public class AgentTaskInputService {
         }
     }
 
+    @Override
     public String budgetLabel(String budget) {
         return "未限定".equals(budget) || budget.isBlank() ? "未限定" : budget + " 元";
     }
 
+    @Override
     public void normalizeStoredBudget(Map<String, Object> parameters) {
         Object raw = parameters.get("budget");
         if (raw == null || String.valueOf(raw).isBlank()) {
@@ -254,10 +266,12 @@ public class AgentTaskInputService {
         }
     }
 
+    @Override
     public BigDecimal normalizeBudget(BigDecimal budget) {
         return new BigDecimal(budget.stripTrailingZeros().toPlainString());
     }
 
+    @Override
     public Map<String, Object> readParameters(AgentTask task) {
         try {
             return new LinkedHashMap<>(
@@ -267,6 +281,7 @@ public class AgentTaskInputService {
         }
     }
 
+    @Override
     public String writeParameters(Map<String, Object> parameters) {
         try {
             return json.writeValueAsString(parameters);
@@ -275,6 +290,7 @@ public class AgentTaskInputService {
         }
     }
 
+    @Override
     public String resolveCity(Map<String, Object> parameters, String text) {
         String searchRegion = String.valueOf(parameters.getOrDefault("searchRegion", "")).trim();
         if (!searchRegion.isBlank() && !"null".equalsIgnoreCase(searchRegion)) return searchRegion;
@@ -283,6 +299,7 @@ public class AgentTaskInputService {
         return findKnownCity(text);
     }
 
+    @Override
     public String validateAndResolveRegion(Map<String, Object> parameters) {
         String province = String.valueOf(parameters.getOrDefault("province", "")).trim();
         String city = String.valueOf(parameters.getOrDefault("city", "")).trim();
@@ -295,11 +312,13 @@ public class AgentTaskInputService {
         return province.equals(city) ? city : province + city;
     }
 
+    @Override
     public String findKnownCity(String text) {
         if (text == null) return "";
         return KNOWN_CITIES.stream().filter(text::contains).findFirst().orElse("");
     }
 
+    @Override
     public String normalizeIdempotencyKey(String key) {
         if (key == null || key.isBlank()) return null;
         String normalized = key.trim();

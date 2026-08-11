@@ -3,7 +3,7 @@ package com.heartpilot.module.growth.controller;
 import com.heartpilot.common.api.PageResponse;
 import com.heartpilot.module.file.dto.ResourceDtos;
 import com.heartpilot.module.growth.dto.GrowthDtos;
-import com.heartpilot.module.growth.service.impl.GrowthService;
+import com.heartpilot.module.growth.service.GrowthService;
 import com.heartpilot.security.CurrentUser;
 import jakarta.validation.Valid;
 import java.util.List;

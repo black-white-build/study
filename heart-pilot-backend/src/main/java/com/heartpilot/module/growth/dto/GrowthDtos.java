@@ -5,7 +5,7 @@ import com.heartpilot.module.file.dto.ResourceDtos;
 import com.heartpilot.module.growth.entity.ActionCheckin;
 import com.heartpilot.module.growth.entity.ActionPlan;
 import com.heartpilot.module.growth.entity.RelationshipEvent;
-import com.heartpilot.module.growth.service.impl.GrowthService;
+import com.heartpilot.module.growth.service.GrowthService;
 import com.heartpilot.module.user.dto.UserDtos;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;

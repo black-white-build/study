@@ -1,5 +1,6 @@
 package com.heartpilot.module.agent.service.impl;
 
+import com.heartpilot.module.agent.service.DistributedTaskLockService;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Set;
@@ -12,7 +13,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 @Service
-public class DistributedTaskLockService {
+public class DistributedTaskLockServiceImpl implements DistributedTaskLockService {
     private static final DefaultRedisScript<Long> RELEASE_SCRIPT =
             new DefaultRedisScript<>(
                     "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
@@ -26,43 +27,46 @@ public class DistributedTaskLockService {
     private final boolean redisEnabled;
     private final Set<String> localLocks = ConcurrentHashMap.newKeySet();
 
-    public DistributedTaskLockService(
+    public DistributedTaskLockServiceImpl(
             ObjectProvider<StringRedisTemplate> redis,
             @Value("${app.rate-limit.redis-enabled:false}") boolean redisEnabled) {
         this.redis = redis.getIfAvailable();
         this.redisEnabled = redisEnabled;
     }
 
+    @Override
     public LockHandle tryAcquire(Long taskId, Duration lease) {
         String key = "heart-pilot:task-lock:" + taskId;
         String token = UUID.randomUUID().toString();
         if (redisEnabled && redis != null) {
             try {
                 Boolean acquired = redis.opsForValue().setIfAbsent(key, token, lease);
-                if (Boolean.TRUE.equals(acquired)) return new LockHandle(key, token, lease, true);
+                if (Boolean.TRUE.equals(acquired))
+                    return new LockHandleImpl(key, token, lease, true);
                 return null;
             } catch (RuntimeException ignored) {
                 // Redis unavailable: local locking keeps a single instance safe and availability
                 // intact.
             }
         }
-        return localLocks.add(key) ? new LockHandle(key, token, lease, false) : null;
+        return localLocks.add(key) ? new LockHandleImpl(key, token, lease, false) : null;
     }
 
-    public final class LockHandle implements AutoCloseable {
+    private final class LockHandleImpl implements LockHandle {
         private final String key;
         private final String token;
         private final Duration lease;
         private final boolean distributed;
         private volatile boolean closed;
 
-        private LockHandle(String key, String token, Duration lease, boolean distributed) {
+        private LockHandleImpl(String key, String token, Duration lease, boolean distributed) {
             this.key = key;
             this.token = token;
             this.lease = lease;
             this.distributed = distributed;
         }
 
+        @Override
         public boolean renew() {
             if (closed) return false;
             if (!distributed) return localLocks.contains(key);

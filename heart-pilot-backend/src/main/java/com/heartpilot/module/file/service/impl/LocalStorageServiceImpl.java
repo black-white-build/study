@@ -11,10 +11,10 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @ConditionalOnProperty(name = "app.storage.provider", havingValue = "local", matchIfMissing = true)
-public class LocalStorageService implements StorageService {
+public class LocalStorageServiceImpl implements StorageService {
     private final Path root;
 
-    public LocalStorageService(@Value("${app.storage.local-directory}") String dir)
+    public LocalStorageServiceImpl(@Value("${app.storage.local-directory}") String dir)
             throws IOException {
         root = Path.of(dir).toAbsolutePath().normalize();
         Files.createDirectories(root);

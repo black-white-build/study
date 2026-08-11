@@ -5,6 +5,10 @@ import com.heartpilot.module.agent.entity.AgentTask;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionEventStatus;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionEventType;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionPhase;
+import com.heartpilot.module.agent.service.AgentExecutionTraceService;
+import com.heartpilot.module.agent.service.AgentFinalReportService;
+import com.heartpilot.module.agent.service.AgentJourneyResearchService;
+import com.heartpilot.module.agent.service.AgentTaskInputService;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -13,12 +17,12 @@ import org.springframework.stereotype.Service;
 
 /** Generates the final user-facing report from persisted, verifiable journey evidence. */
 @Service
-public class AgentFinalReportService {
+public class AgentFinalReportServiceImpl implements AgentFinalReportService {
     private final RelationshipAiClient ai;
     private final AgentTaskInputService taskInput;
     private final AgentExecutionTraceService executionTrace;
 
-    public AgentFinalReportService(
+    public AgentFinalReportServiceImpl(
             RelationshipAiClient ai,
             AgentTaskInputService taskInput,
             AgentExecutionTraceService executionTrace) {
@@ -27,6 +31,7 @@ public class AgentFinalReportService {
         this.executionTrace = executionTrace;
     }
 
+    @Override
     public String generate(
             AgentTask task,
             String allRequirements,

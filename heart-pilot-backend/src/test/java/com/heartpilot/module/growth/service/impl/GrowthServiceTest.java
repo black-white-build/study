@@ -15,6 +15,7 @@ import com.heartpilot.module.conversation.repository.MessageRepository;
 import com.heartpilot.module.growth.repository.CheckinRepository;
 import com.heartpilot.module.growth.repository.EventRepository;
 import com.heartpilot.module.growth.repository.PlanRepository;
+import com.heartpilot.module.growth.service.GrowthService;
 import com.heartpilot.module.report.repository.ReportRepository;
 import com.heartpilot.module.user.entity.AppUser;
 import com.heartpilot.module.user.entity.RelationshipProfile;
@@ -53,7 +54,7 @@ class GrowthServiceTest {
                                         "https://example.com/topic-2")));
 
         GrowthService service =
-                new GrowthService(
+                new GrowthServiceImpl(
                         mock(EventRepository.class),
                         mock(PlanRepository.class),
                         mock(CheckinRepository.class),

@@ -8,7 +8,8 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
 class RouteMapServiceTest {
-    private final RouteMapService service = new RouteMapService("test-key", new ObjectMapper());
+    private final RouteMapServiceImpl service =
+            new RouteMapServiceImpl("test-key", new ObjectMapper());
 
     @Test
     void keepsEndpointsWhileReducingLongWalkingPolyline() {

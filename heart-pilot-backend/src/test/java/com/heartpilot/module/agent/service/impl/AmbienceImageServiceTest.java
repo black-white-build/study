@@ -3,10 +3,11 @@ package com.heartpilot.module.agent.service.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.heartpilot.module.agent.service.AmbienceImageService;
 import org.junit.jupiter.api.Test;
 
 class AmbienceImageServiceTest {
-    private final AmbienceImageService service = new AmbienceImageService("");
+    private final AmbienceImageServiceImpl service = new AmbienceImageServiceImpl("");
 
     @Test
     void sendsOnlyGenericAtmosphereCategoriesToPexels() {

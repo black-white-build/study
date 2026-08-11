@@ -5,6 +5,8 @@ import cn.hutool.http.HttpResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heartpilot.common.exception.ApiException;
 import com.heartpilot.module.agent.entity.AgentTask;
+import com.heartpilot.module.agent.service.PlaceSearchService;
+import com.heartpilot.module.agent.service.RouteMapService;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -16,7 +18,7 @@ import org.springframework.stereotype.Service;
 
 /** Builds an authenticated AMap static image from persisted POIs and route polylines. */
 @Service
-public class RouteMapService {
+public class RouteMapServiceImpl implements RouteMapService {
     private static final String STATIC_MAP_URL = "https://restapi.amap.com/v3/staticmap";
     private static final List<String> PATH_COLORS =
             List.of("0xD66755", "0x43835C", "0x4678A8", "0xA06B3B");
@@ -24,11 +26,12 @@ public class RouteMapService {
     private final String amapKey;
     private final ObjectMapper json;
 
-    public RouteMapService(@Value("${AMAP_MAPS_API_KEY:}") String amapKey, ObjectMapper json) {
+    public RouteMapServiceImpl(@Value("${AMAP_MAPS_API_KEY:}") String amapKey, ObjectMapper json) {
         this.amapKey = amapKey == null ? "" : amapKey.trim();
         this.json = json;
     }
 
+    @Override
     public RouteMapImage render(AgentTask task) {
         if (amapKey.isBlank()) {
             throw new ApiException(
@@ -142,6 +145,4 @@ public class RouteMapService {
     private String value(String value) {
         return value == null ? "" : value.trim();
     }
-
-    public record RouteMapImage(byte[] bytes, String contentType) {}
 }

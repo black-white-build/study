@@ -1,6 +1,7 @@
 package com.heartpilot.module.agent.service.impl;
 
 import com.heartpilot.module.agent.entity.AgentTask;
+import com.heartpilot.module.agent.service.AgentRequirementAnalysisService;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -12,7 +13,7 @@ import org.springframework.stereotype.Service;
 
 /** Converts free-form task context into a small, structured set of searchable intents. */
 @Service
-public class AgentRequirementAnalysisService {
+public class AgentRequirementAnalysisServiceImpl implements AgentRequirementAnalysisService {
     private static final String SYSTEM_PROMPT =
             """
             你是本地生活需求分析器，只负责把用户需求转换成可用于地图和网页检索的结构化意图。
@@ -30,13 +31,14 @@ public class AgentRequirementAnalysisService {
     private final ChatClient client;
     private final boolean enabled;
 
-    public AgentRequirementAnalysisService(
+    public AgentRequirementAnalysisServiceImpl(
             @Qualifier("dashscopeChatModel") ChatModel model,
             @Value("${spring.ai.dashscope.api-key:}") String apiKey) {
         this.client = ChatClient.builder(model).defaultSystem(SYSTEM_PROMPT).build();
         this.enabled = apiKey != null && !apiKey.isBlank() && !"not-configured".equals(apiKey);
     }
 
+    @Override
     public Analysis analyze(
             AgentTask task,
             String city,
@@ -111,8 +113,4 @@ public class AgentRequirementAnalysisService {
         }
         return new ArrayList<>(result);
     }
-
-    public record Analysis(String searchText, List<String> keywords, boolean aiGenerated) {}
-
-    public record ModelAnalysis(List<String> keywords) {}
 }

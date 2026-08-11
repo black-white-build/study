@@ -1,13 +1,14 @@
 package com.heartpilot.module.knowledge.service.impl;
 
 import com.heartpilot.common.exception.ApiException;
-import com.heartpilot.module.agent.service.impl.RedisResultCacheService;
+import com.heartpilot.module.agent.service.RedisResultCacheService;
 import com.heartpilot.module.file.service.StorageService;
 import com.heartpilot.module.knowledge.entity.KnowledgeChunk;
 import com.heartpilot.module.knowledge.entity.KnowledgeDocument;
 import com.heartpilot.module.knowledge.entity.enums.KnowledgeDocumentStatus;
 import com.heartpilot.module.knowledge.repository.KnowledgeChunkRepository;
 import com.heartpilot.module.knowledge.repository.KnowledgeDocumentRepository;
+import com.heartpilot.module.knowledge.service.KnowledgeService;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.io.InputStream;
@@ -33,7 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
-public class KnowledgeService {
+public class KnowledgeServiceImpl implements KnowledgeService {
     private static final Set<String> SUPPORTED_TYPES =
             Set.of(
                     "text/plain",
@@ -52,7 +53,7 @@ public class KnowledgeService {
     private final boolean aiEnabled;
     private final Tika tika = new Tika();
 
-    public KnowledgeService(
+    public KnowledgeServiceImpl(
             KnowledgeDocumentRepository documents,
             KnowledgeChunkRepository chunks,
             StorageService storage,
@@ -69,6 +70,7 @@ public class KnowledgeService {
         this.aiEnabled = !key.isBlank() && !"not-configured".equals(key);
     }
 
+    @Override
     public KnowledgeDocument upload(MultipartFile file, String category, Long userId) {
         validate(file);
         KnowledgeDocument document = new KnowledgeDocument();
@@ -145,6 +147,7 @@ public class KnowledgeService {
         documents.save(document);
     }
 
+    @Override
     public List<Source> retrieve(String query, int limit) {
         String cacheKey = query.strip() + "|" + limit;
         Optional<Source[]> cached = cache.getKnowledge(cacheKey, Source[].class);
@@ -223,11 +226,13 @@ public class KnowledgeService {
         return result;
     }
 
+    @Override
     public Page<KnowledgeDocument> list(Pageable pageable) {
         return documents.findAll(pageable);
     }
 
     @Transactional
+    @Override
     public void delete(Long id) {
         KnowledgeDocument document =
                 documents.findById(id).orElseThrow(() -> ApiException.notFound("文档不存在"));
@@ -300,6 +305,4 @@ public class KnowledgeService {
         if (value == null) return null;
         return value.substring(0, Math.min(value.length(), length));
     }
-
-    public record Source(String documentName, String section, String content, int chunkIndex) {}
 }

@@ -2,7 +2,7 @@ package com.heartpilot.module.conversation.controller;
 
 import com.heartpilot.common.api.PageResponse;
 import com.heartpilot.module.conversation.dto.ConversationDtos;
-import com.heartpilot.module.conversation.service.impl.ConversationService;
+import com.heartpilot.module.conversation.service.ConversationService;
 import com.heartpilot.security.CurrentUser;
 import jakarta.validation.Valid;
 import java.util.Map;

@@ -6,6 +6,7 @@ import com.heartpilot.module.agent.entity.enums.AgentExecutionEventStatus;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionEventType;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionPhase;
 import com.heartpilot.module.agent.repository.AgentExecutionEventRepository;
+import com.heartpilot.module.agent.service.AgentExecutionTraceService;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
@@ -13,20 +14,22 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class AgentExecutionTraceService {
+public class AgentExecutionTraceServiceImpl implements AgentExecutionTraceService {
     private final AgentExecutionEventRepository events;
     private final ObjectMapper json;
 
-    public AgentExecutionTraceService(AgentExecutionEventRepository events, ObjectMapper json) {
+    public AgentExecutionTraceServiceImpl(AgentExecutionEventRepository events, ObjectMapper json) {
         this.events = events;
         this.json = json;
     }
 
+    @Override
     public List<AgentExecutionEvent> list(Long taskId) {
         return events.findByTaskIdOrderByCreatedAtAsc(taskId);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Override
     public AgentExecutionEvent record(
             Long taskId,
             int taskVersion,
@@ -61,6 +64,7 @@ public class AgentExecutionTraceService {
     }
 
     @Transactional
+    @Override
     public void deleteByTaskId(Long taskId) {
         events.deleteByTaskId(taskId);
     }

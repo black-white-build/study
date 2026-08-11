@@ -12,11 +12,11 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @ConditionalOnProperty(name = "app.storage.provider", havingValue = "minio")
-public class MinioStorageService implements StorageService {
+public class MinioStorageServiceImpl implements StorageService {
     private final MinioClient client;
     private final String bucket;
 
-    public MinioStorageService(
+    public MinioStorageServiceImpl(
             @Value("${app.storage.minio.endpoint}") String endpoint,
             @Value("${app.storage.minio.access-key}") String access,
             @Value("${app.storage.minio.secret-key}") String secret,

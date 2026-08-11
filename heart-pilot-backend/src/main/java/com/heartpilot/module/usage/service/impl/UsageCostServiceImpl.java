@@ -3,6 +3,7 @@ package com.heartpilot.module.usage.service.impl;
 import com.heartpilot.module.conversation.entity.AiMessage;
 import com.heartpilot.module.conversation.repository.MessageRepository;
 import com.heartpilot.module.usage.dto.UsageDtos;
+import com.heartpilot.module.usage.service.UsageCostService;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -13,14 +14,15 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 @Service
-public class UsageCostService {
+public class UsageCostServiceImpl implements UsageCostService {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private final MessageRepository messages;
 
-    public UsageCostService(MessageRepository messages) {
+    public UsageCostServiceImpl(MessageRepository messages) {
         this.messages = messages;
     }
 
+    @Override
     public UsageDtos.CostDashboardResponse dashboard(Long userId, int requestedDays) {
         int days = Math.max(1, Math.min(requestedDays, 365));
         Instant end = Instant.now();

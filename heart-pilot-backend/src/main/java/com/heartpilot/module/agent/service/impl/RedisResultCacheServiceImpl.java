@@ -1,6 +1,7 @@
 package com.heartpilot.module.agent.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.heartpilot.module.agent.service.RedisResultCacheService;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -13,7 +14,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
-public class RedisResultCacheService {
+public class RedisResultCacheServiceImpl implements RedisResultCacheService {
     private final StringRedisTemplate redis;
     private final ObjectMapper json;
     private final MeterRegistry metrics;
@@ -21,7 +22,7 @@ public class RedisResultCacheService {
     private final Duration knowledgeTtl;
     private final Duration modelTtl;
 
-    public RedisResultCacheService(
+    public RedisResultCacheServiceImpl(
             ObjectProvider<StringRedisTemplate> redis,
             ObjectMapper json,
             MeterRegistry metrics,
@@ -36,22 +37,27 @@ public class RedisResultCacheService {
         this.modelTtl = Duration.ofMinutes(Math.max(1, modelTtlMinutes));
     }
 
+    @Override
     public <T> Optional<T> getKnowledge(String keyMaterial, Class<T> type) {
         return get("knowledge", keyMaterial, type);
     }
 
+    @Override
     public void putKnowledge(String keyMaterial, Object value) {
         put("knowledge", keyMaterial, value, knowledgeTtl);
     }
 
+    @Override
     public Optional<String> getModelResult(String keyMaterial) {
         return get("model", keyMaterial, String.class);
     }
 
+    @Override
     public void putModelResult(String keyMaterial, String value) {
         put("model", keyMaterial, value, modelTtl);
     }
 
+    @Override
     public String digest(String value) {
         try {
             return HexFormat.of()

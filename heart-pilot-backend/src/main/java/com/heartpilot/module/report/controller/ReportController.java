@@ -4,7 +4,7 @@ import com.heartpilot.common.api.PageResponse;
 import com.heartpilot.module.file.dto.ResourceDtos;
 import com.heartpilot.module.file.entity.GeneratedFile;
 import com.heartpilot.module.file.service.StorageService;
-import com.heartpilot.module.report.service.impl.ReportService;
+import com.heartpilot.module.report.service.ReportService;
 import com.heartpilot.security.CurrentUser;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;

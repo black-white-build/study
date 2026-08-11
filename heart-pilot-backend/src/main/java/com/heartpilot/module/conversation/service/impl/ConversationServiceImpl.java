@@ -3,13 +3,14 @@ package com.heartpilot.module.conversation.service.impl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heartpilot.common.exception.ApiException;
 import com.heartpilot.infrastructure.ai.RelationshipAiClient;
-import com.heartpilot.module.agent.service.impl.RedisResultCacheService;
+import com.heartpilot.module.agent.service.RedisResultCacheService;
 import com.heartpilot.module.conversation.entity.AiConversation;
 import com.heartpilot.module.conversation.entity.AiMessage;
 import com.heartpilot.module.conversation.entity.enums.AiMessageStatus;
 import com.heartpilot.module.conversation.repository.ConversationRepository;
 import com.heartpilot.module.conversation.repository.MessageRepository;
-import com.heartpilot.module.knowledge.service.impl.KnowledgeService;
+import com.heartpilot.module.conversation.service.ConversationService;
+import com.heartpilot.module.knowledge.service.KnowledgeService;
 import com.heartpilot.module.user.repository.AppUserRepository;
 import com.heartpilot.module.user.repository.ProfileRepository;
 import io.micrometer.core.instrument.Gauge;
@@ -34,7 +35,7 @@ import reactor.core.Disposable;
 import reactor.util.retry.Retry;
 
 @Service
-public class ConversationService {
+public class ConversationServiceImpl implements ConversationService {
     private final ConversationRepository conversations;
     private final MessageRepository messages;
     private final ProfileRepository profiles;
@@ -51,7 +52,7 @@ public class ConversationService {
     private final double outputCnyPerMillionTokens;
     private final Map<String, Generation> active = new ConcurrentHashMap<>();
 
-    public ConversationService(
+    public ConversationServiceImpl(
             ConversationRepository conversations,
             MessageRepository messages,
             ProfileRepository profiles,
@@ -84,10 +85,12 @@ public class ConversationService {
         Gauge.builder("heartpilot.chat.active_generations", active, Map::size).register(metrics);
     }
 
+    @Override
     public Page<AiConversation> list(Long userId, Pageable pageable) {
         return conversations.findByUserIdAndArchivedFalse(userId, pageable);
     }
 
+    @Override
     public AiConversation create(Long userId, String title) {
         AiConversation conversation = new AiConversation();
         conversation.setUserId(userId);
@@ -96,23 +99,27 @@ public class ConversationService {
         return conversations.save(conversation);
     }
 
+    @Override
     public AiConversation get(Long id, Long userId) {
         return conversations
                 .findByIdAndUserId(id, userId)
                 .orElseThrow(() -> ApiException.notFound("会话不存在"));
     }
 
+    @Override
     public List<AiMessage> history(Long id, Long userId) {
         get(id, userId);
         return messages.findByConversationIdAndUserIdOrderByCreatedAtAsc(id, userId);
     }
 
+    @Override
     public Page<AiMessage> history(Long id, Long userId, Pageable pageable) {
         get(id, userId);
         return messages.findByConversationIdAndUserId(id, userId, pageable);
     }
 
     @Transactional
+    @Override
     public AiConversation rename(Long id, Long userId, String title) {
         AiConversation conversation = get(id, userId);
         conversation.setTitle(title.strip());
@@ -120,6 +127,7 @@ public class ConversationService {
     }
 
     @Transactional
+    @Override
     public void delete(Long id, Long userId) {
         AiConversation conversation = get(id, userId);
         stop(id, userId);
@@ -127,6 +135,7 @@ public class ConversationService {
         conversations.delete(conversation);
     }
 
+    @Override
     public SseEmitter send(Long conversationId, Long userId, String content, Long regeneratedFrom) {
         AiConversation conversation = get(conversationId, userId);
         String normalizedContent = content.strip();
@@ -231,6 +240,7 @@ public class ConversationService {
         return emitter;
     }
 
+    @Override
     public SseEmitter regenerate(Long conversationId, Long messageId, Long userId) {
         List<AiMessage> all = history(conversationId, userId);
         int index = -1;
@@ -250,6 +260,7 @@ public class ConversationService {
         return send(conversationId, userId, userMessage.getContent(), messageId);
     }
 
+    @Override
     public boolean stop(Long conversationId, Long userId) {
         Generation generation = active.remove(key(conversationId, userId));
         if (generation == null) return false;

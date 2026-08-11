@@ -7,6 +7,9 @@ import com.heartpilot.module.agent.entity.enums.AgentExecutionEventType;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionPhase;
 import com.heartpilot.module.agent.repository.TaskRepository;
 import com.heartpilot.module.agent.runtime.PublicInfoResearchAgent;
+import com.heartpilot.module.agent.service.AgentExecutionTraceService;
+import com.heartpilot.module.agent.service.AgentJourneyResearchService;
+import com.heartpilot.module.agent.service.PlaceSearchService;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -16,7 +19,7 @@ import org.springframework.stereotype.Service;
 
 /** Owns external place/route research and the optional constrained ReAct supplement. */
 @Service
-public class AgentJourneyResearchService {
+public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchService {
     private final PlaceSearchService placeSearch;
     private final AgentToolExecutor toolExecutor;
     private final AgentExecutionTraceService executionTrace;
@@ -25,7 +28,7 @@ public class AgentJourneyResearchService {
     private final ObjectMapper json;
     private final boolean reactEnabled;
 
-    public AgentJourneyResearchService(
+    public AgentJourneyResearchServiceImpl(
             PlaceSearchService placeSearch,
             AgentToolExecutor toolExecutor,
             AgentExecutionTraceService executionTrace,
@@ -42,6 +45,7 @@ public class AgentJourneyResearchService {
         this.reactEnabled = reactEnabled;
     }
 
+    @Override
     public JourneyResearch researchJourney(
             AgentTask task, int stepNo, String city, String requirements, String toolName)
             throws Exception {
@@ -149,6 +153,7 @@ public class AgentJourneyResearchService {
         return new JourneyResearch(result.formatted(), evidence);
     }
 
+    @Override
     public PublicResearch supplementPublicInfo(AgentTask task, String city, String originalPlaces) {
         String places = originalPlaces;
         String verification =
@@ -279,8 +284,4 @@ public class AgentJourneyResearchService {
         if (value == null) return "";
         return value.substring(0, Math.min(length, value.length()));
     }
-
-    public record JourneyResearch(String formatted, PlaceSearchService.JourneyEvidence evidence) {}
-
-    public record PublicResearch(String places, String verification) {}
 }

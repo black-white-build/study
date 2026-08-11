@@ -29,8 +29,10 @@ com.heartpilot
 ```
 
 Inside a business module, code is split into `controller`, `dto`, `entity`,
-`repository`, and `service`. Concrete services live in `service/impl`, matching
-the convention used by the VideoNest backend.
+`repository`, and `service`. Business service contracts live in `service`, and
+their matching `XxxServiceImpl` implementations live in `service/impl`, matching
+the convention used by the VideoNest backend. Storage uses one shared
+`StorageService` strategy contract with local and MinIO implementations.
 
 The refactor changes Java package ownership only. HTTP routes, JSON contracts,
 database mappings, migration scripts, configuration keys, and runtime profiles

@@ -11,6 +11,7 @@ import com.heartpilot.module.file.repository.GeneratedFileRepository;
 import com.heartpilot.module.file.service.StorageService;
 import com.heartpilot.module.report.entity.EmotionReport;
 import com.heartpilot.module.report.repository.ReportRepository;
+import com.heartpilot.module.report.service.ReportService;
 import com.heartpilot.module.user.entity.RelationshipProfile;
 import com.heartpilot.module.user.repository.ProfileRepository;
 import com.itextpdf.kernel.font.PdfFont;
@@ -33,7 +34,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class ReportService {
+public class ReportServiceImpl implements ReportService {
     private static final ZoneId CHINA = ZoneId.of("Asia/Shanghai");
     private static final DateTimeFormatter DATE_TIME =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
@@ -46,7 +47,7 @@ public class ReportService {
     private final ObjectMapper json;
     private final ProfileRepository profiles;
 
-    public ReportService(
+    public ReportServiceImpl(
             ReportRepository reports,
             ConversationRepository conversations,
             MessageRepository messages,
@@ -65,16 +66,19 @@ public class ReportService {
         this.profiles = profiles;
     }
 
+    @Override
     public Page<EmotionReport> list(Long userId, Pageable pageable) {
         return reports.findByUserId(userId, pageable);
     }
 
+    @Override
     public EmotionReport get(Long id, Long userId) {
         return reports.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> ApiException.notFound("报告不存在"));
     }
 
     @Transactional
+    @Override
     public void delete(Long id, Long userId) {
         EmotionReport report = get(id, userId);
         for (GeneratedFile file :
@@ -89,6 +93,7 @@ public class ReportService {
     }
 
     @Transactional
+    @Override
     public EmotionReport generate(Long conversationId, Long userId) {
         conversations
                 .findByIdAndUserId(conversationId, userId)
@@ -136,6 +141,7 @@ public class ReportService {
     }
 
     @Transactional
+    @Override
     public GeneratedFile exportPdf(Long reportId, Long userId) {
         EmotionReport report = get(reportId, userId);
         boolean reviewTimeCorrected = correctReviewTime(report, userId);
