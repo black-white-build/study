@@ -4,8 +4,6 @@
 
 HeartPilot 是一个前后端分离的全栈 AI 应用。项目基于 Spring AI、RAG、Tool Calling、MCP 与 ReAct 构建，并补充了多用户数据隔离、持久化任务编排、执行轨迹、用量成本统计和 Vue 3 前端。
 
-项目在教学项目 [liyupi/yu-ai-agent](https://github.com/liyupi/yu-ai-agent) 基础上持续开发，重点展示如何把 Agent 能力落到一个完整、可运行、可观察的产品中。
-
 **快速导航：** [核心能力](#功能概览) · [技术架构](#技术架构) · [本地运行](#本地开发推荐) · [Docker 部署](#docker-compose) · [配置说明](#配置说明) · [测试](#验证与质量检查)
 
 > [!IMPORTANT]
@@ -162,9 +160,6 @@ npm run build
 
 - [部署指南](DEPLOY.md)
 - [工程机制与指标](ENGINEERING.md)
-- [上游项目改造说明](UPSTREAM_CHANGES.md)
-- [项目路线图](PROJECT_ROADMAP.md)
-- [面试说明](INTERVIEW_GUIDE.md)
 
 ## 目录结构
 
