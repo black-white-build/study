@@ -59,6 +59,7 @@ flowchart LR
 3. 启动后端：
 
    ```powershell
+   cd heart-pilot-backend
    .\mvnw.cmd spring-boot:run
    ```
 
@@ -145,10 +146,11 @@ WAITING → RUNNING → AWAITING_CONFIRMATION → RUNNING → SUCCEEDED
 
 ```powershell
 # 后端：测试、代码格式检查与打包
+cd heart-pilot-backend
 .\mvnw.cmd verify
 
 # 前端：依赖一致性、格式检查与生产构建
-cd heart-pilot-frontend
+cd ..\heart-pilot-frontend
 npm ci
 npm run format:check
 npm run build
@@ -165,7 +167,7 @@ npm run build
 
 ```text
 .
-├── src/                              # Spring Boot 后端
+├── heart-pilot-backend/              # Spring Boot 后端（按业务模块组织）
 ├── heart-pilot-frontend/             # Vue 3 前端
 ├── heart-pilot-image-mcp-server/     # 可选图片 MCP 服务
 ├── data/                             # 本地 H2 与文件存储（已忽略）

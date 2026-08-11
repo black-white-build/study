@@ -33,7 +33,7 @@ services:
       timeout: 3s
       retries: 20
   backend:
-    build: .
+    build: ./heart-pilot-backend
     environment:
       DATABASE_URL: jdbc:postgresql://postgres:5432/heart_pilot
       DATABASE_USERNAME: heart_pilot

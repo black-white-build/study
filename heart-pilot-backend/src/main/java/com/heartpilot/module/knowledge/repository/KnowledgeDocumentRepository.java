@@ -1,0 +1,10 @@
+package com.heartpilot.module.knowledge.repository;
+
+import com.heartpilot.module.knowledge.entity.KnowledgeDocument;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface KnowledgeDocumentRepository extends JpaRepository<KnowledgeDocument, Long> {
+    Page<KnowledgeDocument> findAll(Pageable pageable);
+}

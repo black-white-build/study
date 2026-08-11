@@ -44,8 +44,9 @@ Agent 工具白名单仅包含网页搜索、终止工具，以及名称匹配�
 ## 验证
 
 ```bash
+cd heart-pilot-backend
 mvn verify
-cd heart-pilot-frontend
+cd ../heart-pilot-frontend
 npm ci
 npm run format:check
 npm run build

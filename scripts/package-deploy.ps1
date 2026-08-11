@@ -7,8 +7,8 @@ $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
 Push-Location $ProjectRoot
 try {
-    $Maven = if (Get-Command mvn.cmd -ErrorAction SilentlyContinue) { "mvn.cmd" } else { ".\mvnw.cmd" }
-    & $Maven clean package -DskipTests
+    $Maven = if (Get-Command mvn.cmd -ErrorAction SilentlyContinue) { "mvn.cmd" } else { ".\heart-pilot-backend\mvnw.cmd" }
+    & $Maven -f .\heart-pilot-backend\pom.xml clean package -DskipTests
     if ($LASTEXITCODE -ne 0) { throw "Backend package failed" }
 
     if (-not (Test-Path .\heart-pilot-frontend\node_modules\.bin\vite.cmd)) {
@@ -22,8 +22,8 @@ try {
 
     $ResolvedOutputPath = [System.IO.Path]::GetFullPath($OutputPath)
     tar.exe -czf $ResolvedOutputPath `
-        target\heart-pilot-backend-0.0.1-SNAPSHOT.jar `
-        Dockerfile.deploy `
+        heart-pilot-backend\target\heart-pilot-backend-0.0.1-SNAPSHOT.jar `
+        heart-pilot-backend\Dockerfile.deploy `
         heart-pilot-frontend\dist `
         heart-pilot-frontend\Dockerfile.deploy `
         heart-pilot-frontend\nginx.conf `
