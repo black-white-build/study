@@ -4,6 +4,8 @@ application-local.yml
 !.env.example
 tmp
 data/
+legacy-data/
+demo-output/
 
 HELP.md
 target/

@@ -1,8 +1,8 @@
 ﻿# HeartPilot
 
-> 面向关系成长场景的 AI 助手：把倾诉、分析、行动规划、用户确认与持续复盘，串成一条可追踪的成长闭环。
+> 面向关系行动规划场景的可恢复 AI 任务编排系统：把需求分析、工具检索、人工确认、失败重试和结果交付串成可追踪的执行闭环。
 
-HeartPilot 是一个前后端分离的全栈 AI 应用。项目基于 Spring AI、RAG、Tool Calling、MCP 与 ReAct 构建，并补充了多用户数据隔离、持久化任务编排、执行轨迹、用量成本统计和 Vue 3 前端。
+HeartPilot 以“持久化 Agent 任务状态机”为后端主线。关系咨询、RAG、地图、PDF 和 Vue 3 界面是业务与交付能力；幂等提交、并发互斥、人工确认、超时重试、宕机恢复和执行审计是系统重点。
 
 **快速导航：** [核心能力](#功能概览) · [技术架构](#技术架构) · [本地运行](#本地开发推荐) · [Docker 部署](#docker-compose) · [配置说明](#配置说明) · [测试](#验证与质量检查)
 
@@ -28,14 +28,14 @@ flowchart LR
   UI["Vue 3 + Vite"] -->|"JWT / POST-SSE"| API["Spring Boot 3 · Java 21"]
   API --> SECURITY["Spring Security · 限流"]
   API --> AGENT["Spring AI · ReAct · MCP"]
-  API --> DB[("PostgreSQL / H2")]
+  API --> DB[("PostgreSQL + Flyway")]
   AGENT --> VECTOR[("PGVector")]
   API --> CACHE[("Redis")]
   API --> STORAGE[("MinIO / 本地文件")]
   AGENT --> MODEL["DashScope"]
 ```
 
-本地开发默认使用文件型 H2 和本地文件存储，无需先安装 PostgreSQL、Redis 或 MinIO。生产容器使用 PostgreSQL、Redis 与 MinIO。
+正式开发与生产统一使用 PostgreSQL，并由 Flyway 管理全部表结构；H2 仅用于不依赖 PostgreSQL 方言的快速测试。Redis 和 MinIO 在本地可按配置降级为单实例内存机制与本地文件存储。
 
 ## 快速开始
 
@@ -43,7 +43,7 @@ flowchart LR
 
 - JDK 21
 - Node.js 20 LTS 或更高版本、npm
-- Docker Desktop（仅 Docker 方式需要）
+- Docker Desktop（推荐，用于 PostgreSQL/PGVector、Redis、MinIO 和迁移集成测试）
 - DashScope API Key（仅实际调用 AI 能力需要）
 
 ### 本地开发（推荐）
@@ -54,16 +54,22 @@ flowchart LR
    Copy-Item .env.example .env
    ```
 
-2. 至少设置 `DASHSCOPE_API_KEY`；首次本地调试建议保持 `MCP_ENABLED=false`，避免外部 MCP 服务影响启动。
+2. 至少替换数据库密码并按需设置 `DASHSCOPE_API_KEY`；首次本地调试建议保持 `MCP_ENABLED=false`，避免外部 MCP 服务影响启动。
 
-3. 启动后端：
+3. 启动开发依赖（正式开发不再使用 H2 自动建表）：
+
+   ```powershell
+   docker compose up -d postgres redis minio
+   ```
+
+4. 启动后端，Flyway 会自动执行 `V1` 至最新迁移，Hibernate 只负责校验结构：
 
    ```powershell
    cd heart-pilot-backend
    .\mvnw.cmd spring-boot:run
    ```
 
-4. 新开一个终端，启动前端：
+5. 新开一个终端，启动前端：
 
    ```powershell
    cd heart-pilot-frontend
@@ -71,7 +77,7 @@ flowchart LR
    npm run dev
    ```
 
-5. 打开以下地址：
+6. 打开以下地址：
 
    | 服务 | 地址 |
    | --- | --- |
@@ -81,7 +87,7 @@ flowchart LR
    | Prometheus 指标 | http://localhost:8123/api/actuator/prometheus |
 
 > [!NOTE]
-> H2 是单进程文件数据库。同一份 `data/heart-pilot` 只能被一个后端进程打开；若再次启动报 JDBC Dialect 或数据库元数据错误，请先关闭已运行的后端实例。
+> 不允许通过 `ddl-auto=update` 隐式修改正式结构。实体变化必须先新增 Flyway 迁移，再由 `ddl-auto=validate` 验证映射一致性。
 
 ### Docker Compose
 
@@ -110,7 +116,7 @@ flowchart LR
 | `DASHSCOPE_API_KEY` | DashScope 对话与 Embedding | 配置真实 Key 才能调用 AI |
 | `MCP_ENABLED` | 是否启用高德 MCP | 首次本地启动设为 `false` |
 | `AGENT_REACT_ENABLED` | 是否启用 ReAct 调研链路 | 默认 `true` |
-| `DATABASE_URL` | 数据库连接 | 留空即使用本地 H2 |
+| `DATABASE_URL` | PostgreSQL 数据库连接 | 默认连接本机 `heart_pilot` |
 | `REDIS_ENABLED` | Redis 缓存与限流 | 本地可设为 `false` |
 | `STORAGE_PROVIDER` | `local` 或 `minio` | 本地使用 `local` |
 | `AMAP_MAPS_API_KEY` | 高德地图 MCP | 启用地图核验时配置 |
@@ -134,6 +140,26 @@ WAITING → RUNNING → AWAITING_CONFIRMATION → RUNNING → SUCCEEDED
 - 预算以最后一次成功提交的参数为准，并在前后端统一规范化显示，避免科学计数法或旧值混入。
 - 任务具备乐观锁、幂等键、超时中断、有限重试和恢复扫描；Redis 不可用时会降级为本地锁。
 
+### 一次完整任务如何保证可靠性
+
+```text
+客户端提交 + Idempotency-Key
+  → 按 userId + 幂等键去重
+  → 获取 taskId 对应的 Redis 锁
+  → WAITING → RUNNING，并持续更新心跳
+  → 需求分析与白名单工具调用（每一步持久化审计事件）
+  → AWAITING_CONFIRMATION，释放执行锁并等待用户
+  → 用户确认后重新获取锁
+  → RUNNING → SUCCEEDED，保存最终方案与可下载文件
+```
+
+- 重复提交：数据库唯一约束是最终防线，同一用户和幂等键只能对应一个任务。
+- 并发执行：Redis 可用时跨实例互斥；Redis 故障时降级为本地锁，只承诺单实例互斥，并产生降级指标和告警日志。
+- 服务中断：恢复扫描将心跳过期的 `RUNNING` 任务转为 `RETRY_WAIT`，重置执行中的步骤并有限重试。
+- SSE 断开：执行结果以数据库状态为准，客户端连接不是任务事实来源；客户端可重新读取任务详情和执行事件。
+- 外部存储失败：只有对象上传成功后才写入文件元数据和业务引用，避免数据库指向不存在的文件。
+- 用户取消：设置取消标记并中断当前 Future，状态机限制非法终态覆盖。
+
 ## 权限与安全
 
 - 注册用户固定为 `USER`，管理员由 `APP_ADMIN_USERNAME` / `APP_ADMIN_PASSWORD` 初始化。
@@ -156,7 +182,7 @@ npm run format:check
 npm run build
 ```
 
-测试使用内存 H2，且不会调用真实 ReAct/MCP 链路。
+快速测试使用内存 H2 且不会调用真实 ReAct/MCP；Testcontainers 测试会启动 `pgvector/pgvector:pg16`，执行全部 Flyway 迁移、进行 Hibernate schema 校验并跑通注册与任务创建。没有 Docker 时该项测试会明确跳过。
 
 ## 部署与补充文档
 
@@ -170,7 +196,7 @@ npm run build
 ├── heart-pilot-backend/              # Spring Boot 后端（按业务模块组织）
 ├── heart-pilot-frontend/             # Vue 3 前端
 ├── heart-pilot-image-mcp-server/     # 可选图片 MCP 服务
-├── data/                             # 本地 H2 与文件存储（已忽略）
+├── demo-data/                        # 不含账号、密钥和真实对话的脱敏固定演示数据
 ├── docker-compose.yml                # 本地容器编排
 ├── .env.example                      # 环境变量模板
 └── DEPLOY.md                         # 部署流程

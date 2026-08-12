@@ -6,6 +6,5 @@ spring:
   jpa.hibernate.ddl-auto: validate
   flyway:
     enabled: true
-    baseline-on-migrate: true
 app.storage.provider: ${STORAGE_PROVIDER:minio}
 logging.level.root: INFO

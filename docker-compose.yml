@@ -35,6 +35,7 @@ services:
   backend:
     build: ./heart-pilot-backend
     environment:
+      SPRING_PROFILES_ACTIVE: prod
       DATABASE_URL: jdbc:postgresql://postgres:5432/heart_pilot
       DATABASE_USERNAME: heart_pilot
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-heart_pilot_dev}

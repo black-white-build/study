@@ -3,6 +3,8 @@ services:
     build:
       context: ./heart-pilot-backend
       dockerfile: Dockerfile.deploy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
   frontend:
     build:
       context: ./heart-pilot-frontend

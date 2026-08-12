@@ -1,0 +1,24 @@
+[
+  {
+    "scenarioId": "demo-communication-001",
+    "displayName": "沟通节奏复盘（脱敏演示）",
+    "profile": {
+      "relationshipStatus": "恋爱中",
+      "relationshipMonths": 12,
+      "communicationStyle": "倾向先冷静再沟通",
+      "concerns": "希望减少误解",
+      "preferences": "使用具体事实表达感受",
+      "boundaries": "不公开双方私人信息"
+    },
+    "task": {
+      "title": "周末沟通行动计划",
+      "objective": "安排一次低压力的线下沟通与复盘",
+      "parameters": {
+        "province": "广西壮族自治区",
+        "city": "南宁市",
+        "budget": 300,
+        "questions": ["如何选择安静地点", "如何安排沟通步骤"]
+      }
+    }
+  }
+]
