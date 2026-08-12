@@ -4,7 +4,7 @@
 
 ## 首次准备
 
-服务器需安装 Docker Engine、Docker Compose v2，并在腾讯云安全组放行 TCP `8081`。数据库、Redis、MinIO API 和 MinIO 控制台都只在 Docker 内部使用，不占用宿主机端口。
+服务器需安装 Docker Engine、Docker Compose v2，并在腾讯云安全组放行 TCP `8081`。数据库、Redis、MinIO API 和 MinIO 控制台只在 Docker 内部网络使用，不发布宿主机端口；无需在安全组放行 `5432`、`6379`、`9000` 或 `9001`。本地开发执行普通 `docker compose` 命令时会自动加载 `docker-compose.override.yml`，仅在本机回环地址发布这些端口供 IntelliJ 后端连接；部署包不包含该本地 override。
 
 本机复制并填写生产配置：
 
@@ -30,7 +30,7 @@ ssh ubuntu@82.157.205.6
 .\deploy.cmd
 ```
 
-完成后访问 `http://82.157.205.6:8081`。以后代码更新后仍执行同一条命令；PostgreSQL、Redis 和 MinIO 使用命名卷，更新容器不会清空数据。
+脚本会先执行后端 `clean verify`、前端格式检查和生产构建，任一步失败都不会上传部署包。完成后访问 `http://82.157.205.6:8081`。以后代码更新后仍执行同一条命令；服务器 IP 参数和访问地址不变，PostgreSQL、Redis 和 MinIO 使用命名卷，更新容器不会清空数据。
 
 常用命令：
 

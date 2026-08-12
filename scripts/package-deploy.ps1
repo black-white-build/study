@@ -8,14 +8,17 @@ $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Push-Location $ProjectRoot
 try {
     $Maven = if (Get-Command mvn.cmd -ErrorAction SilentlyContinue) { "mvn.cmd" } else { ".\heart-pilot-backend\mvnw.cmd" }
-    & $Maven -f .\heart-pilot-backend\pom.xml clean package -DskipTests
-    if ($LASTEXITCODE -ne 0) { throw "Backend package failed" }
+    & $Maven -f .\heart-pilot-backend\pom.xml clean verify
+    if ($LASTEXITCODE -ne 0) { throw "Backend verification or package failed" }
 
     if (-not (Test-Path .\heart-pilot-frontend\node_modules\.bin\vite.cmd)) {
         $NpmCache = Join-Path $ProjectRoot "tmp\npm-cache"
         npm.cmd --prefix .\heart-pilot-frontend --cache $NpmCache ci
         if ($LASTEXITCODE -ne 0) { throw "Frontend dependency install failed" }
     }
+
+    npm.cmd --prefix .\heart-pilot-frontend run format:check
+    if ($LASTEXITCODE -ne 0) { throw "Frontend format check failed" }
 
     npm.cmd --prefix .\heart-pilot-frontend run build
     if ($LASTEXITCODE -ne 0) { throw "Frontend package failed" }
