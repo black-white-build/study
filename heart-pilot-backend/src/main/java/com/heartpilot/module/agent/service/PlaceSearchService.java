@@ -5,15 +5,55 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+/**
+ * 地点检索服务。
+ * 封装高德地图等外部地图/搜索能力：按城市与需求检索 POI 地点、地点间路线规划，
+ * 并把检索结果组装为结构化证据（JourneyEvidence）供大模型与报告使用。
+ */
 public interface PlaceSearchService {
+    /** 检索时间统一格式（Asia/Shanghai 时区），用于在输出文本中标注实时检索时刻 */
     DateTimeFormatter SEARCH_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    /**
+     * 按城市与需求检索地点（可分组、可附公开网页来源）。
+     * @param city 目标城市
+     * @param objective 检索需求
+     * @return 检索结果
+     */
     SearchResult search(String city, String objective);
 
+    /**
+     * 执行完整行程研究：地点检索 + 路线规划。
+     * @param city 目标城市
+     * @param objective 检索需求
+     * @return 研究结果（检索文本 + 证据）
+     */
     JourneyResearchResult researchJourney(String city, String objective);
 
+    /**
+     * 把单次地点检索结果组装为结构化行程证据（供报告与溯源）。
+     * @param searchResult 地点检索结果
+     * @return 行程证据
+     */
     JourneyEvidence buildJourneyEvidence(SearchResult searchResult);
 
+    /**
+     * 单个 POI 地点。
+     * @param poiId 地点 ID
+     * @param name 地点名称
+     * @param address 地址
+     * @param type 地点类型
+     * @param tel 联系电话
+     * @param location 经纬度坐标
+     * @param mapUrl 地图跳转链接
+     * @param rating 评分
+     * @param businessHours 营业时间
+     * @param businessStatus 营业状态
+     * @param statusCheckedAt 营业状态核验时间
+     * @param photoUrl 封面图
+     * @param intentCategory 检索意图类别（默认 CUSTOM）
+     * @param amapTypeCode 高德地图 POI 类型编码
+     */
     public record Place(
             String poiId,
             String name,
@@ -78,6 +118,16 @@ public interface PlaceSearchService {
         }
     }
 
+    /**
+     * 一组同类别检索结果（一个意图类别对应一组地点 + 网页来源）。
+     * @param label 类别展示名
+     * @param query 该类别实际使用的检索词
+     * @param places 该类别下的地点列表
+     * @param webSources 公开网页来源文本
+     * @param intentCategory 意图类别（默认 CUSTOM）
+     * @param amapTypeCodes 该类别用到的高德 POI 类型编码
+     * @param searchKeywords 该类别用到的检索关键词
+     */
     public record SearchGroup(
             String label,
             String query,
@@ -97,6 +147,15 @@ public interface PlaceSearchService {
         }
     }
 
+    /**
+     * 地点检索结果。
+     * @param provider 数据提供方
+     * @param city 检索城市
+     * @param keywords 动态检索类别关键词
+     * @param places 扁平地点列表（兼容旧调用）
+     * @param fallbackText 无分组时的兜底文本
+     * @param groups 分组检索结果
+     */
     public record SearchResult(
             String provider,
             String city,
@@ -161,6 +220,20 @@ public interface PlaceSearchService {
         }
     }
 
+    /**
+     * 两地之间的路线规划。
+     * @param originName 起点名称
+     * @param destinationName 终点名称
+     * @param distanceMeters 距离（米）
+     * @param durationMinutes 预计耗时（分钟）
+     * @param mode 出行方式（BICYCLING/DRIVING/TRANSIT/步行）
+     * @param navigationUrl 导航链接
+     * @param routeStatus 路线数据状态（LIVE=实时）
+     * @param routeCheckedAt 路线核验时间
+     * @param provider 路线提供方
+     * @param strategy 路线策略
+     * @param polyline 路线折线坐标（可选，用于前端画地图）
+     */
     public record RoutePlan(
             String originName,
             String destinationName,
@@ -218,6 +291,26 @@ public interface PlaceSearchService {
         }
     }
 
+    /**
+     * 地图卡片：用于前端地图上逐个展示的地点信息。
+     * @param poiId 地点 ID
+     * @param name 名称
+     * @param address 地址
+     * @param category 类别
+     * @param phone 电话
+     * @param longitude 经度
+     * @param latitude 纬度
+     * @param mapUrl 地图链接
+     * @param coverImageUrl 封面图
+     * @param rating 评分
+     * @param businessHours 营业时间
+     * @param businessStatus 营业状态
+     * @param statusCheckedAt 状态核验时间
+     * @param businessStatusBasis 营业状态判定依据
+     * @param sourceProvider 数据来源
+     * @param sourceUrl 来源页
+     * @param routeFromPrevious 从上一地点到此处的路线
+     */
     public record MapCard(
             String poiId,
             String name,
@@ -237,6 +330,18 @@ public interface PlaceSearchService {
             String sourceUrl,
             RoutePlan routeFromPrevious) {}
 
+    /**
+     * 可核验的行程证据（地点 + 路线 + 地图卡片），是报告生成与前端溯源的结构化依据。
+     * @param provider 数据提供方
+     * @param city 城市
+     * @param topics 检索主题
+     * @param places 推荐地点列表
+     * @param routes 地点间路线列表
+     * @param sourceStatus 数据来源状态
+     * @param notice 数据说明
+     * @param searchedAt 检索时间
+     * @param mapCards 地图卡片列表
+     */
     public record JourneyEvidence(
             String provider,
             String city,
@@ -300,6 +405,11 @@ public interface PlaceSearchService {
         }
     }
 
+    /**
+     * 行程研究完整结果：检索文本 + 结构化证据。
+     * @param searchResult 地点检索结果
+     * @param evidence 行程证据
+     */
     public record JourneyResearchResult(SearchResult searchResult, JourneyEvidence evidence) {
         public String formatted() {
             return searchResult.formatted() + evidence.formatted();

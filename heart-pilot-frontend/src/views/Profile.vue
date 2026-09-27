@@ -11,19 +11,16 @@
   <section class="profile-flow panel">
     <div>
       <span class="eyebrow">档案如何发挥作用</span>
-      <h2>一份档案，贯穿咨询、行动与复盘</h2>
-      <p>
-        咨询时用于个性化语气与建议；关系报告沉淀问题；报告可转为 7 天计划；事件与打卡再进入每周 AI
-        复盘。
-      </p>
+      <h2>一份档案，贯穿答疑与行动规划</h2>
+      <p>答疑时用于个性化语气与建议，规划时用于约束目标、偏好、地点与活动筛选。</p>
     </div>
     <div class="flow">
-      <span>关系档案</span><i>→</i><span>AI 咨询</span><i>→</i><span>关系报告</span><i>→</i
-      ><span>7 天计划</span><i>→</i><span>每周复盘</span>
+      <span>关系档案</span><i>→</i><span>知识增强答疑</span><i>→</i><span>行动规划</span><i>→</i
+      ><span>行动计划书</span>
     </div>
     <div class="flow-actions">
-      <router-link class="btn" to="/consult">带着档案去咨询</router-link
-      ><router-link class="btn coral" to="/growth">查看成长闭环</router-link>
+      <router-link class="btn" to="/consult">带着档案去答疑</router-link
+      ><router-link class="btn coral" to="/plans">开始行动规划</router-link>
     </div>
   </section>
   <section class="profile-impact panel panel-pad">
@@ -112,7 +109,7 @@
         <span>03</span>
         <div>
           <h2>偏好、困扰与边界</h2>
-          <p>AI 会优先尊重边界，并把困扰转换为成长计划的默认目标。</p>
+          <p>AI 会优先尊重边界，并把困扰转换为行动规划的默认目标。</p>
         </div>
       </header>
       <div class="grid-3">
@@ -153,42 +150,42 @@ const emotions = ['平静', '开心', '期待', '困惑', '难过', '焦虑', '�
   profileImpacts = [
     {
       field: '称呼',
-      modules: 'AI 咨询 · 全局界面',
+      modules: '知识增强答疑 · 全局界面',
       effect: '用于顾问称呼和个人身份展示，不改变事实判断。'
     },
     {
       field: '当前情绪',
-      modules: 'AI 咨询 · 每日连接',
-      effect: '调整回复语气、信息密度、行动难度，并参与实时连接话题的选择。'
+      modules: '知识增强答疑',
+      effect: '调整回复语气、信息密度和行动建议难度。'
     },
     {
       field: '关系状态',
-      modules: 'AI 咨询 · 关系报告 · 周复盘',
+      modules: '知识增强答疑 · 行动规划',
       effect: '区分初识、稳定关系或修复阶段，避免给出阶段不匹配的建议。'
     },
     {
       field: '关系时长',
-      modules: 'AI 咨询 · 关系报告 · 周复盘',
+      modules: '知识增强答疑 · 行动规划',
       effect: '帮助判断互动是短期磨合还是长期模式，但不会替代具体事实。'
     },
     {
       field: '常见沟通方式',
-      modules: 'AI 咨询 · 7 天计划 · 周复盘',
+      modules: '知识增强答疑 · 行动规划',
       effect: '用于调整沟通练习，例如降低回避或防御式表达的行动门槛。'
     },
     {
       field: '目前最困扰的事',
-      modules: '成长焦点 · 7 天计划 · 关系报告',
-      effect: '作为默认成长目标，并决定复盘重点和建议优先级。'
+      modules: '知识增强答疑 · 行动规划',
+      effect: '作为默认行动目标，并决定建议与计划书的优先级。'
     },
     {
       field: '你重视的体验',
-      modules: 'AI 咨询 · 行动规划 · 每日连接',
-      effect: '影响地点与活动筛选、实时话题方向及 7 天共同活动的默认设计。'
+      modules: '知识增强答疑 · 行动规划',
+      effect: '影响地点与活动筛选，以及行动计划书的默认设计。'
     },
     {
       field: '不可触碰的边界',
-      modules: 'AI 咨询 · 行动规划 · 周复盘',
+      modules: '知识增强答疑 · 行动规划',
       effect: '作为必须遵守的限制，不会被当成建议目标，也不会为了完成计划而越过。'
     }
   ],
@@ -215,7 +212,7 @@ async function save() {
       api.put('/users/me/relationship-profile', profile)
     ])
     await refreshMe()
-    toast.value = '关系档案已保存，并会用于后续咨询和周复盘'
+    toast.value = '关系档案已保存，并会用于后续答疑和行动规划'
     setTimeout(() => (toast.value = ''), 2600)
   } finally {
     saving.value = false

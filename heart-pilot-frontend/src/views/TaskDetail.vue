@@ -337,8 +337,8 @@
       <p v-if="mapCards.length" class="evidence-notice">{{ evidence.notice }}</p>
     </section>
     <section v-if="detail.task.finalResult" class="panel result">
-      <span class="eyebrow">行动报告已生成</span>
-      <h2>你的可执行行动报告</h2>
+      <span class="eyebrow">行动计划书已生成</span>
+      <h2>你的可执行行动计划书</h2>
       <StructuredText :content="detail.task.finalResult" />
       <div class="result-actions">
         <button
@@ -349,11 +349,11 @@
         >
           {{ pdfGenerating ? '正在生成 PDF…' : '生成 PDF 文件' }}</button
         ><button v-else class="btn coral" :disabled="pdfDownloading" @click="downloadPdf">
-          {{ pdfDownloading ? '正在下载…' : '下载 PDF 报告' }}</button
+          {{ pdfDownloading ? '正在下载…' : '下载计划书 PDF' }}</button
         ><span>{{
           detail.pdfFile
             ? `PDF 已生成（${fileSize(detail.pdfFile.sizeBytes)}），也已保存到个人中心。`
-            : '请先确认上方报告内容，再按需生成 PDF；生成和下载是两个独立操作。'
+            : '请先确认上方计划书内容，再按需生成 PDF；生成和下载是两个独立操作。'
         }}</span>
       </div>
     </section>
@@ -540,7 +540,7 @@ const canRevise = computed(
       JSON.stringify(enteredQuestions.value) !== JSON.stringify(originalQuestions.value))
 )
 const runningTitle = computed(() =>
-  detail.value?.task.currentStep >= 6 ? '正在补充检索并生成报告' : '正在合并修改并重新规划'
+  detail.value?.task.currentStep >= 6 ? '正在补充检索并生成计划书' : '正在合并修改并重新规划'
 )
 const runningHint = computed(() =>
   detail.value?.task.currentStep >= 6
@@ -774,7 +774,7 @@ async function downloadPdf() {
   try {
     await api.download(
       `/agent-tasks/${route.params.id}/pdf`,
-      `行动报告-${detail.value.task.title}.pdf`
+      `行动计划书-${detail.value.task.title}.pdf`
     )
   } catch (requestError) {
     showError(requestError.response?.data?.message || 'PDF 下载失败，请稍后重试')

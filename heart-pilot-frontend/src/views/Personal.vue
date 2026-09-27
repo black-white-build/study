@@ -2,7 +2,7 @@
   <div class="page-head">
     <div>
       <h1>个人中心</h1>
-      <p>你的会话、报告、任务与生成文件集中在这里。</p>
+      <p>你的答疑会话、行动任务与计划书文件集中在这里。</p>
     </div>
     <router-link to="/profile" class="btn">编辑资料</router-link>
   </div>
@@ -20,12 +20,9 @@
     >
   </section>
   <p v-if="loadError" class="load-error" role="alert">{{ loadError }}</p>
-  <div class="summary grid-3">
+  <div class="summary grid-2">
     <router-link to="/consult" class="panel"
       ><span>咨询会话</span><b>{{ loading ? '—' : totals.conversations }}</b
-      ><small>查看全部 →</small></router-link
-    ><router-link to="/reports" class="panel"
-      ><span>关系报告</span><b>{{ loading ? '—' : totals.reports }}</b
       ><small>查看全部 →</small></router-link
     ><router-link to="/plans" class="panel"
       ><span>行动任务</span><b>{{ loading ? '—' : totals.tasks }}</b
@@ -54,7 +51,7 @@
         <span>{{ loading ? '—' : `${totals.files} 个` }}</span>
       </header>
       <div v-if="!loading && !files.length" class="empty">
-        <b>暂无文件</b>报告和方案 PDF 会出现在这里。
+        <b>暂无文件</b>行动计划书 PDF 会出现在这里。
       </div>
       <article v-for="f in files" :key="f.id" class="record">
         <span>PDF</span>
@@ -72,12 +69,11 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { api } from '../api'
 import { authState, refreshMe } from '../stores/auth'
 const conversations = ref([]),
-  reports = ref([]),
   tasks = ref([]),
   files = ref([])
 const loading = ref(true)
 const loadError = ref('')
-const totals = reactive({ conversations: 0, reports: 0, tasks: 0, files: 0 })
+const totals = reactive({ conversations: 0, tasks: 0, files: 0 })
 const avatarText = computed(() =>
   (authState.user?.nickname || authState.user?.username || '用').slice(0, 1)
 )
@@ -91,7 +87,6 @@ async function loadPersonalData() {
     await refreshMe()
     const resources = [
       { key: 'conversations', target: conversations, request: api.get('/conversations') },
-      { key: 'reports', target: reports, request: api.get('/reports') },
       { key: 'tasks', target: tasks, request: api.get('/agent-tasks') },
       { key: 'files', target: files, request: api.get('/files') }
     ]

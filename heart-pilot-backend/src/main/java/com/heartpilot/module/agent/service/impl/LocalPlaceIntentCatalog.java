@@ -4,7 +4,17 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
-/** Central mapping between user language and AMap POI categories. */
+/**
+ * 用户口语意图 → 高德 POI 分类的中央映射表。
+ * Central mapping between user language and AMap POI categories.
+ *
+ * 每个枚举值描述一类本地生活意图，携带四组数据：
+ * - userAliases：用户可能说的口语词（用于把用户意图归类到本类别）
+ * - amapTypeKeywords：高德 POI 名称/类型文本里应包含的关键词
+ * - amapTypeCodePrefixes：高德 POI 类型码前缀（如 "05"=餐饮），请求时补成完整 types
+ * - searchKeywords：用于网页搜索的补充关键词
+ * 另有内部枚举 SpecificIntentRule 处理"游泳/游艇/海鲜"等更细的强匹配规则。
+ */
 public enum LocalPlaceIntentCatalog {
     FOOD(
             List.of("美食", "餐饮", "吃饭", "餐厅", "饭店", "小吃", "海鲜", "水产", "咖啡", "甜品", "烧烤"),
@@ -52,9 +62,13 @@ public enum LocalPlaceIntentCatalog {
             List.of("15"),
             List.of("交通设施", "车站", "停车场"));
 
+    /** 用户口语别名，用于 classify 归类 */
     private final List<String> userAliases;
+    /** 高德 POI 名称/类型文本中应出现的关键词 */
     private final List<String> amapTypeKeywords;
+    /** 高德 POI 类型码前缀，拼上 "0000" 即为请求 types */
     private final List<String> amapTypeCodePrefixes;
+    /** 网页搜索补充关键词 */
     private final List<String> searchKeywords;
 
     LocalPlaceIntentCatalog(
@@ -88,6 +102,10 @@ public enum LocalPlaceIntentCatalog {
         return searchKeywords;
     }
 
+    /**
+     * 把用户意图归类到某个 POI 类别。
+     * 按枚举声明顺序，第一个 userAliases 命中意图文本的类别胜出；都不命中返回空。
+     */
     public static Optional<LocalPlaceIntentCatalog> classify(String userIntent) {
         if (userIntent == null || userIntent.isBlank()) return Optional.empty();
         return Arrays.stream(values())
@@ -95,8 +113,14 @@ public enum LocalPlaceIntentCatalog {
                 .findFirst();
     }
 
+    /**
+     * 判断某个高德 POI 是否属于本类别。
+     * 优先走 SpecificIntentRule 强规则（如"游泳"只匹配游泳馆，避免泛化到所有体育场所）；
+     * 否则退化为"名称/类型文本包含关键词"或"类型码以前缀开头"，两者命中其一即可。
+     */
     public boolean matches(String userIntent, String name, String type, String typeCode) {
         String combined = safe(name) + " " + safe(type);
+        // 命中细分类规则时，只按细分规则判定，忽略宽泛类别
         Optional<SpecificIntentRule> specificRule = SpecificIntentRule.forIntent(userIntent);
         if (specificRule.isPresent()) return specificRule.get().matches(combined);
         boolean keywordMatch = amapTypeKeywords.stream().anyMatch(combined::contains);

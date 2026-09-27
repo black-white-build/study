@@ -50,8 +50,21 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+/**
+ * Agent 任务核心服务实现。
+ * 负责任务的完整生命周期管理：创建、异步执行（SSE 流式推送）、用户确认/驳回、
+ * 最终报告生成、取消、删除，以及服务重启后的中断恢复与自动重试。
+ *
+ * 可靠性设计要点：
+ * - 分布式锁（DistributedTaskLockService）保证同一任务在多实例下只有一个执行器
+ * - 状态机（AgentTaskStateMachine）统一管理状态流转，禁止直接 setStatus
+ * - 心跳 + 定时恢复扫描检测僵死任务，指数退避自动重试
+ * - 乐观锁（@Version）防止并发更新覆盖
+ * - 幂等键防止重复投稿
+ */
 @Service
 public class AgentTaskServiceImpl implements AgentTaskService {
+    /** 任务执行流程的步骤名称列表，索引对应步骤编号（从 1 开始），第 5 步为用户确认节点 */
     private static final List<String> FLOW =
             List.of(
                     "正在分析用户需求",
@@ -72,15 +85,23 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     private final AgentTaskStepService taskSteps;
     private final AgentFinalReportService finalReports;
     private final AgentRequirementAnalysisService requirementAnalysis;
+    /** 单任务最大执行步骤数，配置项 app.agent.max-steps，默认 10 */
     private final int maxSteps;
+    /** 单任务最大重试次数，配置项 app.agent.max-task-retries，默认 2 */
     private final int maxTaskRetries;
+    /** Agent 任务专用线程池，Bean 名称 agentTaskExecutor */
     private final ExecutorService executor;
     private final DistributedTaskLockService locks;
     private final AgentTaskStateMachine stateMachine;
     private final AgentTaskPdfService pdfService;
     private final AgentExecutionTraceService executionTrace;
+    /** 当前正在执行的任务 Future 映射（taskId -> Future），用于取消操作中断线程 */
     private final Map<Long, Future<?>> activeFutures = new ConcurrentHashMap<>();
 
+    /**
+     * 构造器注入所有依赖。
+     * maxSteps 和 maxTaskRetries 从配置项读取，executor 通过 @Qualifier 指定专用线程池。
+     */
     public AgentTaskServiceImpl(
             TaskRepository tasks,
             TaskStepRepository steps,
@@ -120,18 +141,31 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         this.executionTrace = executionTrace;
     }
 
+    /**
+     * 应用启动完成后触发一次中断恢复。
+     * 扫描心跳超过 90 秒未更新的 RUNNING 任务，将其重置为待重试状态，
+     * 避免服务宕机或重启后任务永久卡在 RUNNING。
+     */
     @EventListener(ApplicationReadyEvent.class)
     @Override
     public void recoverInterruptedTasks() {
         recoverStaleTasks(Instant.now().minusSeconds(90));
     }
 
+    /**
+     * 定时任务恢复与重试扫描（默认每 30 秒执行一次）。
+     * 两步操作：
+     * 1. 恢复心跳超时的僵死任务为 RETRY_WAIT
+     * 2. 对已到重试时间的 RETRY_WAIT 任务，未超最大重试次数则重新提交执行，超过则标记 FAILED
+     * 捕获 RuntimeException 是因为多实例环境下其他节点可能已抢到分布式锁。
+     */
     @Scheduled(fixedDelayString = "${app.agent.recovery-scan-millis:30000}")
     @Override
     public void recoverAndRetryTasks() {
         recoverStaleTasks(Instant.now().minusSeconds(90));
         for (AgentTask task :
                 tasks.findByStatusAndNextRetryAtBefore(AgentTaskStatus.RETRY_WAIT, Instant.now())) {
+            // 超过最大重试次数，彻底失败
             if (task.getRetryCount() > task.getMaxRetries()) {
                 stateMachine.transition(task, AgentTaskStatus.FAILED);
                 continue;
@@ -140,11 +174,17 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             try {
                 run(task.getId(), task.getUserId());
             } catch (RuntimeException ignored) {
-                // Another instance may already own the distributed lock.
+                // 其他实例可能已持有该任务的分布式锁，忽略冲突
             }
         }
     }
 
+    /**
+     * 将心跳超时的 RUNNING 任务恢复为 RETRY_WAIT。
+     * 同时把处于 RUNNING 状态的步骤重置为 PENDING 并增加重试计数，
+     * 确保恢复后能从该步骤重新执行。
+     * @param heartbeatBefore 心跳早于此时间的任务视为僵死
+     */
     private void recoverStaleTasks(Instant heartbeatBefore) {
         for (AgentTask task : tasks.findStaleTasks(AgentTaskStatus.RUNNING, heartbeatBefore)) {
             task.setRetryCount(task.getRetryCount() + 1);
@@ -161,6 +201,12 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         }
     }
 
+    /**
+     * 分页查询当前用户的任务列表，按创建时间倒序（由 Repository 默认排序保证）。
+     * @param userId 用户 ID
+     * @param pageable 分页参数
+     * @return 任务分页结果
+     */
     @Override
     public Page<AgentTask> list(Long userId, Pageable pageable) {
         return tasks.findByUserId(userId, pageable);
@@ -171,6 +217,12 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         return taskInput.cityOptions(province);
     }
 
+    /**
+     * 获取任务详情，聚合任务主体、步骤列表、工具调用记录、执行轨迹和最新 PDF 文件。
+     * @param id 任务 ID
+     * @param userId 用户 ID（用于鉴权，确保只能查自己的任务）
+     * @return 聚合后的任务详情
+     */
     @Override
     public TaskDetail get(Long id, Long userId) {
         AgentTask task = owned(id, userId);
@@ -186,6 +238,19 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 pdfFile);
     }
 
+    /**
+     * 创建 Agent 任务。
+     * 流程：幂等键去重 → 校验并解析地区 → 校验问题列表非空 → 持久化任务 → 初始化 7 个执行步骤 → 记录执行轨迹。
+     * 幂等设计：同一用户 + 同一幂等键的重复请求直接返回已有任务，不重复创建；
+     * 并发场景下靠唯一索引兜底，捕获 DataIntegrityViolationException 后回查已有记录。
+     *
+     * @param userId 用户 ID
+     * @param title 任务标题，为空时默认"城市+行动计划"
+     * @param objective 目标描述
+     * @param inputParameters 输入参数（城市、预算、问题列表等）
+     * @param requestIdempotencyKey 幂等键，可为 null
+     * @return 创建好的任务实体（已持久化，含自增 ID）
+     */
     @Override
     public AgentTask create(
             Long userId,
@@ -193,27 +258,34 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             String objective,
             Map<String, Object> inputParameters,
             String requestIdempotencyKey) {
+        // 规范化幂等键（去空格等），null 表示不启用幂等
         String normalizedKey = taskInput.normalizeIdempotencyKey(requestIdempotencyKey);
         if (normalizedKey != null) {
             Optional<AgentTask> existing =
                     tasks.findByUserIdAndRequestIdempotencyKey(userId, normalizedKey);
+            // 幂等命中：直接返回已有任务，不重复创建
             if (existing.isPresent()) return existing.get();
         }
+        // 拷贝输入参数，避免修改调用方传入的原始 Map
         Map<String, Object> parameters =
                 new LinkedHashMap<>(inputParameters == null ? Map.of() : inputParameters);
+        // 校验并解析省市为具体城市，结果写回 parameters.searchRegion
         String city = taskInput.validateAndResolveRegion(parameters);
         parameters.put("searchRegion", city);
         taskInput.normalizeStoredBudget(parameters);
+        // 问题列表是检索关键词的唯一来源，必须至少有一个
         List<String> searchQuestions = taskInput.asStringList(parameters.get("questions"));
         if (searchQuestions.isEmpty())
             throw ApiException.badRequest("请至少填写一个需要方案逐项回答的问题，搜索关键词只从这里提取");
         parameters.put("questions", searchQuestions);
+        // 修订记录列表，用户驳回时追加，初始为空列表
         parameters.putIfAbsent("revisions", new ArrayList<String>());
 
         AgentTask task = new AgentTask();
         task.setUserId(userId);
         task.setTitle(title == null || title.isBlank() ? city + "行动计划" : title.trim());
         task.setObjective(objective.trim());
+        // 实际步骤数取配置上限和 FLOW 定义的较小值
         task.setMaxSteps(Math.min(maxSteps, FLOW.size()));
         task.setMaxRetries(maxTaskRetries);
         task.setRequestIdempotencyKey(normalizedKey);
@@ -221,6 +293,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         try {
             tasks.saveAndFlush(task);
         } catch (DataIntegrityViolationException conflict) {
+            // 并发场景：唯一索引兜底，回查已有记录返回
             if (normalizedKey != null) {
                 return tasks.findByUserIdAndRequestIdempotencyKey(userId, normalizedKey)
                         .orElseThrow(() -> conflict);
@@ -228,6 +301,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             throw conflict;
         }
 
+        // 按 FLOW 定义初始化 7 个步骤，第 5 步（索引 4）需要用户确认
         for (int i = 0; i < FLOW.size(); i++) {
             AgentTaskStep step = new AgentTaskStep();
             step.setTaskId(task.getId());
@@ -253,15 +327,27 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         return task;
     }
 
+    /**
+     * 启动任务执行，返回 SseEmitter 供前端实时接收执行进度。
+     * 仅允许 WAITING 或 FAILED 状态的任务启动；通过分布式锁保证多实例下唯一执行。
+     * 执行在专用线程池中异步进行，SSE 连接超时（180秒）自动触发取消。
+     *
+     * @param id 任务 ID
+     * @param userId 用户 ID（鉴权）
+     * @return SSE 发射器，前端通过它接收 step/confirmation/error/done 等事件
+     */
     @Override
     public SseEmitter run(Long id, Long userId) {
         AgentTask task = owned(id, userId);
+        // 只有等待中或失败的任务可以启动，其他状态（运行中/已完成/等待确认等）拒绝
         if (!Set.of(AgentTaskStatus.WAITING, AgentTaskStatus.FAILED).contains(task.getStatus())) {
             throw ApiException.badRequest("当前状态不能启动");
         }
+        // 尝试获取 5 分钟的分布式锁，获取失败说明任务正在其他实例/线程执行
         DistributedTaskLockService.LockHandle lock = locks.tryAcquire(id, Duration.ofMinutes(5));
         if (lock == null) throw ApiException.conflict("TASK_ALREADY_RUNNING", "任务正在运行");
         task.setCancelRequested(false);
+        // SSE 超时 180 秒，超时后自动取消任务
         SseEmitter emitter = new SseEmitter(180_000L);
         Future<?> future = executor.submit(() -> executeUntilConfirmation(task, emitter, lock));
         activeFutures.put(id, future);
@@ -269,6 +355,16 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         return emitter;
     }
 
+    /**
+     * 执行任务直到用户确认阶段（步骤 1-5）。
+     * 流程：需求分析 → 地点与路线检索 → 公开信息补充 → 生成候选计划预览 → 进入等待确认。
+     * 在发送 confirmation 事件后主动释放分布式锁并完成 SSE 流，
+     * 避免用户立即点击确认时与当前 worker 的 finally 块竞争锁导致 TASK_ALREADY_RUNNING。
+     *
+     * @param task 任务实体
+     * @param emitter SSE 发射器
+     * @param lock 分布式锁句柄，执行完毕或异常时释放
+     */
     private void executeUntilConfirmation(
             AgentTask task, SseEmitter emitter, DistributedTaskLockService.LockHandle lock) {
         try {
@@ -373,6 +469,22 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         }
     }
 
+    /**
+     * 用户确认或驳回候选计划。
+     * - approved=true：直接进入最终报告生成阶段（finish）
+     * - approved=false：校验修改项（地点/预算/问题/说明至少改一项），合并修改后回到第一步重新规划（reviseAndRestart）
+     * 两种路径都通过 SSE 流式推送进度。
+     *
+     * @param id 任务 ID
+     * @param userId 用户 ID（鉴权）
+     * @param approved true=确认计划，false=驳回并要求修改
+     * @param note 修改说明，驳回时追加到修订记录
+     * @param province 修改后的省份
+     * @param city 修改后的城市
+     * @param budget 修改后的预算
+     * @param questions 修改后的问题列表
+     * @return SSE 发射器
+     */
     @Override
     public SseEmitter confirm(
             Long id,
@@ -384,6 +496,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             BigDecimal budget,
             List<String> questions) {
         AgentTask task = owned(id, userId);
+        // 仅允许在等待确认状态下调用
         if (task.getStatus() != AgentTaskStatus.AWAITING_CONFIRMATION) {
             throw ApiException.badRequest("任务当前不等待确认");
         }
@@ -393,16 +506,19 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         SseEmitter emitter = new SseEmitter(180_000L);
         if (approved) {
             try {
+                // 用户确认：提交最终报告生成任务
                 Future<?> future =
                         executor.submit(() -> finish(task, note, questions, emitter, lock));
                 activeFutures.put(id, future);
             } catch (RuntimeException submissionFailure) {
+                // 线程池提交失败时必须释放锁，否则任务永久卡死
                 lock.close();
                 throw submissionFailure;
             }
         } else {
             try {
                 Map<String, Object> current = taskInput.readParameters(task);
+                // 是否通过编辑器提交了字段（省份/城市/问题任一非空）
                 boolean editorSubmission = province != null || city != null || questions != null;
                 String currentCity = taskInput.resolveCity(current, task.getObjective());
                 String requestedCity = currentCity;
@@ -419,6 +535,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 String currentBudget = taskInput.parameterText(current.get("budget"), "");
                 String requestedBudget =
                         budget == null ? "" : taskInput.normalizeBudget(budget).toPlainString();
+                // 检测哪些字段实际发生了变化
                 boolean cityChanged = !requestedCity.equals(currentCity);
                 boolean budgetChanged = editorSubmission && !requestedBudget.equals(currentBudget);
                 boolean questionsChanged =
@@ -426,6 +543,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                                 && !taskInput
                                         .asStringList(questions)
                                         .equals(taskInput.asStringList(current.get("questions")));
+                // 驳回时必须至少有一项实际修改，否则无意义
                 if ((note == null || note.isBlank())
                         && !cityChanged
                         && !budgetChanged
@@ -448,6 +566,11 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         return emitter;
     }
 
+    /**
+     * 合并用户修改要求并回到第一步重新规划。
+     * 将修改说明追加到 revisions，更新地区/预算/问题参数，版本号自增，
+     * 重置步骤进度和最终结果，使旧 PDF 失效，然后重新提交 executeUntilConfirmation。
+     */
     private void reviseAndRestart(
             AgentTask task,
             String note,
@@ -496,6 +619,10 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         activeFutures.put(task.getId(), future);
     }
 
+    /**
+     * 用户确认后执行最终阶段（步骤 6-7）：重新实时检索 → 生成最终报告 → 标记完成。
+     * 确认阶段可能补充了新问题，需要合并后重新提取检索类别并刷新地点信息。
+     */
     private void finish(
             AgentTask task,
             String note,
@@ -580,28 +707,40 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         }
     }
 
+    /** 为已完成的任务生成 PDF 文件，委托给 pdfService */
     @Override
     public GeneratedFile generatePdf(Long id, Long userId) {
         AgentTask task = owned(id, userId);
         return pdfService.generate(task);
     }
 
+    /** 获取任务已生成的最新 PDF 文件 */
     @Override
     public GeneratedFile getPdf(Long id, Long userId) {
         owned(id, userId);
         return pdfService.get(userId, id);
     }
 
+    /**
+     * 取消任务。设置取消标志并中断执行线程，状态流转为 CANCELLED。
+     * 已处于终态（SUCCEEDED/FAILED/CANCELLED）的任务直接返回，不重复操作。
+     */
     @Override
     public AgentTask cancel(Long id, Long userId) {
         AgentTask task = owned(id, userId);
         if (task.getStatus().isTerminal()) return task;
         task.setCancelRequested(true);
+        // 从活跃任务表移除并中断执行线程（mayInterruptIfRunning=true）
         Future<?> future = activeFutures.remove(id);
         if (future != null) future.cancel(true);
         return stateMachine.transition(task, AgentTaskStatus.CANCELLED);
     }
 
+    /**
+     * 删除任务及其全部关联数据（步骤、工具调用、执行轨迹、PDF 文件）。
+     * 运行中的任务不允许删除，需先取消。
+     * 存储文件删除失败不阻断数据库删除（catch 后继续），避免孤立文件阻塞清理。
+     */
     @Transactional
     @Override
     public void delete(Long id, Long userId) {
@@ -610,11 +749,13 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             throw ApiException.badRequest("任务执行中，请先取消后再删除");
         Future<?> future = activeFutures.remove(id);
         if (future != null) future.cancel(true);
+        // 级联删除关联的 PDF 文件（存储对象 + 数据库记录）
         for (GeneratedFile file :
                 files.findByUserIdAndBusinessTypeAndBusinessId(userId, "AGENT_TASK", id)) {
             try {
                 storage.delete(file.getStorageKey());
             } catch (Exception ignored) {
+                // 存储删除失败不阻断，数据库记录仍删除
             }
             files.delete(file);
         }
@@ -624,16 +765,27 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         tasks.delete(task);
     }
 
+    /**
+     * 统一的任务失败处理。
+     * 根据异常类型和重试次数决定后续状态：
+     * - 取消/中断异常 → CANCELLED
+     * - 未超最大重试次数 → RETRY_WAIT（指数退避，下次重试时间 = 5 * 2^(retryCount-1) 秒，上限 60 秒）
+     * - 超过最大重试次数 → FAILED
+     * 同时记录执行轨迹和 SSE error 事件。
+     */
     private void fail(AgentTask task, Exception error, SseEmitter emitter) {
+        // 重新从数据库读取最新状态，避免使用过期的内存对象
         AgentTask latest = tasks.findByIdAndUserId(task.getId(), task.getUserId()).orElse(task);
         latest.setErrorMessage(
                 shorten(Optional.ofNullable(error.getMessage()).orElse("任务失败"), 480));
         if (error instanceof CancellationException || error instanceof InterruptedException) {
+            // 用户主动取消或线程被中断
             if (latest.getStatus() != AgentTaskStatus.CANCELLED) {
                 stateMachine.transition(latest, AgentTaskStatus.CANCELLED);
             }
         } else if (latest.getRetryCount() < latest.getMaxRetries()) {
             latest.setRetryCount(latest.getRetryCount() + 1);
+            // 指数退避：5s, 10s, 20s, 40s... 上限 60s
             latest.setNextRetryAt(
                     Instant.now().plusSeconds(Math.min(60, 5L << (latest.getRetryCount() - 1))));
             stateMachine.transition(latest, AgentTaskStatus.RETRY_WAIT);
@@ -658,6 +810,10 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         emitter.complete();
     }
 
+    /**
+     * 记录一条执行轨迹事件，委托给 AgentExecutionTraceService。
+     * 轨迹用于前端展示任务执行的完整时间线（思考、工具调用、结果、错误等）。
+     */
     private void trace(
             AgentTask task,
             Integer stepNo,
@@ -689,26 +845,38 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 metadata);
     }
 
+    /** 计算从纳秒时间戳到现在的毫秒数，用于工具调用耗时统计 */
     private long elapsedMillis(long startedAt) {
         return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
     }
 
+    /**
+     * 按 ID + 用户 ID 查询任务，不存在则抛出 404。
+     * 所有需要鉴权的操作都通过此方法获取任务，确保用户只能操作自己的任务。
+     */
     private AgentTask owned(Long id, Long userId) {
         return tasks.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> ApiException.notFound("任务不存在"));
     }
 
+    /**
+     * 保存任务并同步乐观锁版本号到内存对象。
+     * saveAndFlush 后数据库的 @Version 字段会自增，需要回写到 task 对象，
+     * 否则后续更新会因版本号不匹配抛出 OptimisticLockingFailureException。
+     */
     private AgentTask saveTask(AgentTask task) {
         AgentTask saved = tasks.saveAndFlush(task);
         task.setLockVersion(saved.getLockVersion());
         return saved;
     }
 
+    /** 截断字符串到指定长度，null 返回空串，用于错误信息存储前的长度控制 */
     private String shorten(String value, int length) {
         if (value == null) return "";
         return value.substring(0, Math.min(length, value.length()));
     }
 
+    /** 将字符串安全序列化为 JSON 字符串（带双引号），序列化失败返回空字符串 */
     private String quote(String value) {
         try {
             return json.writeValueAsString(value);
@@ -717,10 +885,15 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         }
     }
 
+    /**
+     * 向 SSE 流发送一个命名事件。
+     * 发送失败（客户端已断开）静默忽略，因为执行流程不应因前端断开而中断。
+     */
     private void event(SseEmitter emitter, String name, Object data) {
         try {
             emitter.send(SseEmitter.event().name(name).data(data));
         } catch (IOException ignored) {
+            // 客户端已断开，忽略
         }
     }
 }

@@ -17,9 +17,18 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-/** Normalizes task input and composes the user-facing plan preview. */
+/**
+ * 规范化任务输入，并拼装面向用户的候选计划预览。
+ * Normalizes task input and composes the user-facing plan preview.
+ *
+ * 职责：
+ * - 地区校验与解析（省/市 → 完整 searchRegion）、城市下拉选项（调高德行政区接口）
+ * - 预算规范化（去尾零、非负校验）、问题列表合并/去重/从修改说明中抽问题
+ * - 幂等键校验、parameters JSON 的读写、关系档案偏好拼装进检索上下文
+ */
 @Service
 public class AgentTaskInputServiceImpl implements AgentTaskInputService {
+    /** 内置已知城市列表，用于在用户未选城市时从目标文本里粗匹配城市 */
     private static final List<String> KNOWN_CITIES =
             List.of(
                     "北京", "上海", "天津", "重庆", "广州", "深圳", "南宁", "柳州", "桂林", "成都", "杭州", "南京", "武汉",
@@ -27,9 +36,13 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
                     "福州", "厦门", "南昌", "合肥", "苏州", "无锡", "宁波", "温州", "石家庄", "太原", "兰州", "西宁", "银川",
                     "乌鲁木齐", "呼和浩特", "拉萨", "香港", "澳门");
 
+    /** 关系档案 Repository，读取用户偏好与关系边界，注入检索上下文 */
     private final ProfileRepository profiles;
+    /** parameters JSON 读写工具 */
     private final ObjectMapper json;
+    /** 高德 Web 服务 Key，用于城市下拉与地点检索 */
     private final String amapKey;
+    /** 合法省级行政区列表，校验用户选择 */
     private static final List<String> PROVINCES =
             List.of(
                     "北京市",
@@ -76,6 +89,11 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         this.amapKey = amapKey;
     }
 
+    /**
+     * 拼装用户确认阶段看到的候选计划预览（Markdown）。
+     * 包含目标、地点范围与预算、累计修改要求、待解决问题、分类检索结果与下一步提示；
+     * 检索结果过长时截断到 5000 字符。
+     */
     @Override
     public String buildPreview(
             AgentTask task,
@@ -116,11 +134,17 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
                         shorten(places, 5_000));
     }
 
+    /**
+     * 汇总最终阶段送给大模型的完整需求文本。
+     * 优先级从高到低：当前有效参数（地点/预算）> 初始目标 > 待解决问题 > 历次修改 >
+     * 关系档案里的偏好与边界，用"｜"连接。
+     */
     @Override
     public String combinedRequirements(AgentTask task, Map<String, Object> parameters) {
         List<String> parts = new ArrayList<>();
         String city = resolveCity(parameters, task.getObjective());
         String budget = parameterText(parameters.get("budget"), "");
+        // 当前有效参数为最高优先级，覆盖历史文字里的地点与金额
         parts.add("当前有效参数（最高优先级）：地点=" + city + "，预算=" + (budget.isBlank() ? "未限定" : budget + "元"));
         parts.add("初始目标（仅保留非冲突意图，地点和金额以当前有效参数为准）：" + task.getObjective());
         List<String> questions = asStringList(parameters.get("questions"));
@@ -145,13 +169,20 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         return String.join("\n", asStringList(parameters.get("questions")));
     }
 
+    /**
+     * 根据选中的省份返回下辖市列表（前端联动下拉）。
+     * 直辖市/特别行政区直接返回自身；其余省份实时调用高德行政区查询接口取地级城市。
+     * 未配置 Key 或接口异常时抛出业务异常。
+     */
     @Override
     public List<String> cityOptions(String province) {
         String normalized = province == null ? "" : province.trim();
         if (!PROVINCES.contains(normalized)) throw ApiException.badRequest("请选择有效的省级行政区");
+        // 直辖市/特别行政区本身就是市级，无需再查
         if (normalized.endsWith("市") || normalized.endsWith("特别行政区")) return List.of(normalized);
         if (amapKey.isBlank()) throw ApiException.badRequest("未配置高德地图密钥，无法加载城市列表");
         try {
+            // 调用高德行政区接口，subdistrict=1 取一级子级（地级市）
             String response =
                     HttpUtil.get(
                             "https://restapi.amap.com/v3/config/district",
@@ -206,6 +237,11 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         return merged;
     }
 
+    /**
+     * 把修改说明里"像问题"的句子抽出来，追加到问题列表。
+     * 按换行/分号切句，去掉列表前缀（-、•、1.、、），再用结尾问号或疑问词
+     * （什么/哪里/是否/怎么…）判断是否为问题；"停车+免费/哪里"也算问题。
+     */
     @Override
     public List<String> extractQuestions(String note) {
         if (note == null || note.isBlank()) return List.of();
@@ -290,6 +326,10 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         }
     }
 
+    /**
+     * 解析实际用于检索的城市：优先用已解析好的 searchRegion，其次用 city 字段，
+     * 都缺失时再从目标文本里粗匹配已知城市。
+     */
     @Override
     public String resolveCity(Map<String, Object> parameters, String text) {
         String searchRegion = String.valueOf(parameters.getOrDefault("searchRegion", "")).trim();
@@ -299,11 +339,17 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         return findKnownCity(text);
     }
 
+    /**
+     * 校验并解析用户选择的省/市，返回完整的 searchRegion。
+     * 校验：省必须在合法列表内；市必须是中文且以"市/自治州/地区/盟/特别行政区"结尾。
+     * 直辖市返回市名本身，否则拼接为"省+市"。
+     */
     @Override
     public String validateAndResolveRegion(Map<String, Object> parameters) {
         String province = String.valueOf(parameters.getOrDefault("province", "")).trim();
         String city = String.valueOf(parameters.getOrDefault("city", "")).trim();
         if (!PROVINCES.contains(province)) throw ApiException.badRequest("请选择有效的省级行政区");
+        // 城市名必须是完整行政地名，防止用户输入模糊词导致高德 citylimit 失效
         if (!city.matches("[\\p{IsHan}·]{2,20}(?:市|自治州|地区|盟|特别行政区)")) {
             throw ApiException.badRequest("请输入完整城市名称，例如：上海市、南宁市");
         }
@@ -318,6 +364,11 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         return KNOWN_CITIES.stream().filter(text::contains).findFirst().orElse("");
     }
 
+    /**
+     * 规范化并校验幂等键。
+     * 去空格；最长 96 字符；只允许字母数字及 . _ : - ；非法直接 400。
+     * null/空串返回 null，表示本次不启用幂等。
+     */
     @Override
     public String normalizeIdempotencyKey(String key) {
         if (key == null || key.isBlank()) return null;

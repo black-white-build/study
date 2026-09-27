@@ -6,13 +6,11 @@
         ><span><b>心旅</b><small>HeartPilot</small></span></router-link
       >
       <nav>
-        <p>理解与行动</p>
-        <router-link to="/consult"><span>◌</span>AI 情感咨询</router-link>
-        <router-link to="/reports"><span>▤</span>关系报告</router-link>
+        <p>沟通与行动</p>
+        <router-link to="/consult"><span>◌</span>知识增强答疑</router-link>
         <router-link to="/plans"><span>↗</span>行动规划</router-link>
-        <p>持续成长</p>
+        <p>账户与资源</p>
         <router-link to="/profile"><span>◇</span>关系档案</router-link>
-        <router-link to="/growth"><span>✓</span>成长计划</router-link>
         <router-link to="/costs"><span>¥</span>消费成本</router-link>
         <router-link v-if="isAdmin" to="/knowledge"><span>▦</span>知识库管理</router-link>
       </nav>
@@ -54,9 +52,9 @@ const initial = computed(() => authState.user?.nickname?.slice(0, 1) || '你')
 const greeting = computed(() => (new Date().getHours() < 12 ? '上午好' : '欢迎回来'))
 const topAction = computed(() =>
   route.path.startsWith('/consult')
-    ? { to: '/plans', label: '开始行动' }
+    ? { to: '/plans', label: '开始规划' }
     : route.path.startsWith('/plans')
-      ? { to: '/growth', label: '记录成长' }
+      ? { to: '/me', label: '查看计划书' }
       : { to: '/consult', label: '开始倾诉' }
 )
 function signOut() {

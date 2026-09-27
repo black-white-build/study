@@ -11,11 +11,11 @@
     <main>
       <section class="hero">
         <div class="hero-copy">
-          <span class="hero-pill">关系成长，不只是一场问答</span>
+          <span class="hero-pill">知识增强答疑，不止于一次问答</span>
           <h1>把说不清的关系困扰，<em>变成下一步行动。</em></h1>
           <p>
-            一套从倾诉、分析、规划到持续复盘的 AI
-            关系成长系统。温和理解你，也认真帮你把改变落到今天。
+            HeartPilot 是一个面向关系沟通场景的可恢复 AI
+            行动编排系统，提供知识增强答疑和多类型行动规划。
           </p>
           <div class="hero-actions">
             <router-link :to="authState.token ? '/consult' : '/register'" class="btn coral"
@@ -45,7 +45,7 @@
       <section id="method" class="method">
         <div class="section-intro">
           <span>一条清楚的改善路径</span>
-          <h2>从理解问题，到持续看见变化</h2>
+          <h2>从理解问题，到形成可执行计划</h2>
         </div>
         <div class="steps">
           <article>
@@ -55,18 +55,13 @@
           </article>
           <article>
             <b>02</b><span class="step-icon">▤</span>
-            <h3>获得分析</h3>
-            <p>结合关系档案与专业知识库，形成有来源的结构化报告。</p>
+            <h3>知识增强答疑</h3>
+            <p>结合关系档案与专业知识库，提供有依据、可追溯的沟通建议。</p>
           </article>
           <article>
             <b>03</b><span class="step-icon">↗</span>
-            <h3>制定行动</h3>
-            <p>让 Agent 搜集信息、整理预算，并在关键步骤等待你确认。</p>
-          </article>
-          <article>
-            <b>04</b><span class="step-icon">✓</span>
-            <h3>跟踪改善</h3>
-            <p>用 7 天计划、每日情绪打卡与每周复盘，看见真实进展。</p>
+            <h3>生成计划书</h3>
+            <p>让 Agent 搜集信息、整理约束并生成计划书，在关键步骤等待你确认。</p>
           </article>
         </div>
       </section>
@@ -85,7 +80,7 @@
       </section>
     </main>
     <footer class="land-footer">
-      <b>心旅 HeartPilot</b><span>倾诉 · 分析 · 行动 · 成长</span
+      <b>心旅 HeartPilot</b><span>答疑 · 规划 · 执行 · 恢复</span
       ><small>AI 建议不替代医疗、心理、法律等专业服务。</small>
     </footer>
   </div>
@@ -289,7 +284,7 @@ import { authState } from '../stores/auth'
   max-width: 1150px;
   margin: auto;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 1px;
   background: #444540;
 }

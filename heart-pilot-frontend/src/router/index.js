@@ -20,12 +20,7 @@ const routes = [
   {
     path: '/consult',
     component: () => import('../views/Consult.vue'),
-    meta: { title: 'AI 情感咨询' }
-  },
-  {
-    path: '/reports',
-    component: () => import('../views/Reports.vue'),
-    meta: { title: '关系报告' }
+    meta: { title: '知识增强答疑' }
   },
   { path: '/plans', component: () => import('../views/Plans.vue'), meta: { title: '行动规划' } },
   {
@@ -38,7 +33,6 @@ const routes = [
     component: () => import('../views/Profile.vue'),
     meta: { title: '关系档案' }
   },
-  { path: '/growth', component: () => import('../views/Growth.vue'), meta: { title: '成长计划' } },
   {
     path: '/costs',
     component: () => import('../views/CostDashboard.vue'),

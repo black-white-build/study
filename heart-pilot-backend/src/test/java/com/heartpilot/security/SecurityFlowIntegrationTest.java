@@ -5,9 +5,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.heartpilot.module.report.entity.EmotionReport;
-import com.heartpilot.module.report.repository.ReportRepository;
-import com.heartpilot.module.user.repository.AppUserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -20,8 +17,6 @@ import org.springframework.test.web.servlet.MockMvc;
 class SecurityFlowIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
-    @Autowired AppUserRepository users;
-    @Autowired ReportRepository reports;
 
     @Test
     void jwtProtectsAndIsolatesConversationData() throws Exception {
@@ -69,10 +64,9 @@ class SecurityFlowIntegrationTest {
     }
 
     @Test
-    void jwtIsolatesTasksAndReportsBetweenUsers() throws Exception {
+    void jwtIsolatesTasksBetweenUsers() throws Exception {
         String suffix = Long.toString(System.nanoTime());
-        String usernameA = "ownera" + suffix;
-        String tokenA = register(usernameA);
+        String tokenA = register("ownera" + suffix);
         String tokenB = register("ownerb" + suffix);
         String payload =
                 """
@@ -83,15 +77,7 @@ class SecurityFlowIntegrationTest {
         long taskId =
                 json.readTree(createTask(tokenA, "private-" + suffix, payload)).get("id").asLong();
 
-        Long ownerId = users.findByUsernameIgnoreCase(usernameA).orElseThrow().getId();
-        EmotionReport report = new EmotionReport();
-        report.setUserId(ownerId);
-        report.setTitle("私密报告");
-        report = reports.save(report);
-
         mvc.perform(get("/agent-tasks/" + taskId).header("Authorization", "Bearer " + tokenB))
-                .andExpect(status().isNotFound());
-        mvc.perform(get("/reports/" + report.getId()).header("Authorization", "Bearer " + tokenB))
                 .andExpect(status().isNotFound());
     }
 

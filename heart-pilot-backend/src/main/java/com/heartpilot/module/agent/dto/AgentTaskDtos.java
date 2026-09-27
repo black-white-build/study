@@ -18,14 +18,35 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Agent 任务相关的请求/响应 DTO 集合。
+ * 统一用 record 定义不可变数据结构：CreateRequest/ConfirmRequest 为入参，
+ * 其余 *Response 为出参，并通过静态 from 方法从 Entity 转换而来，
+ * 隔离内部实体与对外接口字段。私有构造器防止该工具类被实例化。
+ */
 public final class AgentTaskDtos {
     private AgentTaskDtos() {}
 
+    /**
+     * 创建任务请求。
+     * @param title 任务标题（最长 140）
+     * @param objective 用户目标描述（必填，最长 8000）
+     * @param parameters 城市、预算等结构化参数，以 Map 透传
+     */
     public record CreateRequest(
             @Size(max = 140) String title,
             @NotBlank @Size(max = 8_000) String objective,
             Map<String, Object> parameters) {}
 
+    /**
+     * 用户确认/驳回候选计划请求。
+     * @param approved true=确认通过，false=驳回重规划
+     * @param note 用户备注/修改意见（最长 2000）
+     * @param province 调整后的省份
+     * @param city 调整后的城市
+     * @param budget 调整后的预算
+     * @param questions 用户补充的问题列表（单条最长 500）
+     */
     public record ConfirmRequest(
             boolean approved,
             @Size(max = 2_000) String note,
@@ -34,6 +55,10 @@ public final class AgentTaskDtos {
             BigDecimal budget,
             List<@Size(max = 500) String> questions) {}
 
+    /**
+     * 任务列表/详情中的任务基本信息响应。
+     * 字段与 AgentTask 实体对应，可靠性字段（重试、心跳、版本号等）一并透出供前端展示。
+     */
     public record TaskResponse(
             Long id,
             String title,
@@ -56,6 +81,7 @@ public final class AgentTaskDtos {
             long lockVersion,
             Instant createdAt,
             Instant updatedAt) {
+        /** 从实体转换，对可空的重试/版本字段做兜底默认值 */
         public static TaskResponse from(AgentTask entity) {
             return new TaskResponse(
                     entity.getId(),
@@ -82,6 +108,11 @@ public final class AgentTaskDtos {
         }
     }
 
+    /**
+     * 任务执行步骤响应。
+     * @param stepNo 步骤编号（从 1 开始）
+     * @param confirmationRequired 该步骤是否需要用户确认后才继续
+     */
     public record StepResponse(
             Long id,
             int stepNo,
@@ -106,6 +137,9 @@ public final class AgentTaskDtos {
         }
     }
 
+    /**
+     * 工具调用记录响应，透出给前端展示 Agent 调用了哪些工具及其结果摘要。
+     */
     public record ToolCallResponse(
             Long id,
             Long stepId,
@@ -132,6 +166,9 @@ public final class AgentTaskDtos {
         }
     }
 
+    /**
+     * 执行事件时间线响应（思考/行动/观察等），供前端回放 Agent 执行过程。
+     */
     public record ExecutionEventResponse(
             Long id,
             int taskVersion,
@@ -168,6 +205,9 @@ public final class AgentTaskDtos {
         }
     }
 
+    /**
+     * 生成文件（如 PDF 报告）信息响应，可能为 null（尚未生成）。
+     */
     public record FileResponse(
             Long id,
             String fileName,
@@ -176,6 +216,7 @@ public final class AgentTaskDtos {
             String businessType,
             Long businessId,
             Instant createdAt) {
+        /** 实体为空时返回 null，表示尚无文件 */
         public static FileResponse from(GeneratedFile entity) {
             if (entity == null) return null;
             return new FileResponse(
@@ -189,6 +230,9 @@ public final class AgentTaskDtos {
         }
     }
 
+    /**
+     * 任务详情聚合响应：任务基本信息 + 步骤 + 工具调用 + 执行事件 + PDF 文件。
+     */
     public record TaskDetailResponse(
             TaskResponse task,
             List<StepResponse> steps,

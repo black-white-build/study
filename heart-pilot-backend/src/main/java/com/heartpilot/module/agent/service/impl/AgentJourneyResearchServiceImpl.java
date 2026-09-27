@@ -17,17 +17,41 @@ import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-/** Owns external place/route research and the optional constrained ReAct supplement. */
+/**
+ * 负责外部地点/路线检索，以及可选的受约束 ReAct 补充核验。
+ * Owns external place/route research and the optional constrained ReAct supplement.
+ *
+ * 职责拆分：
+ * - researchJourney：按类别调用高德地图 + 网页检索拿到真实地点与路线，
+ *   把证据序列化为 JSON 持久化到任务上，并逐类别写检索/筛选/路线轨迹
+ * - supplementPublicInfo：在 ReAct/MCP 开关开启时，让 PublicInfoResearchAgent
+ *   动态判断是否需要补充公开信息；失败自动降级回退到已有证据，不阻断主流程
+ *
+ * 可靠性设计要点：
+ * - 所有外部调用都经过 AgentToolExecutor 包裹，获得幂等缓存、超时与重试能力
+ * - 检索结果（JourneyEvidence）回写任务时同步乐观锁版本号，避免并发覆盖
+ * - ReAct 异常只记录 WARNING 轨迹并降级，不向上抛出导致任务失败
+ */
 @Service
 public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchService {
+    /** 地点检索服务（高德 + 网页搜索） */
     private final PlaceSearchService placeSearch;
+    /** 工具执行器：统一处理外部调用的幂等、超时、重试与审计 */
     private final AgentToolExecutor toolExecutor;
+    /** 执行轨迹记录器 */
     private final AgentExecutionTraceService executionTrace;
+    /** ReAct 公开信息研究 Agent（Spring AI ToolCall/MCP） */
     private final PublicInfoResearchAgent researchAgent;
+    /** 任务 Repository，用于回写行程证据 JSON */
     private final TaskRepository tasks;
+    /** JSON 序列化工具，把证据对象写入任务 */
     private final ObjectMapper json;
+    /** ReAct/MCP 总开关，配置项 app.agent.react-enabled，默认开启 */
     private final boolean reactEnabled;
 
+    /**
+     * 构造器注入。reactEnabled 来自配置项，关闭时 supplementPublicInfo 直接走降级路径。
+     */
     public AgentJourneyResearchServiceImpl(
             PlaceSearchService placeSearch,
             AgentToolExecutor toolExecutor,
@@ -45,6 +69,19 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
         this.reactEnabled = reactEnabled;
     }
 
+    /**
+     * 执行一轮完整的地点与路线检索。
+     * 流程：记录检索开始轨迹 → 经工具执行器调用 placeSearch.researchJourney（带幂等/超时/重试）→
+     * 把证据序列化持久化到任务（同步乐观锁版本号）→ 逐类别写 OBSERVATION 轨迹 →
+     * 写筛选结果轨迹 → 写路线结果轨迹。
+     *
+     * @param task 当前任务
+     * @param stepNo 当前步骤编号
+     * @param city 限定城市范围
+     * @param requirements 检索需求文本
+     * @param toolName 工具调用审计名称
+     * @return 格式化后的检索文本 + 结构化证据
+     */
     @Override
     public JourneyResearch researchJourney(
             AgentTask task, int stepNo, String city, String requirements, String toolName)
@@ -75,9 +112,11 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
         long durationMs = elapsedMillis(started);
 
         PlaceSearchService.JourneyEvidence evidence = result.evidence();
+        // 把证据 JSON 持久化到任务，供后续静态路线图、最终报告复用
         task.setJourneyEvidenceJson(json.writeValueAsString(evidence));
         task.setEvidenceUpdatedAt(Instant.now());
         AgentTask saved = tasks.saveAndFlush(task);
+        // saveAndFlush 后数据库 @Version 自增，回写到内存对象，避免后续更新版本冲突
         task.setLockVersion(saved.getLockVersion());
 
         for (PlaceSearchService.SearchGroup group : result.searchResult().groups()) {
@@ -153,9 +192,21 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
         return new JourneyResearch(result.formatted(), evidence);
     }
 
+    /**
+     * 用 ReAct/MCP 补充核验公开信息（步骤 3）。
+     * 开关关闭时直接返回基础筛选说明；开启时构造受限 Prompt 交给 researchAgent 动态判断，
+     * 把补充观察追加到地点文本与核验说明里。
+     * 任何异常都被 catch 住：降级为"补充核验暂不可用"，继续使用已有本地检索证据，绝不向上抛。
+     *
+     * @param task 当前任务
+     * @param city 限定城市
+     * @param originalPlaces 上一步已得到的地点文本
+     * @return 补充后的地点文本 + 核验说明
+     */
     @Override
     public PublicResearch supplementPublicInfo(AgentTask task, String city, String originalPlaces) {
         String places = originalPlaces;
+        // 基础筛选说明：强调严格限定城市范围与筛选维度
         String verification =
                 "已严格限定在“"
                         + city
@@ -226,6 +277,7 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
                     null,
                     Map.of());
         } catch (Exception exception) {
+            // ReAct/MCP 不可用：降级到高德 REST + 网页检索证据，记录 WARNING 轨迹后继续
             verification += "\nReAct/MCP 补充核验暂不可用，继续使用已取得的本地检索证据。";
             trace(
                     task,
@@ -245,6 +297,7 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
         return new PublicResearch(places, verification);
     }
 
+    /** 记录一条检索阶段的执行轨迹，委托给 AgentExecutionTraceService */
     private void trace(
             AgentTask task,
             Integer stepNo,
@@ -276,10 +329,12 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
                 metadata);
     }
 
+    /** 纳秒时间戳差值转毫秒，用于统计工具/检索耗时 */
     private long elapsedMillis(long startedAt) {
         return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
     }
 
+    /** 截断字符串到指定长度，null 转空串，避免写入 Prompt 的内容过长 */
     private String shorten(String value, int length) {
         if (value == null) return "";
         return value.substring(0, Math.min(length, value.length()));

@@ -36,19 +36,6 @@
             >
           </div>
         </div>
-        <button
-          class="btn"
-          :disabled="!messages.length || reportGenerating || reportCooldown > 0"
-          @click="makeReport"
-        >
-          {{
-            reportGenerating
-              ? '正在生成报告…'
-              : reportCooldown > 0
-                ? `${reportCooldown}s 后可再次生成`
-                : '生成关系报告'
-          }}
-        </button>
       </header>
       <div ref="scrollEl" class="messages">
         <div v-if="!messages.length" class="chat-welcome">
@@ -121,8 +108,6 @@ const conversations = ref([]),
   current = ref(null),
   draft = ref(''),
   generating = ref(false),
-  reportGenerating = ref(false),
-  reportCooldown = ref(0),
   error = ref(''),
   toast = ref(''),
   scrollEl = ref(),
@@ -263,26 +248,6 @@ async function removeConversation() {
   current.value = null
   messages.value = []
   await loadConversations()
-}
-async function makeReport() {
-  if (reportGenerating.value || reportCooldown.value > 0 || !messages.value.length) return
-  reportGenerating.value = true
-  reportCooldown.value = 5
-  toast.value = '正在整理本次咨询并生成结构化报告，请稍候…'
-  const cooldownTimer = setInterval(() => {
-    reportCooldown.value--
-    if (reportCooldown.value <= 0) clearInterval(cooldownTimer)
-  }, 1000)
-  try {
-    const r = await api.post('/reports', { conversationId: activeId.value })
-    toast.value = `报告「${r.title}」已生成，可在关系报告中查看`
-    setTimeout(() => (toast.value = ''), 3200)
-  } catch (e) {
-    toast.value = ''
-    error.value = e.response?.data?.message || '报告生成失败'
-  } finally {
-    reportGenerating.value = false
-  }
 }
 function sources(m) {
   try {

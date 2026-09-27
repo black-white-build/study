@@ -7,6 +7,12 @@ import org.springframework.stereotype.Component;
 @Component
 public class TerminateTool {
 
+    /**
+     * 供 Agent 自主调用的终止动作。
+     * 任务已完成或无法继续推进时由模型主动调用，标志本次工作结束。
+     *
+     * @return 固定返回"任务结束"，通知 Agent 停止后续工具调用
+     */
     @Tool(
             description =
                     """

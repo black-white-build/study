@@ -1,7 +1,0 @@
-spring:
-  application:
-    name: heart-pilot-image-mcp-server
-  profiles:
-    active: sse
-server:
-  port: 8127

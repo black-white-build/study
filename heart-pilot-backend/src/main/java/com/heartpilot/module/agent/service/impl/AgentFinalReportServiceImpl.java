@@ -15,13 +15,28 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.springframework.stereotype.Service;
 
-/** Generates the final user-facing report from persisted, verifiable journey evidence. */
+/**
+ * 基于已持久化、可核验的行程证据，生成最终面向用户的行动报告。
+ * Generates the final user-facing report from persisted, verifiable journey evidence.
+ *
+ * 可靠性设计要点：
+ * - 调用大模型流式生成（90 秒超时），一旦超时或异常，降级为已生成的计划预览 + 固定沟通/安全提示，
+ *   保证用户至少能拿到一份可用报告，而不是整个任务失败
+ * - 若模型输出遗漏了"可核验地点与路线"章节，主动把证据列表追加到报告末尾，防止编造
+ * - 生成前后各写一条执行轨迹（RUNNING / SUCCEEDED），记录耗时与地点、路线数量
+ */
 @Service
 public class AgentFinalReportServiceImpl implements AgentFinalReportService {
+    /** 大模型客户端（DashScope），用于流式生成报告正文 */
     private final RelationshipAiClient ai;
+    /** 任务输入参数与文案格式化工具 */
     private final AgentTaskInputService taskInput;
+    /** 执行轨迹记录器，用于审计报告生成过程 */
     private final AgentExecutionTraceService executionTrace;
 
+    /**
+     * 构造器注入 AI 客户端、输入服务与轨迹服务。
+     */
     public AgentFinalReportServiceImpl(
             RelationshipAiClient ai,
             AgentTaskInputService taskInput,
@@ -31,6 +46,19 @@ public class AgentFinalReportServiceImpl implements AgentFinalReportService {
         this.executionTrace = executionTrace;
     }
 
+    /**
+     * 生成最终行动报告正文。
+     * 流程：构造 Prompt → 流式调用大模型（90 秒超时）→ 失败降级为计划预览 →
+     * 若模型遗漏证据章节则追加 → 写轨迹。
+     *
+     * @param task 任务实体（含 planPreview、版本号等）
+     * @param allRequirements 汇总后的全部需求文本（目标 + 问题 + 修改 + 档案偏好）
+     * @param questions 需要逐项回答的问题列表
+     * @param budget 当前有效预算文本
+     * @param note 用户确认时的补充说明
+     * @param journey 已检索并确认的行程证据（地点、路线）
+     * @return 最终报告 Markdown 文本
+     */
     @Override
     public String generate(
             AgentTask task,
@@ -40,6 +68,7 @@ public class AgentFinalReportServiceImpl implements AgentFinalReportService {
             String note,
             AgentJourneyResearchService.JourneyResearch journey) {
         String prompt = buildPrompt(task, allRequirements, questions, budget, note);
+        // 记录生成开始（RUNNING）轨迹
         trace(
                 task,
                 AgentExecutionEventType.ACTION,
@@ -50,18 +79,22 @@ public class AgentFinalReportServiceImpl implements AgentFinalReportService {
         long generationStarted = System.nanoTime();
         String content;
         try {
+            // 流式收集模型输出，整体阻塞等待，最长 90 秒
             content =
                     String.join("", ai.stream(prompt).collectList().block(Duration.ofSeconds(90)));
         } catch (Exception ignored) {
+            // 模型不可用/超时：降级为计划预览 + 固定沟通与安全提示，保证任务不失败
             content =
                     task.getPlanPreview()
                             + "\n\n## 沟通提示\n- 提前确认双方时间和预算。"
                             + "\n- 行程中保留可以随时调整或结束的空间。"
                             + "\n\n## 安全提醒\n- 出发前再次核对营业时间、预约要求和实时路线。";
         }
+        // 模型可能遗漏可核验地点章节，这里兜底追加证据，避免最终报告缺失真实来源
         if (!content.contains("## 可核验地点与路线")) {
             content += journey.evidence().formatted();
         }
+        // 记录生成完成（SUCCEEDED）轨迹，附带耗时
         trace(
                 task,
                 AgentExecutionEventType.RESULT,
@@ -76,6 +109,12 @@ public class AgentFinalReportServiceImpl implements AgentFinalReportService {
         return content;
     }
 
+    /**
+     * 构造最终报告的大模型 Prompt。
+     * 用文本块（text block）编写严格的客服角色与输出约束，强调：
+     * 不得编造店名/距离/链接、按问题原顺序回答、预算以当前有效值为准。
+     * 用 %s 占位注入预算、全部需求、问题列表、已确认资料和补充说明。
+     */
     private String buildPrompt(
             AgentTask task,
             String allRequirements,
@@ -124,6 +163,10 @@ public class AgentFinalReportServiceImpl implements AgentFinalReportService {
                         note == null ? "无" : note);
     }
 
+    /**
+     * 记录一条报告生成阶段的执行轨迹（步骤 6）。
+     * ACTION 类型记为 RUNNING，RESULT 类型记为 SUCCEEDED，provider 固定为 DashScope。
+     */
     private void trace(
             AgentTask task,
             AgentExecutionEventType type,

@@ -5,7 +5,7 @@
       <span class="eyebrow">{{ registering ? '创建你的成长空间' : '欢迎回来' }}</span>
       <h1>{{ registering ? '从一次真诚记录开始' : '继续你的关系旅程' }}</h1>
       <p>
-        {{ registering ? '你的会话、报告与计划只属于你。' : '登录后继续上次的倾诉、计划和复盘。' }}
+        {{ registering ? '你的答疑会话与行动计划只属于你。' : '登录后继续上次的答疑与行动规划。' }}
       </p>
       <form @submit.prevent="submit">
         <div class="field">

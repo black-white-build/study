@@ -20,9 +20,7 @@ com.heartpilot
 │   ├── auth
 │   ├── conversation
 │   ├── file
-│   ├── growth
 │   ├── knowledge
-│   ├── report
 │   ├── usage
 │   └── user
 └── security
@@ -34,6 +32,5 @@ their matching `XxxServiceImpl` implementations live in `service/impl`, matching
 the convention used by the VideoNest backend. Storage uses one shared
 `StorageService` strategy contract with local and MinIO implementations.
 
-The refactor changes Java package ownership only. HTTP routes, JSON contracts,
-database mappings, migration scripts, configuration keys, and runtime profiles
-remain unchanged.
+Removed business capabilities are retired through additive Flyway migrations;
+historical migrations remain immutable so existing databases keep valid checksums.
