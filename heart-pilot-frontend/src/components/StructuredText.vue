@@ -3,9 +3,12 @@
     <template v-for="(line, index) in lines" :key="index">
       <h3 v-if="line.type === 'heading'">
         <template v-for="(part, i) in line.parts" :key="i"
-          ><a v-if="part.url" :href="part.url" target="_blank" rel="noopener noreferrer">{{
-            part.text
-          }}</a
+          ><a
+            v-if="part.url"
+            :href="part.url"
+            :target="part.url.startsWith('#') ? undefined : '_blank'"
+            rel="noopener noreferrer"
+            >{{ part.text }}</a
           ><template v-else>{{ part.text }}</template></template
         >
       </h3>
@@ -13,9 +16,12 @@
         <span>•</span
         ><span
           ><template v-for="(part, i) in line.parts" :key="i"
-            ><a v-if="part.url" :href="part.url" target="_blank" rel="noopener noreferrer">{{
-              part.text
-            }}</a
+            ><a
+              v-if="part.url"
+              :href="part.url"
+              :target="part.url.startsWith('#') ? undefined : '_blank'"
+              rel="noopener noreferrer"
+              >{{ part.text }}</a
             ><template v-else>{{ part.text }}</template></template
           ></span
         >
@@ -24,27 +30,36 @@
         <span>{{ line.marker }}</span
         ><span
           ><template v-for="(part, i) in line.parts" :key="i"
-            ><a v-if="part.url" :href="part.url" target="_blank" rel="noopener noreferrer">{{
-              part.text
-            }}</a
+            ><a
+              v-if="part.url"
+              :href="part.url"
+              :target="part.url.startsWith('#') ? undefined : '_blank'"
+              rel="noopener noreferrer"
+              >{{ part.text }}</a
             ><template v-else>{{ part.text }}</template></template
           ></span
         >
       </p>
       <p v-else-if="line.type === 'table'" class="table-row">
         <template v-for="(part, i) in line.parts" :key="i"
-          ><a v-if="part.url" :href="part.url" target="_blank" rel="noopener noreferrer">{{
-            part.text
-          }}</a
+          ><a
+            v-if="part.url"
+            :href="part.url"
+            :target="part.url.startsWith('#') ? undefined : '_blank'"
+            rel="noopener noreferrer"
+            >{{ part.text }}</a
           ><template v-else>{{ part.text }}</template></template
         >
       </p>
       <div v-else-if="line.type === 'space'" class="space"></div>
       <p v-else>
         <template v-for="(part, i) in line.parts" :key="i"
-          ><a v-if="part.url" :href="part.url" target="_blank" rel="noopener noreferrer">{{
-            part.text
-          }}</a
+          ><a
+            v-if="part.url"
+            :href="part.url"
+            :target="part.url.startsWith('#') ? undefined : '_blank'"
+            rel="noopener noreferrer"
+            >{{ part.text }}</a
           ><template v-else>{{ part.text }}</template></template
         >
       </p>
@@ -64,12 +79,13 @@ const cleanInline = (text) =>
 const linkify = (text) => {
   const parts = []
   let cursor = 0
-  const matcher = /https?:\/\/[^\s<>()]+/g
+  const matcher = /https?:\/\/[^\s<>()]+|\[来源\s*\d+\]/g
   let match
   while ((match = matcher.exec(text))) {
     if (match.index > cursor) parts.push({ text: text.slice(cursor, match.index) })
     const clean = match[0].replace(/[，。；、,.;!?！？]+$/, '')
-    parts.push({ text: clean, url: clean })
+    const citation = clean.match(/^\[来源\s*(\d+)\]$/)
+    parts.push({ text: clean, url: citation ? `#source-${citation[1]}` : clean })
     if (clean.length < match[0].length) parts.push({ text: match[0].slice(clean.length) })
     cursor = match.index + match[0].length
   }

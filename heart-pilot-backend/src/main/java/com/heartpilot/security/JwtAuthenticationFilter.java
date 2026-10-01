@@ -27,6 +27,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         this.jwt = jwt;
     }
 
+    /**
+     * 单次请求 JWT 认证执行逻辑。
+     * 实现要点：仅处理带 Bearer 前缀的 Authorization 头，且 SecurityContext 尚未有认证信息时才执行；
+     * 解析成功后把用户 ID 写入 principal、role 转换为 ROLE_ 权限、nickname 放入 details；
+     * 令牌过期/签名错误等异常一律静默吞掉，不写入 SecurityContext，交由后续授权规则返回 401。
+     */
     @Override
     protected void doFilterInternal(
             HttpServletRequest req, HttpServletResponse res, FilterChain chain)

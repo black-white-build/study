@@ -6,9 +6,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 /**
- * AI 对话消息实体，对应数据库表 ai_message。
- * 一条消息是会话中的一次发言（用户提问或 AI 回复），并记录 token 用量、成本、来源引用等可观测数据。
- * 继承 BaseEntity 获得 id、创建时间等公共字段。
+ * AI 对话消息实体，对应数据库表 ai_message。 一条消息是会话中的一次发言（用户提问或 AI 回复），并记录 token 用量、成本、来源引用等可观测数据。 继承 BaseEntity
+ * 获得 id、创建时间等公共字段。
  */
 @Entity
 @Table(
@@ -56,8 +55,40 @@ public class AiMessage extends BaseEntity {
     private String errorMessage;
 
     /** 检索增强来源引用的 JSON 快照（链接、标题等） */
-    @Column(length = 1000)
+    @Column(columnDefinition = "TEXT")
     private String sourcesJson;
+
+    /** 本次问答命中的处理路由 */
+    @Column(length = 32)
+    private String route;
+
+    /** 安全分级（正常/关注/高风险） */
+    @Column(length = 32)
+    private String safetyLevel;
+
+    /** 本次使用的 Prompt 版本快照 JSON，便于回放与排查 */
+    @Column(columnDefinition = "TEXT")
+    private String promptVersionsJson;
+
+    /** 本次检索所用的知识库索引版本 */
+    @Column(length = 64)
+    private String knowledgeIndexVersion;
+
+    /** 引用校验状态（通过/缺失/未通过） */
+    @Column(length = 32)
+    private String citationStatus;
+
+    /** 引用校验明细 JSON */
+    @Column(columnDefinition = "TEXT")
+    private String citationValidationJson;
+
+    /** 安全审计结果 JSON */
+    @Column(columnDefinition = "TEXT")
+    private String auditJson;
+
+    /** 会话状态机快照 JSON，用于可恢复式续聊 */
+    @Column(columnDefinition = "TEXT")
+    private String conversationStateJson;
 
     /** 若为"重新生成"产生的新消息，指向被替换的原消息 ID */
     private Long regeneratedFromId;

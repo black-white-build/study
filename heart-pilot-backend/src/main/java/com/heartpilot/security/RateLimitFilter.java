@@ -87,6 +87,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
                         .build();
     }
 
+    /**
+     * 单次请求限流执行逻辑。
+     * 实现要点：跳过 /health 探活请求；认证接口按 IP 用 authLimit 严格限流，其余接口按登录用户 ID 用 defaultLimit；
+     * 计数优先走 Redis 原子 incr（多实例共享），Redis 异常时降级到本机 Caffeine 窗口计数；
+     * 无论是否超限都在响应头写入 X-RateLimit-Limit / X-RateLimit-Remaining；超限直接写 429 JSON 并中断过滤链。
+     */
     @Override
     protected void doFilterInternal(
             HttpServletRequest request, HttpServletResponse response, FilterChain chain)

@@ -212,6 +212,9 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         return tasks.findByUserId(userId, pageable);
     }
 
+    /**
+     * 实现：直接委托 taskInput.cityOptions，地区校验与高德接口调用逻辑见 AgentTaskInputServiceImpl。
+     */
     @Override
     public List<String> cityOptions(String province) {
         return taskInput.cityOptions(province);
@@ -845,11 +848,6 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 metadata);
     }
 
-    /** 计算从纳秒时间戳到现在的毫秒数，用于工具调用耗时统计 */
-    private long elapsedMillis(long startedAt) {
-        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
-    }
-
     /**
      * 按 ID + 用户 ID 查询任务，不存在则抛出 404。
      * 所有需要鉴权的操作都通过此方法获取任务，确保用户只能操作自己的任务。
@@ -874,15 +872,6 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     private String shorten(String value, int length) {
         if (value == null) return "";
         return value.substring(0, Math.min(length, value.length()));
-    }
-
-    /** 将字符串安全序列化为 JSON 字符串（带双引号），序列化失败返回空字符串 */
-    private String quote(String value) {
-        try {
-            return json.writeValueAsString(value);
-        } catch (Exception e) {
-            return "\"\"";
-        }
     }
 
     /**

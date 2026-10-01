@@ -29,11 +29,8 @@
         <div>
           <span class="advisor-avatar">旅</span>
           <div>
-            <b>心旅关系顾问</b
-            ><small
-              ><i></i>知识库与关系档案已连接 · {{ current?.model || 'qwen-plus' }}
-              <router-link to="/profile">查看档案</router-link></small
-            >
+            <b>关系沟通与决策助手</b
+            ><small><i></i>可信知识检索已连接 · {{ current?.model || 'qwen-plus' }}</small>
           </div>
         </div>
       </header>
@@ -42,9 +39,6 @@
           <span>◌</span>
           <h2>今天，想从哪件事说起？</h2>
           <p>你可以讲事情经过，也可以只说此刻的感受。我们会先一起把问题说清，再寻找下一步。</p>
-          <div class="prompts">
-            <button v-for="p in prompts" :key="p" @click="draft = p">{{ p }}</button>
-          </div>
         </div>
         <article v-for="m in messages" :key="m.id" class="message" :class="m.role.toLowerCase()">
           <div class="message-avatar">
@@ -65,8 +59,19 @@
             </div>
             <div v-if="sources(m).length" class="sources">
               <b>参考知识</b
-              ><span v-for="s in sources(m)" :key="s.document + s.chunk"
-                >《{{ s.document }}》· {{ s.section }}</span
+              ><component
+                :is="s.sourceUrl ? 'a' : 'span'"
+                v-for="s in sources(m)"
+                :key="s.document + s.chunk"
+                :id="`source-${s.number}`"
+                :href="s.sourceUrl || undefined"
+                :target="s.sourceUrl ? '_blank' : undefined"
+                :rel="s.sourceUrl ? 'noopener noreferrer' : undefined"
+                >[来源{{ s.number }}] 《{{ s.document }}》· {{ s.section }} ·
+                {{ s.sourceName || '来源未标注' }} · {{ evidenceText(s.evidenceLevel) }}</component
+              >
+              <small v-if="m.citationStatus" class="citation-status"
+                >引用校验：{{ citationStatusText(m.citationStatus) }}</small
               >
             </div>
             <button
@@ -112,7 +117,6 @@ const conversations = ref([]),
   toast = ref(''),
   scrollEl = ref(),
   streamController = ref()
-const prompts = ['我们最近总因为小事争吵', '我不知道怎么表达自己的需要', '我想修复一次伤人的沟通']
 onMounted(loadConversations)
 async function loadConversations() {
   const page = await api.get('/conversations')
@@ -255,6 +259,17 @@ function sources(m) {
   } catch {
     return []
   }
+}
+function evidenceText(level) {
+  return (
+    { HIGH: '高证据', MEDIUM: '中等证据', LOW: '低证据', UNVERIFIED: '未核验' }[level] || '未核验'
+  )
+}
+function citationStatusText(status) {
+  return (
+    { PASSED: '通过', REPAIRED: '已修复', DEGRADED: '已降级', NOT_APPLICABLE: '不适用' }[status] ||
+    status
+  )
 }
 function time(v) {
   return v ? new Date(v).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : ''
@@ -436,21 +451,6 @@ async function scrollBottom() {
   font-size: 15px;
   line-height: 1.75;
 }
-.prompts {
-  margin-top: 24px;
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.prompts button {
-  padding: 10px 13px;
-  border: 1px solid var(--line);
-  border-radius: 99px;
-  background: white;
-  color: #67655f;
-  font-size: 13px;
-}
 .message {
   display: grid;
   grid-template-columns: 36px 1fr;
@@ -519,8 +519,17 @@ async function scrollBottom() {
   width: 100%;
   font-size: 12px;
 }
-.sources span {
+.sources span,
+.sources a {
   color: #77736a;
+  font-size: 12px;
+}
+.sources a {
+  text-decoration: underline;
+}
+.citation-status {
+  width: 100%;
+  color: #8a867d;
   font-size: 12px;
 }
 .regenerate {
@@ -644,9 +653,6 @@ async function scrollBottom() {
 .chat-head > .btn {
   font-size: 14px;
 }
-.prompts button {
-  font-size: 14px;
-}
 .message-meta b {
   font-size: 15px;
 }
@@ -655,6 +661,7 @@ async function scrollBottom() {
 }
 .sources b,
 .sources span,
+.sources a,
 .regenerate {
   font-size: 13px;
 }

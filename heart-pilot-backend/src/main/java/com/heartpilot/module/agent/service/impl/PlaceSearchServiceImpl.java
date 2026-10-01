@@ -154,6 +154,8 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
         List<MapCard> cards = new ArrayList<>();
         for (int index = 0; index < places.size(); index++) {
             Place place = places.get(index);
+            // routes 按相邻地点对顺序排列：routes.get(i) 是 places[i]→places[i+1] 的路线，
+            // 因此第 index 个地点（index>0）的"上一段路线"对应 routes.get(index-1)；首地点无来路
             RoutePlan routeFromPrevious =
                     index == 0 || index - 1 >= routes.size() ? null : routes.get(index - 1);
             String[] coordinates = place.location().split(",", 2);
@@ -465,6 +467,10 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
         return !keyword.isBlank() && combined.contains(keyword);
     }
 
+    /**
+     * 归一化行政地名：去除空白与标点分隔符，并剥掉末尾的行政后缀（省/市/区/县/自治区/自治州等），
+     * 使"山东省"与"山东"、"南宁市"与"南宁"能互相匹配，用于 matchesRequestedScope 的宽松范围校验。
+     */
     private static String normalizeRegion(String value) {
         if (value == null) return "";
         return value.replaceAll("[\\s,，、/\\-|]+", "")
@@ -507,6 +513,10 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
         return new ArrayList<>(topics.values());
     }
 
+    /**
+     * 归一化用户口语意图：去掉开头的礼貌/请求前缀（"请问""我想找""有没有"等）和结尾的语气/推荐后缀（"呢""吗""推荐一下"等），
+     * 以及前导编号，得到干净的意图关键词，再交给 LocalPlaceIntentCatalog 分类。
+     */
     private static String normalizeIntent(String value) {
         if (value == null) return "";
         return value.trim()
@@ -516,22 +526,6 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
                 .replaceAll("(?:的地方|相关地点|相关信息|哪里有|哪里可以|怎么样|怎么安排|推荐一下|推荐|吗|呢)$", "")
                 .replaceAll("^[\\d.、\\s]+", "")
                 .trim();
-    }
-
-    private String fallbackKeywords(String objective) {
-        String keywords =
-                objective
-                        .replace('｜', ' ')
-                        .replaceAll("(?:初始目标|地点|预算|需要解决的问题|历次补充要求|关系档案偏好|必须遵守的关系边界)：", " ")
-                        .replaceAll("\\s+", " ")
-                        .trim();
-        if (keywords.isBlank()) return "本地地点";
-        return keywords.length() <= 80 ? keywords : keywords.substring(0, 80);
-    }
-
-    private boolean containsAny(String text, String... values) {
-        for (String value : values) if (text.contains(value)) return true;
-        return false;
     }
 
     private String firstNotBlank(String... values) {
@@ -587,8 +581,6 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
     private String shorten(String value, int length) {
         return value.substring(0, Math.min(value.length(), length));
     }
-
-    private record TopicRule(String label, List<String> aliases) {}
 
     private record SearchTopic(
             String label,

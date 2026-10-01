@@ -1,7 +1,7 @@
 <template>
   <div class="page-head">
     <div>
-      <h1>消费成本</h1>
+      <h1>AI 用量</h1>
       <p>按消息追踪模型 Token、缓存命中与估算费用。</p>
     </div>
     <select v-model="days" class="period" @change="load">

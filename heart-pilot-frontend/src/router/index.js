@@ -20,30 +20,34 @@ const routes = [
   {
     path: '/consult',
     component: () => import('../views/Consult.vue'),
-    meta: { title: '知识增强答疑' }
+    meta: { title: 'AI 答疑' }
   },
-  { path: '/plans', component: () => import('../views/Plans.vue'), meta: { title: '行动规划' } },
+  {
+    path: '/planning',
+    component: () => import('../views/Plans.vue'),
+    meta: { title: '行动规划', planning: true }
+  },
+  { path: '/plans', component: () => import('../views/Plans.vue'), meta: { title: '我的计划' } },
   {
     path: '/plans/:id',
     component: () => import('../views/TaskDetail.vue'),
     meta: { title: '任务详情' }
   },
   {
-    path: '/profile',
-    component: () => import('../views/Profile.vue'),
-    meta: { title: '关系档案' }
+    path: '/settings',
+    component: () => import('../views/Settings.vue'),
+    meta: { title: '个人设置' }
   },
   {
     path: '/costs',
     component: () => import('../views/CostDashboard.vue'),
-    meta: { title: '消费成本' }
+    meta: { title: 'AI 用量' }
   },
   {
-    path: '/knowledge',
+    path: '/admin/knowledge',
     component: () => import('../views/Knowledge.vue'),
-    meta: { title: '知识库管理', admin: true }
+    meta: { admin: true, title: '知识库管理' }
   },
-  { path: '/me', component: () => import('../views/Personal.vue'), meta: { title: '个人中心' } },
   { path: '/:pathMatch(.*)*', redirect: '/' }
 ]
 const router = createRouter({

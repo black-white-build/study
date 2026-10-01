@@ -26,6 +26,7 @@ import org.springframework.ai.tool.ToolCallback;
  * 以便记录每轮观察摘要并受 maxSteps 约束。
  */
 public class ToolCallAgent extends ReActAgent {
+    /** 聊天客户端：封装 DashScope 模型调用，think 阶段通过它发起对话 */
     private final ChatClient chatClient;
     /** 系统提示词：定义角色、工具边界与输出要求 */
     private final String systemPrompt;
@@ -52,6 +53,9 @@ public class ToolCallAgent extends ReActAgent {
         this.tools = Arrays.stream(tools).filter(Objects::nonNull).toList();
     }
 
+    /**
+     * 实现：初始历史仅包含一条 UserMessage，系统提示词在 think 阶段通过 .system(systemPrompt) 注入。
+     */
     @Override
     protected List<Message> initialHistory(String userPrompt) {
         return List.of(new UserMessage(userPrompt));

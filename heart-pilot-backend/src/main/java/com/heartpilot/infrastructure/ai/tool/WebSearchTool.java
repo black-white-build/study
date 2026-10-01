@@ -47,32 +47,6 @@ public class WebSearchTool {
     }
 
     /**
-     * 搜索本地地点信息（默认返回 8 条）。
-     *
-     * @param city     目标城市
-     * @param keywords 地点关键词（如"咖啡馆""书店"）
-     * @return 格式化后的本地结果文本
-     */
-    public String searchLocalPlaces(String city, String keywords) {
-        return searchLocalPlaces(city, keywords, 8);
-    }
-
-    /**
-     * 搜索本地地点信息，可指定返回条数。
-     * 在查询词中拼入当前年份与"营业状态/路线/高德地图/大众点评"等词，提升结果时效性与本地相关性。
-     */
-    public String searchLocalPlaces(String city, String keywords, int limit) {
-        String query =
-                city
-                        + " "
-                        + keywords
-                        + " "
-                        + LocalDate.now().getYear()
-                        + " 最新营业状态 实时路线 地址 本地推荐 高德地图 大众点评";
-        return format(searchResults(query, city, limit), city);
-    }
-
-    /**
      * 搜索本地地点并要求结果同时命中指定关键词。
      *
      * @param city           目标城市
@@ -99,13 +73,6 @@ public class WebSearchTool {
                         .toList();
         if (results.isEmpty()) return "暂未检索到同时包含“" + city + "”和“" + requiredKeyword + "”的可靠公开来源。";
         return format(results, city);
-    }
-
-    /**
-     * 供 Service 层直接获取结构化搜索结果（不做文本格式化）。
-     */
-    public List<WebResult> searchWebResults(String query, int limit) {
-        return searchResults(query, null, limit);
     }
 
     /**

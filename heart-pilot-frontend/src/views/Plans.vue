@@ -1,12 +1,13 @@
 <template>
   <div class="page-head">
     <div>
-      <h1>行动规划</h1>
-      <p>基于真实城市地点，生成可确认、可修改、可导出的行动方案。</p>
+      <h1>{{ planningMode ? '行动规划' : '我的计划' }}</h1>
+      <p v-if="planningMode">分析目标和约束，生成可确认、可修改、可恢复的行动方案。</p>
+      <p v-else>查看历史计划、执行轨迹、计划版本和可下载的正式计划书。</p>
     </div>
-    <button class="btn coral" @click="showCreate = true">＋ 创建任务</button>
+    <button v-if="planningMode" class="btn coral" @click="showCreate = true">＋ 创建规划</button>
   </div>
-  <section class="agent-brief panel">
+  <section v-if="planningMode" class="agent-brief panel">
     <div>
       <span class="badge green">城市严格匹配</span>
       <h2>每一步都看得见，关键决定由你确认。</h2>
@@ -20,7 +21,7 @@
       ><span class="confirm">你确认</span><i>→</i><span>方案 / PDF</span>
     </div>
   </section>
-  <div class="task-toolbar">
+  <div v-if="!planningMode" class="task-toolbar">
     <h3>我的任务</h3>
     <select v-model="filter" class="select">
       <option value="">全部状态</option>
@@ -29,10 +30,10 @@
       <option value="SUCCEEDED">已完成</option>
     </select>
   </div>
-  <div v-if="!filtered.length" class="panel empty">
-    <b>还没有行动任务</b>创建一个真实目标，让 Agent 为你拆解和执行。
+  <div v-if="!planningMode && !filtered.length" class="panel empty">
+    <b>还没有行动计划</b>前往“行动规划”创建一个目标，让 Agent 为你拆解和执行。
   </div>
-  <div class="task-list">
+  <div v-if="!planningMode" class="task-list">
     <div
       v-for="t in filtered"
       :key="t.id"
@@ -62,7 +63,7 @@
       ><strong>→</strong>
     </div>
   </div>
-  <div v-if="showCreate" class="modal-backdrop" @click.self="showCreate = false">
+  <div v-if="planningMode && showCreate" class="modal-backdrop" @click.self="showCreate = false">
     <form class="modal panel" @submit.prevent="create">
       <header>
         <div>
@@ -146,9 +147,10 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api, streamSSE } from '../api'
 const router = useRouter(),
+  route = useRoute(),
   tasks = ref([]),
   filter = ref(''),
   showCreate = ref(false),
@@ -203,7 +205,11 @@ const router = useRouter(),
 const filtered = computed(() =>
   filter.value ? tasks.value.filter((x) => x.status === filter.value) : tasks.value
 )
-onMounted(load)
+const planningMode = computed(() => route.meta.planning === true)
+onMounted(() => {
+  if (planningMode.value) showCreate.value = true
+  else load()
+})
 watch(
   () => form.province,
   async (province) => {

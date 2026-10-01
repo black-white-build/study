@@ -56,7 +56,7 @@
           <article>
             <b>02</b><span class="step-icon">▤</span>
             <h3>知识增强答疑</h3>
-            <p>结合关系档案与专业知识库，提供有依据、可追溯的沟通建议。</p>
+            <p>结合可信知识来源和当前对话事实，提供有依据、可追溯的沟通建议。</p>
           </article>
           <article>
             <b>03</b><span class="step-icon">↗</span>
@@ -74,8 +74,8 @@
             步骤均可查看、取消和追溯。遇到暴力、自伤或人身安全风险时，我们会优先提示寻求现实世界的可信支持。
           </p>
         </div>
-        <router-link :to="authState.token ? '/profile' : '/register'" class="btn"
-          >建立你的关系档案 →</router-link
+        <router-link :to="authState.token ? '/settings' : '/register'" class="btn"
+          >管理个人设置 →</router-link
         >
       </section>
     </main>

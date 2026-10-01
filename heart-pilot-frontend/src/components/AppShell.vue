@@ -7,15 +7,18 @@
       >
       <nav>
         <p>沟通与行动</p>
-        <router-link to="/consult"><span>◌</span>知识增强答疑</router-link>
-        <router-link to="/plans"><span>↗</span>行动规划</router-link>
+        <router-link to="/consult"><span>◌</span>AI 答疑</router-link>
+        <router-link to="/planning"><span>↗</span>行动规划</router-link>
+        <router-link to="/plans"><span>✓</span>我的计划</router-link>
         <p>账户与资源</p>
-        <router-link to="/profile"><span>◇</span>关系档案</router-link>
-        <router-link to="/costs"><span>¥</span>消费成本</router-link>
-        <router-link v-if="isAdmin" to="/knowledge"><span>▦</span>知识库管理</router-link>
+        <router-link to="/costs"><span>◫</span>AI 用量</router-link>
+        <router-link to="/settings"><span>◇</span>个人设置</router-link>
+        <router-link v-if="authState.user?.role === 'ADMIN'" to="/admin/knowledge"
+          ><span>◈</span>知识库管理</router-link
+        >
       </nav>
       <div class="sidebar-foot">
-        <router-link to="/me" class="user-card"
+        <router-link to="/settings" class="user-card"
           ><span class="avatar">{{ initial }}</span
           ><span
             ><b>{{ authState.user?.nickname }}</b
@@ -44,7 +47,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { authState, isAdmin, logout } from '../stores/auth'
+import { authState, logout } from '../stores/auth'
 const router = useRouter(),
   route = useRoute(),
   navOpen = ref(false)
@@ -52,10 +55,12 @@ const initial = computed(() => authState.user?.nickname?.slice(0, 1) || '你')
 const greeting = computed(() => (new Date().getHours() < 12 ? '上午好' : '欢迎回来'))
 const topAction = computed(() =>
   route.path.startsWith('/consult')
-    ? { to: '/plans', label: '开始规划' }
-    : route.path.startsWith('/plans')
-      ? { to: '/me', label: '查看计划书' }
-      : { to: '/consult', label: '开始倾诉' }
+    ? { to: '/planning', label: '开始规划' }
+    : route.path.startsWith('/planning')
+      ? { to: '/plans', label: '查看我的计划' }
+      : route.path.startsWith('/plans')
+        ? { to: '/planning', label: '新建规划' }
+        : { to: '/consult', label: '开始倾诉' }
 )
 function signOut() {
   logout()

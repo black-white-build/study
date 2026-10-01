@@ -352,7 +352,7 @@
           {{ pdfDownloading ? '正在下载…' : '下载计划书 PDF' }}</button
         ><span>{{
           detail.pdfFile
-            ? `PDF 已生成（${fileSize(detail.pdfFile.sizeBytes)}），也已保存到个人中心。`
+            ? `PDF 已生成（${fileSize(detail.pdfFile.sizeBytes)}），可在本计划详情下载。`
             : '请先确认上方计划书内容，再按需生成 PDF；生成和下载是两个独立操作。'
         }}</span>
       </div>

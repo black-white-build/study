@@ -7,8 +7,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heartpilot.common.exception.ApiException;
 import com.heartpilot.module.agent.entity.AgentTask;
 import com.heartpilot.module.agent.service.AgentTaskInputService;
-import com.heartpilot.module.user.entity.RelationshipProfile;
-import com.heartpilot.module.user.repository.ProfileRepository;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -19,12 +17,9 @@ import org.springframework.stereotype.Service;
 
 /**
  * 规范化任务输入，并拼装面向用户的候选计划预览。
- * Normalizes task input and composes the user-facing plan preview.
  *
- * 职责：
- * - 地区校验与解析（省/市 → 完整 searchRegion）、城市下拉选项（调高德行政区接口）
- * - 预算规范化（去尾零、非负校验）、问题列表合并/去重/从修改说明中抽问题
- * - 幂等键校验、parameters JSON 的读写、关系档案偏好拼装进检索上下文
+ * <p>职责： - 地区校验与解析（省/市 → 完整 searchRegion）、城市下拉选项（调高德行政区接口） - 预算规范化（去尾零、非负校验）、问题列表合并/去重/从修改说明中抽问题 -
+ * 幂等键校验与 parameters JSON 读写；只使用当前任务明确提交的目标和约束
  */
 @Service
 public class AgentTaskInputServiceImpl implements AgentTaskInputService {
@@ -36,12 +31,12 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
                     "福州", "厦门", "南昌", "合肥", "苏州", "无锡", "宁波", "温州", "石家庄", "太原", "兰州", "西宁", "银川",
                     "乌鲁木齐", "呼和浩特", "拉萨", "香港", "澳门");
 
-    /** 关系档案 Repository，读取用户偏好与关系边界，注入检索上下文 */
-    private final ProfileRepository profiles;
     /** parameters JSON 读写工具 */
     private final ObjectMapper json;
+
     /** 高德 Web 服务 Key，用于城市下拉与地点检索 */
     private final String amapKey;
+
     /** 合法省级行政区列表，校验用户选择 */
     private static final List<String> PROVINCES =
             List.of(
@@ -81,19 +76,12 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
                     "澳门特别行政区");
 
     public AgentTaskInputServiceImpl(
-            ProfileRepository profiles,
-            ObjectMapper json,
-            @Value("${AMAP_MAPS_API_KEY:}") String amapKey) {
-        this.profiles = profiles;
+            ObjectMapper json, @Value("${AMAP_MAPS_API_KEY:}") String amapKey) {
         this.json = json;
         this.amapKey = amapKey;
     }
 
-    /**
-     * 拼装用户确认阶段看到的候选计划预览（Markdown）。
-     * 包含目标、地点范围与预算、累计修改要求、待解决问题、分类检索结果与下一步提示；
-     * 检索结果过长时截断到 5000 字符。
-     */
+    /** 拼装用户确认阶段看到的候选计划预览（Markdown）。 包含目标、地点范围与预算、累计修改要求、待解决问题、分类检索结果与下一步提示； 检索结果过长时截断到 5000 字符。 */
     @Override
     public String buildPreview(
             AgentTask task,
@@ -135,9 +123,8 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
     }
 
     /**
-     * 汇总最终阶段送给大模型的完整需求文本。
-     * 优先级从高到低：当前有效参数（地点/预算）> 初始目标 > 待解决问题 > 历次修改 >
-     * 关系档案里的偏好与边界，用"｜"连接。
+     * 汇总最终阶段送给大模型的完整需求文本。 优先级从高到低：当前有效参数（地点/预算）> 初始目标 > 待解决问题 > 历次修改 >
+     * 所有约束均来自当前规划任务，不读取答疑会话或长期关系档案。
      */
     @Override
     public String combinedRequirements(AgentTask task, Map<String, Object> parameters) {
@@ -151,29 +138,16 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         if (!questions.isEmpty()) parts.add("需要解决的问题：" + String.join("；", questions));
         List<String> revisions = asStringList(parameters.get("revisions"));
         if (!revisions.isEmpty()) parts.add("历次补充要求：" + String.join("；", revisions));
-        RelationshipProfile profile = profiles.findByUserId(task.getUserId()).orElse(null);
-        if (profile != null) {
-            if (profile.getPreferences() != null && !profile.getPreferences().isBlank()) {
-                parts.add("关系档案偏好：" + profile.getPreferences().trim());
-            }
-            if (profile.getBoundaries() != null && !profile.getBoundaries().isBlank()) {
-                parts.add("必须遵守的关系边界：" + profile.getBoundaries().trim());
-            }
-        }
         return String.join("｜", parts);
     }
 
-    /** External place searches use only the user's explicit question list. */
+    /** 外部地点检索仅使用用户明确提交的问题列表。 */
     @Override
     public String searchRequirements(Map<String, Object> parameters) {
         return String.join("\n", asStringList(parameters.get("questions")));
     }
 
-    /**
-     * 根据选中的省份返回下辖市列表（前端联动下拉）。
-     * 直辖市/特别行政区直接返回自身；其余省份实时调用高德行政区查询接口取地级城市。
-     * 未配置 Key 或接口异常时抛出业务异常。
-     */
+    /** 根据选中的省份返回下辖市列表（前端联动下拉）。 直辖市/特别行政区直接返回自身；其余省份实时调用高德行政区查询接口取地级城市。 未配置 Key 或接口异常时抛出业务异常。 */
     @Override
     public List<String> cityOptions(String province) {
         String normalized = province == null ? "" : province.trim();
@@ -211,6 +185,10 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         }
     }
 
+    /**
+     * 实现：null 返回空列表；单个非 List 对象包成单元素列表；逐项 trim 后丢弃空白与字面量 "null"，
+     * 并按出现顺序去重。
+     */
     @Override
     public List<String> asStringList(Object raw) {
         if (raw == null) return new ArrayList<>();
@@ -225,6 +203,9 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         return result;
     }
 
+    /**
+     * 实现：先复制 existing，再逐项 trim incoming，空白项跳过，已存在的不重复追加，保留原有顺序。
+     */
     @Override
     public List<String> mergeQuestions(List<String> existing, List<String> incoming) {
         List<String> merged = new ArrayList<>(existing);
@@ -238,8 +219,7 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
     }
 
     /**
-     * 把修改说明里"像问题"的句子抽出来，追加到问题列表。
-     * 按换行/分号切句，去掉列表前缀（-、•、1.、、），再用结尾问号或疑问词
+     * 把修改说明里"像问题"的句子抽出来，追加到问题列表。 按换行/分号切句，去掉列表前缀（-、•、1.、、），再用结尾问号或疑问词
      * （什么/哪里/是否/怎么…）判断是否为问题；"停车+免费/哪里"也算问题。
      */
     @Override
@@ -260,6 +240,10 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         return extracted;
     }
 
+    /**
+     * 实现：逐行扫描检索结果文本，找到以"动态检索类别："开头的行并截取冒号后内容；
+     * 未找到或文本为空时返回兜底文案"按问题动态提取"。
+     */
     @Override
     public String searchCategories(String searchResult) {
         if (searchResult == null || searchResult.isBlank()) return "按问题动态提取";
@@ -269,6 +253,10 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         return "按问题动态提取";
     }
 
+    /**
+     * 实现：null/空白/字面量 "null" 返回 fallback；若能解析为 BigDecimal 则经 normalizeBudget 去尾零后输出纯数字串，
+     * 否则原样返回字符串。
+     */
     @Override
     public String parameterText(Object value, String fallback) {
         if (value == null) return fallback;
@@ -281,11 +269,18 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         }
     }
 
+    /**
+     * 实现："未限定"或空串直接返回"未限定"，否则在数字后拼接" 元"。
+     */
     @Override
     public String budgetLabel(String budget) {
         return "未限定".equals(budget) || budget.isBlank() ? "未限定" : budget + " 元";
     }
 
+    /**
+     * 实现：直接修改入参 Map。budget 为空则移除该键；解析为负数抛 400；格式非法抛 400；
+     * 合法值经 normalizeBudget 去尾零后写回。
+     */
     @Override
     public void normalizeStoredBudget(Map<String, Object> parameters) {
         Object raw = parameters.get("budget");
@@ -302,11 +297,17 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         }
     }
 
+    /**
+     * 实现：stripTrailingZeros 去除尾零后再用 toPlainString 输出，避免 200.00 与 200.0 不一致。
+     */
     @Override
     public BigDecimal normalizeBudget(BigDecimal budget) {
         return new BigDecimal(budget.stripTrailingZeros().toPlainString());
     }
 
+    /**
+     * 实现：反序列化为 LinkedHashMap 以保持插入顺序；JSON 为空或解析失败时静默返回空 Map，不抛错。
+     */
     @Override
     public Map<String, Object> readParameters(AgentTask task) {
         try {
@@ -317,6 +318,9 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         }
     }
 
+    /**
+     * 实现：序列化为 JSON 字符串；任何序列化异常静默返回 "{}"，不阻断任务创建。
+     */
     @Override
     public String writeParameters(Map<String, Object> parameters) {
         try {
@@ -326,10 +330,7 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         }
     }
 
-    /**
-     * 解析实际用于检索的城市：优先用已解析好的 searchRegion，其次用 city 字段，
-     * 都缺失时再从目标文本里粗匹配已知城市。
-     */
+    /** 解析实际用于检索的城市：优先用已解析好的 searchRegion，其次用 city 字段， 都缺失时再从目标文本里粗匹配已知城市。 */
     @Override
     public String resolveCity(Map<String, Object> parameters, String text) {
         String searchRegion = String.valueOf(parameters.getOrDefault("searchRegion", "")).trim();
@@ -340,8 +341,7 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
     }
 
     /**
-     * 校验并解析用户选择的省/市，返回完整的 searchRegion。
-     * 校验：省必须在合法列表内；市必须是中文且以"市/自治州/地区/盟/特别行政区"结尾。
+     * 校验并解析用户选择的省/市，返回完整的 searchRegion。 校验：省必须在合法列表内；市必须是中文且以"市/自治州/地区/盟/特别行政区"结尾。
      * 直辖市返回市名本身，否则拼接为"省+市"。
      */
     @Override
@@ -358,17 +358,16 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         return province.equals(city) ? city : province + city;
     }
 
+    /**
+     * 实现：按 KNOWN_CITIES 列表顺序做子串匹配，返回第一个被文本包含的城市名；都不命中返回空串。
+     */
     @Override
     public String findKnownCity(String text) {
         if (text == null) return "";
         return KNOWN_CITIES.stream().filter(text::contains).findFirst().orElse("");
     }
 
-    /**
-     * 规范化并校验幂等键。
-     * 去空格；最长 96 字符；只允许字母数字及 . _ : - ；非法直接 400。
-     * null/空串返回 null，表示本次不启用幂等。
-     */
+    /** 规范化并校验幂等键。 去空格；最长 96 字符；只允许字母数字及 . _ : - ；非法直接 400。 null/空串返回 null，表示本次不启用幂等。 */
     @Override
     public String normalizeIdempotencyKey(String key) {
         if (key == null || key.isBlank()) return null;
