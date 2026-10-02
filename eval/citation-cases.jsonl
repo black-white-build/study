@@ -1,0 +1,5 @@
+{"id":"supported","answer":"具体请求应该允许对方拒绝或协商[来源1]。","source":"表达需求时，可以提出对方能够明确回答的请求。请求应允许对方拒绝或协商。","evidence":"MEDIUM","expectedValid":true}
+{"id":"missing-number","answer":"沟通一定会解决所有冲突[来源2]。","source":"请求应允许对方拒绝或协商。","evidence":"HIGH","expectedValid":false}
+{"id":"unsupported","answer":"每天发送十条消息最有效[来源1]。","source":"请求应允许对方拒绝或协商。","evidence":"HIGH","expectedValid":false}
+{"id":"low-evidence","answer":"冷战一定代表关系结束[来源1]。","source":"一些网络帖子讨论了冷战。","evidence":"LOW","expectedValid":false}
+{"id":"no-result","answer":"这是确定的心理学规律[来源1]。","source":"","evidence":"UNVERIFIED","expectedValid":false}

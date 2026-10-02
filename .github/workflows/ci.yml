@@ -17,7 +17,7 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - run: ./mvnw --batch-mode verify
+      - run: chmod +x ./mvnw && ./mvnw --batch-mode verify
 
   frontend:
     runs-on: ubuntu-latest

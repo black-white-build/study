@@ -39,6 +39,39 @@ Agent 工具白名单仅包含网页搜索、终止工具，以及名称匹配�
 - `heartpilot.agent.tool.idempotency_hits`：工具幂等命中次数。
 - `heartpilot.agent.task.transitions`：任务状态迁移次数。
 - `heartpilot.rag.retrieval`：向量检索与关键词降级次数。
+- `heartpilot.chat.route`：问题分流结果。
+- `heartpilot.chat.safety_decision`：安全动作与语境（真实、第三方、否定、引用、假设）。
+- `heartpilot.chat.citation_validation`：引用通过、修复或降级次数。
+- `heartpilot.chat.citations`：总引用与无效引用计数。
+- `heartpilot.chat.citation_coverage`：需要依据的结论与通过支持性校验的结论计数。
+
+## 决策助手对话链路
+
+对话依次经过安全语境识别、问题分流、当前会话结构化状态更新、知识检索、完整回答生成、固定结构渲染和引用校验。未经引用校验的模型输出不会发送给前端；SSE 保留为传输协议，但首个 `delta` 已是完成校验的内容。
+
+Prompt 位于 `heart-pilot-backend/src/main/resources/prompts`，按 `classifier`、`answer`、`citation`、`safety` 分文件和版本加载。每条助手消息保存实际 Prompt 版本、知识索引版本、路由、安全语境和引用校验结果。
+
+会话状态只在当前会话内保存，事实、推测、偏好和情绪分开存储。用户明确使用“更正”“刚才说错”“其实”等表达时，同类事实会按语义键覆盖；系统不建立跨会话心理画像。
+
+## Git 管理的知识库
+
+`knowledge/*.md` 是知识内容的规范仓库源，每个文件必须在 front matter 中声明来源、内容版本、可信度、审核状态和适用分类。修改 Markdown 后执行：
+
+```powershell
+.\scripts\rebuild-knowledge-index.ps1 -UserId 1
+```
+
+脚本先校验所有 Markdown，再进行全量索引重建。项目刻意不实现增量去重和知识管理后台工作流。索引版本由全部源文件内容哈希确定并进入检索、回答缓存键。
+
+## 固定质量评测
+
+固定样本、指标定义和改造前基线位于 `eval/`。执行：
+
+```powershell
+.\scripts\run-conversation-eval.ps1
+```
+
+评测会先回放旧关键词规则以复现基线，再运行当前安全与引用校验，报告引用虚假率、无结果降级成功率、高风险召回率和误报率。固定集是离线回归门槛，不替代真实模型和人工评审。
 
 简历中的延迟、吞吐量和成功率应从这些指标及压测结果计算，不填写未经测量的数据。
 
