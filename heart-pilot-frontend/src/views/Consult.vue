@@ -57,6 +57,11 @@
                 >{{ m.content }}</template
               ><span v-if="m.status === 'STREAMING'" class="cursor"></span>
             </div>
+            <div v-if="m.role === 'ASSISTANT' && retrieval(m)" class="retrieval" :class="retrieval(m).status.toLowerCase()">
+              <template v-if="retrieval(m).status === 'HIT'">知识库命中 {{ retrieval(m).count }} 条</template>
+              <template v-else-if="retrieval(m).status === 'MISS'">知识库未命中，本次为模型知识回答</template>
+              <template v-else>本次未检索知识库</template>
+            </div>
             <div v-if="sources(m).length" class="sources">
               <b>参考知识</b
               ><component
@@ -215,8 +220,21 @@ function streamHandlers(assistant) {
       assistant.id = d.messageId || assistant.id
       scrollBottom()
     },
-    done: async () => {
+    done: async (d) => {
       generating.value = false
+      if (d) {
+        // 用后端引用校验后的完整内容覆盖流式期间的原文（无效引用已被替换/降级）
+        if (d.content) assistant.content = d.content
+        if (d.sourcesJson) assistant.sourcesJson = d.sourcesJson
+        if (d.citationStatus) assistant.citationStatus = d.citationStatus
+        // 流式期间的临时消息没有 auditJson，把检索状态挂上，前端可直接展示
+        if (d.retrievalStatus) {
+          assistant.auditJson = JSON.stringify({
+            retrievalStatus: d.retrievalStatus,
+            retrievedCount: d.retrievedCount || 0
+          })
+        }
+      }
       await refreshCurrent()
     },
     close: async (state) => {
@@ -258,6 +276,16 @@ function sources(m) {
     return JSON.parse(m.sourcesJson || '[]')
   } catch {
     return []
+  }
+}
+function retrieval(m) {
+  try {
+    const audit = JSON.parse(m.auditJson || '{}')
+    const status = audit.retrievalStatus
+    if (!status) return null
+    return { status, count: audit.retrievedCount || 0 }
+  } catch {
+    return null
   }
 }
 function evidenceText(level) {
@@ -504,6 +532,20 @@ async function scrollBottom() {
   vertical-align: middle;
   background: var(--coral);
   animation: blink 1s infinite;
+}
+.retrieval {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #8a867d;
+}
+.retrieval.hit {
+  color: #5d7f5d;
+}
+.retrieval.miss {
+  color: #a8743d;
+}
+.retrieval.skipped {
+  color: #aaa79f;
 }
 .sources {
   margin-top: 12px;

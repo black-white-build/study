@@ -8,13 +8,16 @@ import org.junit.jupiter.api.Test;
 
 /** 提示词注册表：校验四个独立的版本化提示词均能被正确加载且非空。 */
 class PromptRegistryTest {
-    /** 四个提示词全部加载、版本号统一为 1.0.0，且正文均不为空。 */
+    /** 四个提示词全部加载、answer 与 safety 因内容升级为 1.1.0，其余保持 1.0.0，且正文均不为空。 */
     @Test
     void loadsFourIndependentVersionedPrompts() {
         PromptRegistry registry = new PromptRegistry();
         assertEquals(4, registry.versions().size());
+        assertEquals("1.1.0", registry.get(PromptName.ANSWER).version());
+        assertEquals("1.1.0", registry.get(PromptName.SAFETY).version());
+        assertEquals("1.0.0", registry.get(PromptName.CLASSIFIER).version());
+        assertEquals("1.0.0", registry.get(PromptName.CITATION).version());
         for (PromptName name : PromptName.values()) {
-            assertEquals("1.0.0", registry.get(name).version());
             assertFalse(registry.get(name).body().isBlank());
         }
     }

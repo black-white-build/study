@@ -90,30 +90,49 @@
           placeholder="例如：周六下午约会，喜欢广西菜和安静散步，不去太吵的商场"
         ></textarea>
       </div>
-      <div class="grid-2">
-        <div class="field">
-          <label>省 / 直辖市</label>
-          <select v-model="form.province" class="select" required>
-            <option value="" disabled>请选择省级行政区</option>
-            <option v-for="province in provinces" :key="province" :value="province">
-              {{ province }}
-            </option>
-          </select>
-        </div>
-        <div class="field">
-          <label>城市</label>
-          <select
-            v-model="form.city"
-            class="select"
-            required
-            :disabled="!form.province || citiesLoading"
-          >
-            <option value="" disabled>{{ citiesLoading ? '加载城市中…' : '请选择城市' }}</option>
-            <option v-for="city in cityOptions" :key="city" :value="city">{{ city }}</option>
-          </select>
+      <div class="field">
+        <label>规划目标 <small>选填，不选则由 Agent 根据目标文本判断</small></label>
+        <select v-model="form.goalType" class="select">
+          <option value="">自动判断目标类型</option>
+          <option v-for="(label, value) in goalTypeOptions" :key="value" :value="value">
+            {{ label }}
+          </option>
+        </select>
+      </div>
+      <div class="field">
+        <label>希望生成的行动类型 <small>可多选，不选则由 Agent 自动识别</small></label>
+        <div class="kind-grid">
+          <label v-for="(label, value) in actionKindOptions" :key="value" class="kind-box">
+            <input v-model="form.actionKinds" type="checkbox" :value="value" />
+            <span>{{ label }}</span>
+          </label>
         </div>
       </div>
-      <div class="grid-2">
+      <div v-if="placeSelected" class="location-box">
+        <div class="location-title">已选择地点型行动，请补充地点与检索约束</div>
+        <div class="grid-2">
+          <div class="field">
+            <label>省 / 直辖市</label>
+            <select v-model="form.province" class="select" required>
+              <option value="" disabled>请选择省级行政区</option>
+              <option v-for="province in provinces" :key="province" :value="province">
+                {{ province }}
+              </option>
+            </select>
+          </div>
+          <div class="field">
+            <label>城市</label>
+            <select
+              v-model="form.city"
+              class="select"
+              required
+              :disabled="!form.province || citiesLoading"
+            >
+              <option value="" disabled>{{ citiesLoading ? '加载城市中…' : '请选择城市' }}</option>
+              <option v-for="city in cityOptions" :key="city" :value="city">{{ city }}</option>
+            </select>
+          </div>
+        </div>
         <div class="field">
           <label>预算（元）</label
           ><input
@@ -124,14 +143,40 @@
             placeholder="500"
           />
         </div>
+        <div class="field">
+          <label>希望方案回答的问题 <small>每行一个，可填写多个</small></label
+          ><textarea
+            v-model="form.questionsText"
+            class="textarea questions"
+            required
+            placeholder="哪家店适合安静聊天？&#10;两个地点之间怎么走？&#10;下雨时有什么室内备选？"
+          ></textarea>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="field">
+          <label>时间约束 <small>选填</small></label
+          ><input
+            v-model="form.timeConstraint"
+            class="input"
+            placeholder="例如：这周六下午，对方晚上 8 点前要回家"
+          />
+        </div>
       </div>
       <div class="field">
-        <label>希望方案回答的问题 <small>每行一个，可填写多个</small></label
+        <label>沟通背景 <small>选填，补充双方关系与最近发生了什么</small></label
         ><textarea
-          v-model="form.questionsText"
-          class="textarea questions"
-          required
-          placeholder="哪家店适合安静聊天？&#10;两个地点之间怎么走？&#10;下雨时有什么室内备选？"
+          v-model="form.contextNotes"
+          class="textarea"
+          placeholder="例如：上次见面聊得不愉快，最近联系变少，想缓和一下"
+        ></textarea>
+      </div>
+      <div class="field">
+        <label>明确边界 <small>选填，不希望计划做什么</small></label
+        ><textarea
+          v-model="form.boundary"
+          class="textarea"
+          placeholder="例如：不推荐太贵的餐厅，不安排太晚的活动，不要让对方有压力"
         ></textarea>
       </div>
       <p v-if="createError" class="form-error">{{ createError }}</p>
@@ -161,6 +206,11 @@ const router = useRouter(),
   form = reactive({
     title: '',
     objective: '',
+    goalType: '',
+    actionKinds: [],
+    timeConstraint: '',
+    contextNotes: '',
+    boundary: '',
     province: '',
     city: '',
     budget: null,
@@ -206,6 +256,23 @@ const filtered = computed(() =>
   filter.value ? tasks.value.filter((x) => x.status === filter.value) : tasks.value
 )
 const planningMode = computed(() => route.meta.planning === true)
+const placeSelected = computed(() => form.actionKinds.includes('PLACE_VISIT'))
+const goalTypeOptions = {
+  CONNECTION: '增进连接',
+  REPAIR: '修复关系',
+  BOUNDARY: '建立边界',
+  CELEBRATION: '庆祝表达',
+  DECISION: '共同决策',
+  SELF_GROWTH: '自我成长'
+}
+const actionKindOptions = {
+  PLACE_VISIT: '地点见面',
+  MESSAGE: '发条消息',
+  CONVERSATION: '当面沟通',
+  GIFT_RITUAL: '礼物 / 仪式',
+  SELF_PRACTICE: '自我练习',
+  OBSERVATION: '观察记录'
+}
 onMounted(() => {
   if (planningMode.value) showCreate.value = true
   else load()
@@ -257,6 +324,18 @@ async function create() {
       .split(/\n/)
       .map((x) => x.trim())
       .filter(Boolean)
+    // 只有选择了地点型行动才要求并传地点、预算与问题；否则后端无需地点检索
+    const place = placeSelected.value
+    if (place && (!form.province || !form.city.trim())) {
+      throw new Error('选择地点型行动时需要填写省和城市')
+    }
+    const background = [
+      form.timeConstraint ? `时间约束：${form.timeConstraint}` : '',
+      form.contextNotes ? `沟通背景：${form.contextNotes}` : '',
+      form.boundary ? `明确边界：${form.boundary}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n')
     const key = createIdempotencyKey()
     const t = await api.post(
       '/agent-tasks',
@@ -264,10 +343,13 @@ async function create() {
         title: form.title,
         objective: form.objective,
         parameters: {
-          province: form.province,
-          city: form.city.trim(),
-          budget: form.budget,
-          questions
+          province: place ? form.province : '',
+          city: place ? form.city.trim() : '',
+          budget: place ? form.budget : null,
+          questions: place ? questions : [],
+          goalType: form.goalType || undefined,
+          preferredActionKinds: form.actionKinds.length ? [...form.actionKinds] : undefined,
+          contextNotes: background || undefined
         }
       },
       { headers: { 'Idempotency-Key': key } }
@@ -556,5 +638,52 @@ function statusClass(s) {
   margin-left: 6px;
   color: var(--muted);
   font-weight: 400;
+}
+.kind-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+.kind-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffefa;
+  cursor: pointer;
+  font-size: 13px;
+  transition: 0.15s;
+}
+.kind-box:hover {
+  border-color: #e6b8ae;
+}
+.kind-box:has(input:checked) {
+  border-color: var(--coral);
+  background: var(--coral-soft);
+  color: #9b4637;
+  font-weight: 600;
+}
+.kind-box input {
+  accent-color: var(--coral);
+}
+.location-box {
+  padding: 16px;
+  border: 1px solid #efd0c7;
+  border-radius: 12px;
+  background: #fff8f4;
+  display: grid;
+  gap: 14px;
+}
+.location-title {
+  color: #a0493b;
+  font-size: 12px;
+  font-weight: 700;
+}
+@media (max-width: 600px) {
+  .kind-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>

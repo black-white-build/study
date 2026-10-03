@@ -15,11 +15,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 public class HeartPilotApplication {
 
-    /**
-     * Spring Boot 入口：先加载本地 .env 环境变量，再启动应用上下文。
-     */
+
     public static void main(String[] args) {
-        // 本地开发时把 .env 中的密钥等注入系统属性，生产环境由环境变量直接提供
         DotEnvLoader.load();
         SpringApplication.run(HeartPilotApplication.class, args);
     }

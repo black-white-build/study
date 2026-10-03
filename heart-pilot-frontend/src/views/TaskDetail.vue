@@ -197,6 +197,9 @@
           <div class="preview">
             <StructuredText :content="detail.task.planPreview || '方案仍在整理，请稍后刷新。'" />
           </div>
+          <p class="plan-cards-hint">
+            下方"计划与版本"面板按行动类型展示卡片，可逐条核对后确认，或修改约束重新规划。
+          </p>
           <div class="plan-editor">
             <div class="editor-title">
               <b>确认前修改当前参数</b
@@ -336,6 +339,145 @@
       </div>
       <p v-if="mapCards.length" class="evidence-notice">{{ evidence.notice }}</p>
     </section>
+    <section v-if="plan && (plan.versions?.length || planItems.length)" class="panel version-panel">
+      <header class="version-head">
+        <div>
+          <span class="eyebrow">计划与版本</span>
+          <h2>
+            目标：{{ goalTypeLabel(plan.goalType) }} · 状态：{{ planStatusText(plan.planStatus) }}
+          </h2>
+          <p>
+            按行动类型拆分的可执行条目；每次重新规划都会保留旧版本，确认后当前版本成为正式计划。
+          </p>
+        </div>
+        <small v-if="plan.versions?.length">{{ plan.versions.length }} 个版本 · 最新在前</small>
+      </header>
+      <div v-if="planItems.length" class="plan-cards">
+        <article
+          v-for="item in planItems"
+          :key="item.id"
+          class="action-card"
+          :class="cardKindClass(item.executionKind)"
+        >
+          <div class="action-card-head">
+            <span class="action-kind">{{ actionKindLabel(item.executionKind) }}</span>
+            <b>{{ item.title }}</b
+            ><span class="item-status">{{ itemStatusText(item.status) }}</span>
+          </div>
+          <div class="action-card-body">
+            <template v-if="item.executionKind === 'MESSAGE'">
+              <blockquote v-if="item.payload.draft" class="msg-draft">
+                {{ item.payload.draft }}
+              </blockquote>
+              <p v-if="item.payload.tone">语气：{{ item.payload.tone }}</p>
+              <p v-if="item.payload.sendTiming">建议时机：{{ item.payload.sendTiming }}</p>
+              <p v-if="item.payload.forbiddenExpressions?.length" class="muted">
+                避免：{{ item.payload.forbiddenExpressions.join('、') }}
+              </p>
+            </template>
+            <template v-else-if="item.executionKind === 'PLACE_VISIT'">
+              <p v-if="item.payload.status === 'NEEDS_CITY'">
+                地点行动需要城市信息，请在确认区补充城市后重新规划。
+              </p>
+              <p v-else-if="item.payload.status === 'NO_PLACE'">
+                {{
+                  item.payload.notice || '当前城市暂未取得可核验的地点，系统不会编造店名或地址。'
+                }}
+              </p>
+              <template v-else>
+                <p v-if="item.payload.placeName">
+                  <b>{{ item.payload.placeName }}</b
+                  >（{{ item.payload.address }}）
+                </p>
+                <p v-if="item.payload.businessHours">营业时间：{{ item.payload.businessHours }}</p>
+                <p v-if="item.payload.routeMode">
+                  从上一站{{ routeModeText2(item.payload.routeMode) }}约
+                  {{ item.payload.durationMinutes }} 分钟
+                </p>
+                <a
+                  v-if="item.payload.mapUrl"
+                  :href="item.payload.mapUrl"
+                  target="_blank"
+                  rel="noreferrer"
+                  >在高德地图中查看 ↗</a
+                >
+              </template>
+            </template>
+            <template v-else-if="item.executionKind === 'CONVERSATION'">
+              <p v-if="item.payload.goal">沟通目标：{{ item.payload.goal }}</p>
+              <p v-if="item.payload.opening">开场白：{{ item.payload.opening }}</p>
+              <ul v-if="item.payload.keyExpressions?.length" class="key-list">
+                <li v-for="line in item.payload.keyExpressions" :key="line">{{ line }}</li>
+              </ul>
+              <p v-if="item.payload.concreteRequest">
+                具体请求：{{ item.payload.concreteRequest }}
+              </p>
+              <p v-if="item.payload.exitCondition">退出条件：{{ item.payload.exitCondition }}</p>
+            </template>
+            <template v-else-if="item.executionKind === 'GIFT_RITUAL'">
+              <p v-if="item.payload.preparation">准备事项：{{ item.payload.preparation }}</p>
+              <p v-if="item.payload.budgetText">预算安排：{{ item.payload.budgetText }}</p>
+              <ul v-if="item.payload.steps?.length" class="key-list">
+                <li v-for="line in item.payload.steps" :key="line">{{ line }}</li>
+              </ul>
+            </template>
+            <template v-else-if="item.executionKind === 'SELF_PRACTICE'">
+              <p v-if="item.payload.practiceContent" class="pre-line">
+                {{ item.payload.practiceContent }}
+              </p>
+              <p v-if="item.payload.durationMinutes">
+                建议时长：{{ item.payload.durationMinutes }} 分钟
+              </p>
+              <p v-if="item.payload.completionCriteria">
+                完成标准：{{ item.payload.completionCriteria }}
+              </p>
+            </template>
+            <template v-else-if="item.executionKind === 'OBSERVATION'">
+              <p v-if="item.payload.observeContent" class="pre-line">
+                {{ item.payload.observeContent }}
+              </p>
+              <ul v-if="item.payload.recordFields?.length" class="key-list">
+                <li v-for="line in item.payload.recordFields" :key="line">{{ line }}</li>
+              </ul>
+              <p v-if="item.payload.forbiddenInferences">
+                禁止推断：{{ item.payload.forbiddenInferences }}
+              </p>
+            </template>
+            <ExpandableText
+              v-if="item.instruction && !['MESSAGE', 'CONVERSATION'].includes(item.executionKind)"
+              :content="item.instruction"
+              :lines="6"
+            />
+          </div>
+          <div class="action-card-foot">
+            <span v-if="item.timingSuggestion">时机：{{ item.timingSuggestion }}</span>
+            <span v-if="item.estimatedDurationMinutes"
+              >约 {{ item.estimatedDurationMinutes }} 分钟</span
+            ><span v-if="item.estimatedCost !== null && item.estimatedCost !== undefined"
+              >预算约 {{ item.estimatedCost }} 元</span
+            ><span :class="['risk', riskClass(item.riskLevel)]">{{
+              riskText(item.riskLevel)
+            }}</span>
+          </div>
+        </article>
+      </div>
+      <div class="version-list">
+        <article
+          v-for="v in sortedVersions"
+          :key="v.id"
+          :class="['version-row', v.status.toLowerCase()]"
+        >
+          <span class="version-no">V{{ v.versionNo + 1 }}</span>
+          <div class="version-main">
+            <b>{{ versionStatusText(v.status) }}</b
+            ><small>{{ date(v.createdAt) }}</small>
+            <ExpandableText v-if="v.previewText" :content="v.previewText" :lines="4" />
+            <p v-if="v.note" class="version-note">驳回/修改说明：{{ v.note }}</p>
+          </div>
+          <span class="version-status">{{ versionStatusText(v.status) }}</span>
+        </article>
+      </div>
+    </section>
     <section v-if="detail.task.finalResult" class="panel result">
       <span class="eyebrow">行动计划书已生成</span>
       <h2>你的可执行行动计划书</h2>
@@ -374,6 +516,7 @@ import StructuredText from '../components/StructuredText.vue'
 const route = useRoute()
 const router = useRouter()
 const detail = ref()
+const plan = ref()
 const error = ref('')
 const timer = ref()
 const errorTimer = ref()
@@ -524,6 +667,10 @@ const canCancel = computed(
 const originalQuestions = computed(() =>
   Array.isArray(parameters.value.questions) ? parameters.value.questions : []
 )
+const planItems = computed(() => plan.value?.currentItems || [])
+const sortedVersions = computed(() =>
+  [...(plan.value?.versions || [])].sort((left, right) => right.versionNo - left.versionNo)
+)
 const enteredQuestions = computed(() =>
   editor.questionsText
     .split(/\n/)
@@ -620,6 +767,11 @@ async function load() {
     const next = await api.get(`/agent-tasks/${route.params.id}`)
     detail.value = next
     loadRouteMap()
+    try {
+      plan.value = await api.get(`/agent-tasks/${route.params.id}/plan`)
+    } catch {
+      plan.value = null
+    }
     if (next.task.status === 'AWAITING_CONFIRMATION') hydrateEditor()
     if (!['RUNNING', 'WAITING'].includes(next.task.status)) clearInterval(timer.value)
   } catch {
@@ -743,6 +895,52 @@ function routeModeText(route) {
     ] || '出行'
   )
 }
+function routeModeText2(mode) {
+  return (
+    { WALKING: '步行', BICYCLING: '骑行', TRANSIT: '地铁/公交', DRIVING: '驾车' }[mode] || '出行'
+  )
+}
+const goalTypeLabel = (value) =>
+  ({
+    CONNECTION: '增进连接',
+    REPAIR: '修复关系',
+    BOUNDARY: '建立边界',
+    CELEBRATION: '庆祝表达',
+    DECISION: '共同决策',
+    SELF_GROWTH: '自我成长'
+  })[value] || '未指定'
+const actionKindLabel = (value) =>
+  ({
+    PLACE_VISIT: '地点见面',
+    MESSAGE: '消息草稿',
+    CONVERSATION: '沟通脚本',
+    GIFT_RITUAL: '礼物 / 仪式',
+    SELF_PRACTICE: '自我练习',
+    OBSERVATION: '观察记录'
+  })[value] || value
+const cardKindClass = (value) =>
+  ({
+    PLACE_VISIT: 'card-place',
+    MESSAGE: 'card-message',
+    CONVERSATION: 'card-conversation',
+    GIFT_RITUAL: 'card-gift',
+    SELF_PRACTICE: 'card-practice',
+    OBSERVATION: 'card-observation'
+  })[value] || ''
+const itemStatusText = (value) =>
+  ({ PENDING: '待执行', COMPLETED: '已完成', SKIPPED: '已跳过' })[value] || value || '待执行'
+const versionStatusText = (value) =>
+  ({
+    DRAFT: '候选草稿',
+    APPROVED: '正式版本',
+    SUPERSEDED: '已被新版本取代',
+    REJECTED: '已驳回'
+  })[value] || value
+const planStatusText = (value) =>
+  ({ DRAFT: '候选计划，待确认', APPROVED: '已确认', ARCHIVED: '已归档' })[value] || value || '—'
+const riskText = (value) =>
+  ({ LOW: '低风险', MEDIUM: '需留意', HIGH: '高风险' })[value] || value || ''
+const riskClass = (value) => String(value || '').toLowerCase()
 function routeNavigationUrl(route) {
   const mode = { WALKING: 'walk', BICYCLING: 'ride', TRANSIT: 'bus', DRIVING: 'car' }[
     effectiveRouteMode(route)
@@ -1511,6 +1709,265 @@ function time(value) {
   border-radius: 12px;
   background: #fffefa;
 }
+.plan-cards {
+  display: grid;
+  gap: 14px;
+}
+.action-card {
+  position: relative;
+  overflow: hidden;
+  padding: 18px;
+  border: 1px solid #f0d8d1;
+  border-radius: 14px;
+  background: #fffefa;
+}
+.action-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: #d9b8ae;
+}
+.action-card.card-place::before {
+  background: #4e8a6c;
+}
+.action-card.card-message::before {
+  background: #8a6fc2;
+}
+.action-card.card-conversation::before {
+  background: #c28a4e;
+}
+.action-card.card-gift::before {
+  background: #c24e6f;
+}
+.action-card.card-practice::before {
+  background: #4e7fc2;
+}
+.action-card.card-observation::before {
+  background: #6c9a4e;
+}
+.action-card-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.action-card-head b {
+  font-size: 15px;
+}
+.action-kind {
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #fff;
+  background: #9c8379;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.card-place .action-kind {
+  background: #4e8a6c;
+}
+.card-message .action-kind {
+  background: #8a6fc2;
+}
+.card-conversation .action-kind {
+  background: #c28a4e;
+}
+.card-gift .action-kind {
+  background: #c24e6f;
+}
+.card-practice .action-kind {
+  background: #4e7fc2;
+}
+.card-observation .action-kind {
+  background: #6c9a4e;
+}
+.item-status {
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #6f6b63;
+  background: #f2f0ea;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.action-card-body {
+  margin-top: 12px;
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.action-card-body p,
+.action-card-body ul {
+  margin: 0;
+}
+.action-card-body b {
+  color: #433f39;
+}
+.msg-draft {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 3px solid #8a6fc2;
+  border-radius: 8px;
+  background: #f6f3fc;
+  color: #433f39;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.key-list {
+  padding-left: 18px;
+}
+.pre-line {
+  white-space: pre-wrap;
+}
+.action-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #eee2da;
+}
+.action-card-foot span {
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #6f6b63;
+  background: #f2f0ea;
+  font-size: 11px;
+}
+.action-card-foot .risk {
+  margin-left: auto;
+}
+.action-card-foot .risk.low {
+  color: #356247;
+  background: #e7f3ea;
+}
+.action-card-foot .risk.medium {
+  color: #8b6134;
+  background: #f8ecd8;
+}
+.action-card-foot .risk.high {
+  color: #9f4034;
+  background: #f9e6e2;
+}
+.version-panel {
+  margin-top: 20px;
+  padding: 30px;
+}
+.version-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+.version-head h2 {
+  margin: 7px 0 4px;
+  font-size: 20px;
+}
+.version-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.version-head > small {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.version-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+.version-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffefa;
+}
+.version-row.approved {
+  border-color: #cfe2d5;
+  background: #f5faf6;
+}
+.version-row.superseded {
+  opacity: 0.72;
+}
+.version-row.rejected {
+  border-color: #f0d0c8;
+  background: #fdf3f1;
+}
+.version-no {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  color: #fff;
+  background: #69746c;
+  font-size: 12px;
+  font-weight: 800;
+}
+.version-row.approved .version-no {
+  background: var(--green);
+}
+.version-row.rejected .version-no {
+  background: #b44c3f;
+}
+.version-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.version-main b {
+  font-size: 14px;
+}
+.version-main small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.version-note {
+  margin: 2px 0 0;
+  color: #9f4034;
+  font-size: 12px;
+}
+.version-status {
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #5c665f;
+  background: #edf0ee;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.version-row.approved .version-status {
+  color: #2f6646;
+  background: #e7f2ea;
+}
+.version-row.rejected .version-status {
+  color: #9f4034;
+  background: #f9e6e2;
+}
+@media (max-width: 700px) {
+  .version-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .version-row {
+    grid-template-columns: 46px minmax(0, 1fr);
+  }
+  .version-status {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
 .plan-editor {
   margin-top: 14px;
   padding: 18px;
@@ -1545,6 +2002,11 @@ function time(value) {
   justify-content: flex-end;
   gap: 9px;
   flex-wrap: wrap;
+}
+.plan-cards-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 aside {
   display: grid;

@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heartpilot.common.exception.ApiException;
 import com.heartpilot.module.agent.entity.AgentTask;
 import com.heartpilot.module.agent.entity.AgentTaskStep;
+import com.heartpilot.module.agent.entity.PlanActionItem;
+import com.heartpilot.module.agent.entity.PlanVersion;
+import com.heartpilot.module.agent.entity.ActionPlan;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionEventStatus;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionEventType;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionPhase;
@@ -12,6 +15,9 @@ import com.heartpilot.module.agent.entity.enums.AgentTaskStepStatus;
 import com.heartpilot.module.agent.repository.TaskRepository;
 import com.heartpilot.module.agent.repository.TaskStepRepository;
 import com.heartpilot.module.agent.repository.ToolCallRepository;
+import com.heartpilot.module.agent.service.ActionDraftProposer;
+import com.heartpilot.module.agent.service.ActionEnrichmentService;
+import com.heartpilot.module.agent.service.ActionEnricher;
 import com.heartpilot.module.agent.service.AgentExecutionTraceService;
 import com.heartpilot.module.agent.service.AgentFinalReportService;
 import com.heartpilot.module.agent.service.AgentJourneyResearchService;
@@ -21,6 +27,9 @@ import com.heartpilot.module.agent.service.AgentTaskPdfService;
 import com.heartpilot.module.agent.service.AgentTaskService;
 import com.heartpilot.module.agent.service.AgentTaskStepService;
 import com.heartpilot.module.agent.service.DistributedTaskLockService;
+import com.heartpilot.module.agent.service.PlanModelService;
+import com.heartpilot.module.agent.service.PlanSafetyChecker;
+import com.heartpilot.module.agent.service.PlanningContext;
 import com.heartpilot.module.file.entity.GeneratedFile;
 import com.heartpilot.module.file.repository.GeneratedFileRepository;
 import com.heartpilot.module.file.service.StorageService;
@@ -67,12 +76,12 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     /** 任务执行流程的步骤名称列表，索引对应步骤编号（从 1 开始），第 5 步为用户确认节点 */
     private static final List<String> FLOW =
             List.of(
-                    "正在分析用户需求",
-                    "正在搜索地点与公开信息",
-                    "正在读取并筛选候选信息",
-                    "正在整理预算与时间",
+                    "正在分析目标与约束",
+                    "正在识别行动类型并生成草案",
+                    "正在按行动类型检索信息",
+                    "正在生成候选计划并检查安全",
                     "等待用户确认",
-                    "正在生成最终方案",
+                    "正在生成正式计划版本",
                     "任务已完成");
     private final TaskRepository tasks;
     private final TaskStepRepository steps;
@@ -95,6 +104,10 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     private final AgentTaskStateMachine stateMachine;
     private final AgentTaskPdfService pdfService;
     private final AgentExecutionTraceService executionTrace;
+    private final ActionDraftProposer draftProposer;
+    private final ActionEnrichmentService enrichmentService;
+    private final PlanSafetyChecker planSafetyChecker;
+    private final PlanModelService planModel;
     /** 当前正在执行的任务 Future 映射（taskId -> Future），用于取消操作中断线程 */
     private final Map<Long, Future<?>> activeFutures = new ConcurrentHashMap<>();
 
@@ -120,7 +133,11 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             DistributedTaskLockService locks,
             AgentTaskStateMachine stateMachine,
             AgentTaskPdfService pdfService,
-            AgentExecutionTraceService executionTrace) {
+            AgentExecutionTraceService executionTrace,
+            ActionDraftProposer draftProposer,
+            ActionEnrichmentService enrichmentService,
+            PlanSafetyChecker planSafetyChecker,
+            PlanModelService planModel) {
         this.tasks = tasks;
         this.steps = steps;
         this.calls = calls;
@@ -139,6 +156,21 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         this.stateMachine = stateMachine;
         this.pdfService = pdfService;
         this.executionTrace = executionTrace;
+        this.draftProposer = draftProposer;
+        this.enrichmentService = enrichmentService;
+        this.planSafetyChecker = planSafetyChecker;
+        this.planModel = planModel;
+    }
+
+    @Override
+    public PlanDetail plan(Long id, Long userId) {
+        AgentTask task = tasks.findByIdAndUserId(id, userId).orElseThrow(() -> ApiException.notFound("任务不存在"));
+        ActionPlan plan = planModel.findByTask(task);
+        if (plan == null) return new PlanDetail(null, List.of(), List.of());
+        List<PlanVersion> versions = planModel.versions(plan.getId());
+        List<PlanActionItem> currentItems =
+                versions.isEmpty() ? List.of() : planModel.itemsOf(versions.getFirst());
+        return new PlanDetail(plan, versions, currentItems);
     }
 
     /**
@@ -272,15 +304,20 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         // 拷贝输入参数，避免修改调用方传入的原始 Map
         Map<String, Object> parameters =
                 new LinkedHashMap<>(inputParameters == null ? Map.of() : inputParameters);
-        // 校验并解析省市为具体城市，结果写回 parameters.searchRegion
-        String city = taskInput.validateAndResolveRegion(parameters);
-        parameters.put("searchRegion", city);
-        taskInput.normalizeStoredBudget(parameters);
-        // 问题列表是检索关键词的唯一来源，必须至少有一个
-        List<String> searchQuestions = taskInput.asStringList(parameters.get("questions"));
-        if (searchQuestions.isEmpty())
-            throw ApiException.badRequest("请至少填写一个需要方案逐项回答的问题，搜索关键词只从这里提取");
-        parameters.put("questions", searchQuestions);
+        // 校验并解析省市为具体城市，结果写回 parameters.searchRegion。
+        // 只有用户明确提供地点约束时才要求省份+城市+问题列表；
+        // 消息型/沟通型等计划无需地点检索，允许不填省/市/问题。
+        String city = "";
+        if (!String.valueOf(parameters.getOrDefault("province", "")).isBlank()) {
+            city = taskInput.validateAndResolveRegion(parameters);
+            parameters.put("searchRegion", city);
+            taskInput.normalizeStoredBudget(parameters);
+            // 问题列表是地点检索关键词的来源，提供地点时必须至少有一个
+            List<String> searchQuestions = taskInput.asStringList(parameters.get("questions"));
+            if (searchQuestions.isEmpty())
+                throw ApiException.badRequest("请至少填写一个需要方案逐项回答的问题，搜索关键词只从这里提取");
+            parameters.put("questions", searchQuestions);
+        }
         // 修订记录列表，用户驳回时追加，初始为空列表
         parameters.putIfAbsent("revisions", new ArrayList<String>());
 
@@ -377,9 +414,10 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             List<String> questions = taskInput.asStringList(parameters.get("questions"));
             List<String> revisions = taskInput.asStringList(parameters.get("revisions"));
             String revision = revisions.isEmpty() ? "无" : String.join("；", revisions);
+
+            // 第 1 步：分析目标与约束（保留原有需求分析，产出检索关键词）
             AgentRequirementAnalysisService.Analysis analyzed =
                     requirementAnalysis.analyze(task, city, budget, questions, revisions);
-            String requirements = analyzed.searchText();
             parameters.put("searchKeywords", analyzed.keywords());
             task.setParametersJson(taskInput.writeParameters(parameters));
 
@@ -400,7 +438,6 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                                     : "\n需要逐项回答：\n- " + String.join("\n- ", questions))
                             + ("无".equals(revision) ? "" : "\n累计修改要求：" + revision),
                     emitter);
-
             trace(
                     task,
                     1,
@@ -427,30 +464,151 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                             budget,
                             "questionCount",
                             questions.size(),
-                            "questions",
-                            questions,
                             "searchKeywords",
                             analyzed.keywords(),
                             "aiGenerated",
                             analyzed.aiGenerated()));
 
-            AgentJourneyResearchService.JourneyResearch journey =
-                    journeyResearch.researchJourney(
-                            task, 2, city, requirements, "journey-place-route-search");
-            String places = journey.formatted();
-            taskSteps.complete(task, 2, places, emitter);
-            AgentJourneyResearchService.PublicResearch supplement =
-                    journeyResearch.supplementPublicInfo(task, city, places);
-            places = supplement.places();
-            taskSteps.complete(task, 3, supplement.verification(), emitter);
+            // 第 2 步：识别行动目标并生成多类型行动草案
+            PlanningContext context =
+                    new PlanningContext(task, city, budget, questions, revisions, parameters, 3);
+            ActionDraftProposer.ActionProposal proposal = draftProposer.propose(context);
+            String draftSummary =
+                    proposal.drafts().stream()
+                            .map(draft -> draft.kind().label() + "：" + draft.title())
+                            .reduce((left, right) -> left + "；" + right)
+                            .orElse("无");
+            taskSteps.complete(
+                    task,
+                    2,
+                    "已识别行动目标："
+                            + (proposal.goalType() == null ? "未识别" : proposal.goalType().label())
+                            + "；拟生成 "
+                            + proposal.drafts().size()
+                            + " 条行动草案："
+                            + draftSummary,
+                    emitter);
+            trace(
+                    task,
+                    2,
+                    AgentExecutionPhase.ANALYZE,
+                    AgentExecutionEventType.ACTION,
+                    AgentExecutionEventStatus.SUCCEEDED,
+                    "已生成多类型行动草案",
+                    draftSummary,
+                    proposal.aiGenerated() ? "DashScope" : "规则降级",
+                    null,
+                    proposal.drafts().size(),
+                    null,
+                    null,
+                    Map.of(
+                            "goalType",
+                            proposal.goalType() == null ? "" : proposal.goalType().name(),
+                            "draftCount",
+                            proposal.drafts().size()));
 
-            String preview =
-                    taskInput.buildPreview(task, city, budget, places, questions, revisions);
-            task.setPlanPreview(preview);
+            // 第 3 步：按行动类型调用工具与检索知识（富化）
+            List<ActionEnricher.EnrichedAction> enriched =
+                    enrichmentService.enrichAll(proposal.drafts(), context);
+            long degradedCount =
+                    enriched.stream()
+                            .filter(
+                                    action ->
+                                            action.item().getPayloadJson().contains("ENRICHMENT_FAILED")
+                                                    || action.item().getPayloadJson().contains("UNSUPPORTED"))
+                            .count();
+            taskSteps.complete(
+                    task,
+                    3,
+                    "已完成行动信息检索与富化，共 "
+                            + enriched.size()
+                            + " 条行动"
+                            + (degradedCount > 0 ? "（其中 " + degradedCount + " 条信息暂不可用）" : "")
+                            + "。",
+                    emitter);
+            trace(
+                    task,
+                    3,
+                    AgentExecutionPhase.SEARCH,
+                    AgentExecutionEventType.RESULT,
+                    AgentExecutionEventStatus.SUCCEEDED,
+                    "已完成按行动类型的信息富化",
+                    "共 " + enriched.size() + " 条行动条目"
+                            + (degradedCount > 0 ? "，" + degradedCount + " 条降级" : "") + "。",
+                    "ActionEnricher",
+                    null,
+                    enriched.size(),
+                    null,
+                    null,
+                    Map.of("degradedCount", degradedCount));
+
+            // 第 4 步：执行安全检查（P11），通过后才保存草稿版本
+            List<PlanSafetyChecker.DraftItem> safetyItems = new ArrayList<>();
+            for (ActionEnricher.EnrichedAction enrichedAction : enriched) {
+                PlanActionItem item = enrichedAction.item();
+                safetyItems.add(
+                        new PlanSafetyChecker.DraftItem(
+                                item.getExecutionKind(),
+                                item.getTitle(),
+                                item.getInstruction(),
+                                parsePayload(item.getPayloadJson())));
+            }
+            PlanSafetyChecker.Decision safety = planSafetyChecker.evaluate(safetyItems);
+            if (!safety.approved()) {
+                // 高风险计划直接拒绝生成：不重试、不进确认流程
+                AgentTask latest =
+                        tasks.findByIdAndUserId(task.getId(), task.getUserId()).orElse(task);
+                latest.setErrorMessage(shorten(safety.message(), 480));
+                stateMachine.transition(latest, AgentTaskStatus.FAILED);
+                trace(
+                        latest,
+                        4,
+                        AgentExecutionPhase.COMPLETE,
+                        AgentExecutionEventType.ERROR,
+                        AgentExecutionEventStatus.FAILED,
+                        "计划未通过安全检查",
+                        safety.message(),
+                        "PlanSafetyChecker",
+                        null,
+                        safety.blockedTitles().size(),
+                        null,
+                        null,
+                        Map.of("reasonCode", safety.reasonCode()));
+                event(emitter, "error", Map.of("message", safety.message()));
+                emitter.complete();
+                return;
+            }
+
+            PlanVersion draft =
+                    planModel.saveDraft(
+                            task, proposal.goalType(), enriched, taskInput.budgetLabel(budget));
+            task.setPlanPreview(draft.getPreviewText());
             saveTask(task);
             taskSteps.complete(
-                    task, 4, "已生成可确认的候选计划，预算上限：" + taskInput.budgetLabel(budget) + "。", emitter);
+                    task,
+                    4,
+                    "已生成可确认的候选计划，预算上限：" + taskInput.budgetLabel(budget) + "。",
+                    emitter);
+            trace(
+                    task,
+                    4,
+                    AgentExecutionPhase.FILTER,
+                    AgentExecutionEventType.RESULT,
+                    AgentExecutionEventStatus.SUCCEEDED,
+                    "候选计划已通过安全检查并保存为草稿版本",
+                    "版本 " + draft.getVersionNo() + "，共 " + enriched.size() + " 条行动。",
+                    "PlanModelService",
+                    null,
+                    enriched.size(),
+                    null,
+                    null,
+                    Map.of(
+                            "versionNo",
+                            draft.getVersionNo(),
+                            "goalType",
+                            proposal.goalType() == null ? "" : proposal.goalType().name()));
 
+            // 第 5 步：等待用户确认
             AgentTaskStep confirmation = steps.findByTaskIdAndStepNo(task.getId(), 5).orElseThrow();
             confirmation.setStatus(AgentTaskStepStatus.WAITING_CONFIRMATION);
             confirmation.setDetail("请查看下方当前计划。没问题可直接继续；有问题时填写修改原因，任务会回到第一步重新规划。");
@@ -458,7 +616,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             steps.save(confirmation);
             task.setCurrentStep(5);
             stateMachine.transition(task, AgentTaskStatus.AWAITING_CONFIRMATION);
-            event(emitter, "confirmation", Map.of("step", confirmation, "planPreview", preview));
+            event(emitter, "confirmation", Map.of("step", confirmation, "planPreview", draft.getPreviewText()));
             // The client may render the confirmation event immediately. Release execution
             // ownership before completing the stream so an immediate click cannot race this
             // worker's finally block and receive TASK_ALREADY_RUNNING.
@@ -469,6 +627,16 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         } finally {
             activeFutures.remove(task.getId());
             lock.close();
+        }
+    }
+
+    /** 把 payload JSON 字符串解析为 Map，解析失败返回空 Map（安全检查兜底不阻断） */
+    private Map<String, Object> parsePayload(String payloadJson) {
+        if (payloadJson == null || payloadJson.isBlank()) return Map.of();
+        try {
+            return json.readValue(payloadJson, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        } catch (Exception ignored) {
+            return Map.of();
         }
     }
 
@@ -607,6 +775,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 "questions",
                 taskInput.mergeQuestions(revisedQuestions, taskInput.extractQuestions(note)));
         task.setParametersJson(taskInput.writeParameters(parameters));
+        // 驳回的草稿版本置为 REJECTED 并记录原因，历史版本保留
+        planModel.rejectCurrentDraft(task, note);
         stateMachine.transition(task, AgentTaskStatus.WAITING);
         task.setCurrentStep(0);
         task.setFinalResult(null);
@@ -670,8 +840,21 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                     journeyResearch.researchJourney(
                             task, 6, city, searchRequirements, "confirmation-live-journey-search");
             String liveSearch = journey.formatted();
-            task.setPlanPreview(
-                    taskInput.buildPreview(task, city, budget, liveSearch, questions, revisions));
+            // 生成正式计划版本：先写最终报告全文，再把当前草稿版本置为 APPROVED
+            task.setFinalResult(
+                    finalReports.generate(task, allRequirements, questions, budget, note, journey));
+            planModel.approveCurrentDraft(task, task.getFinalResult());
+            // 用已确认版本的行动条目重新渲染预览，与正式计划保持一致
+            ActionPlan plan = planModel.findByTask(task);
+            if (plan != null) {
+                List<PlanVersion> allVersions = planModel.versions(plan.getId());
+                if (!allVersions.isEmpty()) {
+                    PlanVersion approved = allVersions.getFirst();
+                    task.setPlanPreview(
+                            planModel.renderPreview(
+                                    planModel.itemsOf(approved), taskInput.budgetLabel(budget)));
+                }
+            }
             confirmation.setDetail(
                     (addedQuestionCount == 0 ? "已按全部问题" : "已合并 " + addedQuestionCount + " 个补充问题并")
                             + "实时刷新检索；动态类别："
@@ -765,6 +948,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         calls.deleteByTaskId(id);
         executionTrace.deleteByTaskId(id);
         steps.deleteByTaskId(id);
+        // 级联删除计划产物（计划、版本、行动条目），与任务一起清理
+        planModel.deleteByTask(id);
         tasks.delete(task);
     }
 

@@ -3,6 +3,8 @@ package com.heartpilot.module.agent.dto;
 import com.heartpilot.module.agent.entity.AgentExecutionEvent;
 import com.heartpilot.module.agent.entity.AgentTask;
 import com.heartpilot.module.agent.entity.AgentTaskStep;
+import com.heartpilot.module.agent.entity.PlanActionItem;
+import com.heartpilot.module.agent.entity.PlanVersion;
 import com.heartpilot.module.agent.entity.ToolCallRecord;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionEventStatus;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionEventType;
@@ -10,7 +12,10 @@ import com.heartpilot.module.agent.entity.enums.AgentExecutionPhase;
 import com.heartpilot.module.agent.entity.enums.AgentTaskStatus;
 import com.heartpilot.module.agent.entity.enums.AgentTaskStepStatus;
 import com.heartpilot.module.agent.entity.enums.ToolCallStatus;
+import com.heartpilot.module.agent.service.AgentTaskService;
 import com.heartpilot.module.file.entity.GeneratedFile;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
@@ -239,4 +244,108 @@ public final class AgentTaskDtos {
             List<ToolCallResponse> toolCalls,
             List<ExecutionEventResponse> executionEvents,
             FileResponse pdfFile) {}
+
+    /**
+     * 计划版本响应：历史版本列表中的一项。
+     */
+    public record PlanVersionResponse(
+            Long id,
+            int versionNo,
+            String status,
+            String previewText,
+            String note,
+            Instant createdAt) {
+        public static PlanVersionResponse from(PlanVersion entity) {
+            return new PlanVersionResponse(
+                    entity.getId(),
+                    entity.getVersionNo(),
+                    entity.getStatus().name(),
+                    entity.getPreviewText(),
+                    entity.getNote(),
+                    entity.getCreatedAt());
+        }
+    }
+
+    /**
+     * 计划行动条目响应：前端按执行方式渲染类型卡片。
+     * executionKind / goalType / riskLevel / status 均以枚举名（大写）透出，
+     * payload 已反序列化为 Map，sourceReferences 为字符串数组。
+     */
+    public record PlanItemResponse(
+            Long id,
+            int sequenceNo,
+            String title,
+            String executionKind,
+            String goalType,
+            String instruction,
+            String timingSuggestion,
+            Integer estimatedDurationMinutes,
+            BigDecimal estimatedCost,
+            String riskLevel,
+            boolean requiresConfirmation,
+            String status,
+            Map<String, Object> payload,
+            List<String> sourceReferences) {
+        public static PlanItemResponse from(PlanActionItem entity) {
+            return new PlanItemResponse(
+                    entity.getId(),
+                    entity.getSequenceNo(),
+                    entity.getTitle(),
+                    entity.getExecutionKind().name(),
+                    entity.getGoalType() == null ? null : entity.getGoalType().name(),
+                    entity.getInstruction(),
+                    entity.getTimingSuggestion(),
+                    entity.getEstimatedDurationMinutes(),
+                    entity.getEstimatedCost(),
+                    entity.getRiskLevel().name(),
+                    entity.isRequiresConfirmation(),
+                    entity.getStatus().name(),
+                    parsePayload(entity.getPayloadJson()),
+                    parseRefs(entity.getSourceReferencesJson()));
+        }
+    }
+
+    /**
+     * 计划详情响应：计划信息 + 历史版本列表（最新在前） + 最新版本的行动条目。
+     * 计划尚未生成时 planId 为 null。
+     */
+    public record PlanDetailResponse(
+            Long planId,
+            String goalType,
+            String planStatus,
+            List<PlanVersionResponse> versions,
+            List<PlanItemResponse> currentItems) {
+        public static PlanDetailResponse from(AgentTaskService.PlanDetail detail) {
+            return new PlanDetailResponse(
+                    detail.plan() == null ? null : detail.plan().getId(),
+                    detail.plan() == null || detail.plan().getGoalType() == null
+                            ? null
+                            : detail.plan().getGoalType().name(),
+                    detail.plan() == null ? null : detail.plan().getStatus().name(),
+                    detail.versions().stream().map(PlanVersionResponse::from).toList(),
+                    detail.currentItems().stream().map(PlanItemResponse::from).toList());
+        }
+    }
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** payload JSON 解析为 Map，解析失败返回空 Map（前端按空渲染，不阻断） */
+    private static Map<String, Object> parsePayload(String payloadJson) {
+        if (payloadJson == null || payloadJson.isBlank()) return Map.of();
+        try {
+            return JSON.readValue(payloadJson, new TypeReference<>() {});
+        } catch (Exception ignored) {
+            return Map.of();
+        }
+    }
+
+    /** 引用来源 JSON 数组解析，解析失败返回空列表 */
+    private static List<String> parseRefs(String refsJson) {
+        if (refsJson == null || refsJson.isBlank()) return List.of();
+        try {
+            return JSON.readValue(refsJson, new TypeReference<>() {});
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
 }

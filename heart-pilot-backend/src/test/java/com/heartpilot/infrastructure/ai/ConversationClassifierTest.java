@@ -14,6 +14,7 @@ class ConversationClassifierTest {
     void routesDecisionKnowledgeClarificationAndSupport() {
         assertEquals(Route.DECISION, classifier.classify("伴侣连续三天不回复，我要直接问还是先等等？").route());
         assertEquals(Route.KNOWLEDGE_QA, classifier.classify("什么是尊重边界的请求？").route());
+        assertEquals(Route.KNOWLEDGE_QA, classifier.classify("非暴力沟通的四个要素分别是什么？").route());
         assertEquals(Route.CLARIFY, classifier.classify("怎么办").route());
         assertEquals(Route.SUPPORT, classifier.classify("我好难过，只想倾诉一下").route());
     }

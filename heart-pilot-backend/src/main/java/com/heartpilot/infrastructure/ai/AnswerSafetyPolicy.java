@@ -44,7 +44,7 @@ public class AnswerSafetyPolicy {
                 && context != Context.QUOTED
                 && context != Context.HYPOTHETICAL) {
             return Decision.safety(
-                    "这首先是安全问题，不适合继续分析关系技巧。如果危险正在发生，请立即离开可能受伤的环境，联系可信任的人，并联系当地紧急服务或专业援助。不要独自与威胁者对峙。\n\n如果你能安全回复，请告诉我：你或其他人现在是否处于即时危险中，以及你所在的国家或地区。",
+                    "我听到你提到的情况可能涉及人身安全。如果你或你身边的人正面临即时危险，请立即离开当前环境，联系可信任的人，并拨打当地紧急电话（中国内地可拨 110/120）或心理危机热线（如 400-161-9995）。不要独自与威胁者对峙。\n\n如果你现在安全，愿意的话可以告诉我发生了什么，我会陪你一起梳理。",
                     "REAL_WORLD_DANGER",
                     context);
         }
@@ -80,11 +80,18 @@ public class AnswerSafetyPolicy {
     }
 
     /**
-     * 消去"没有/没/从未/不是/不会"等否定式风险表达（如"没有威胁""不会自杀"），
+     * 消去"没有/没/从未/不是/不会/非/不/拒绝/反对"等否定式风险表达（如"没有威胁""不会自杀""非暴力沟通"），
      * 用于判断上下文是否属于 NEGATED——用户明确否定了风险，不应触发安全拦截。
+     * 注意先替换更长、更具体的搭配（如"非暴力沟通"），再替换一般性否定搭配，避免残余词被误判。
      */
     private String stripNegatedRisk(String text) {
-        return text.replace("没有威胁", "")
+        return text.replace("非暴力沟通", "")
+                .replace("不暴力沟通", "")
+                .replace("非暴力", "")
+                .replace("不暴力", "")
+                .replace("拒绝暴力", "")
+                .replace("反对暴力", "")
+                .replace("没有威胁", "")
                 .replace("没威胁", "")
                 .replace("从未威胁", "")
                 .replace("不是家暴", "")

@@ -92,6 +92,16 @@ public class AgentTaskController {
     }
 
     /**
+     * GET /agent-tasks/{id}/plan
+     * 查询任务对应的计划产物：计划信息、历史版本列表（最新在前）与最新版本的行动条目。
+     * 供前端按行动类型渲染卡片、展示版本历史与逐条完成状态。
+     */
+    @GetMapping("/{id}/plan")
+    AgentTaskDtos.PlanDetailResponse plan(@PathVariable Long id) {
+        return AgentTaskDtos.PlanDetailResponse.from(service.plan(id, current.id()));
+    }
+
+    /**
      * GET /agent-tasks/{id}/route-map
      * 渲染任务对应的行程路线图图片并返回二进制流，私有缓存 5 分钟。
      */

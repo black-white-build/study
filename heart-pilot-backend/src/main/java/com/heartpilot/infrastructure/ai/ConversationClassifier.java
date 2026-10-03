@@ -19,7 +19,7 @@ public class ConversationClassifier {
             return result(Route.SUPPORT, "情绪支持", false, false, 0.9, "EMOTIONAL_SUPPORT");
         }
         // 询问概念/原则/依据，走知识问答路由并需要检索知识库
-        if (containsAny(text, "什么是", "为什么", "有什么原则", "有研究", "依据是什么")) {
+        if (containsAny(text, "什么是", "是什么", "为什么", "有什么原则", "有研究", "依据是什么")) {
             return result(Route.KNOWLEDGE_QA, topic(text), true, false, 0.86, "KNOWLEDGE_QUESTION");
         }
         // 输入过短或只抛"怎么办"却缺关键背景，需要先追问澄清

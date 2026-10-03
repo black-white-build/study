@@ -9,7 +9,7 @@ import reactor.core.publisher.Flux;
 /** AI 答疑客户端，只负责在固定系统边界内生成流式回答。 */
 @Component
 public class RelationshipAiClient {
-    /** 系统提示词：定义 AI 角色、回答风格、安全边界（不做精神疾病诊断、高风险情形引导专业援助） 与输出格式约束（短段落、编号提问、分点建议、末尾"今天可以做的小行动"等）。 */
+    /** 系统提示词：定义 AI 角色、回答风格、安全边界（不做精神疾病诊断、高风险情形引导专业援助）。 */
     /** 预置了系统提示词的对话客户端 */
     private final ChatClient client;
 

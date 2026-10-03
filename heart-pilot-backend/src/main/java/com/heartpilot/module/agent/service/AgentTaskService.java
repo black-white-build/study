@@ -3,6 +3,9 @@ package com.heartpilot.module.agent.service;
 import com.heartpilot.module.agent.entity.AgentExecutionEvent;
 import com.heartpilot.module.agent.entity.AgentTask;
 import com.heartpilot.module.agent.entity.AgentTaskStep;
+import com.heartpilot.module.agent.entity.ActionPlan;
+import com.heartpilot.module.agent.entity.PlanActionItem;
+import com.heartpilot.module.agent.entity.PlanVersion;
 import com.heartpilot.module.agent.entity.ToolCallRecord;
 import com.heartpilot.module.file.entity.GeneratedFile;
 import java.math.BigDecimal;
@@ -35,6 +38,13 @@ public interface AgentTaskService {
      * @param userId 用户 ID（鉴权，只能查自己的任务）
      */
     TaskDetail get(Long id, Long userId);
+
+    /**
+     * 查询任务对应的计划产物：计划信息、历史版本列表（最新在前）与最新版本的行动条目。
+     * 未生成计划时返回 plan 为 null 的空结构，不抛错。
+     * @param userId 用户 ID（鉴权，只能查自己的任务）
+     */
+    PlanDetail plan(Long id, Long userId);
 
     /**
      * 创建任务（含幂等去重、地区校验、步骤初始化）。
@@ -94,4 +104,13 @@ public interface AgentTaskService {
             List<ToolCallRecord> toolCalls,
             List<AgentExecutionEvent> executionEvents,
             GeneratedFile pdfFile) {}
+
+    /**
+     * 计划产物聚合视图。
+     * @param plan 行动计划（未生成时为 null）
+     * @param versions 历史版本列表，最新在前
+     * @param currentItems 最新版本的行动条目列表
+     */
+    public record PlanDetail(
+            ActionPlan plan, List<PlanVersion> versions, List<PlanActionItem> currentItems) {}
 }

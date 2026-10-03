@@ -23,12 +23,22 @@ class AnswerPolicyEvaluationTest {
                 AnswerSafetyPolicy.Kind.CONTINUE, safety.evaluate(plan.rewrittenQuery()).kind());
     }
 
-    /** 系统提示词须区分"已知事实"与"推测"，信息不足时引导模型先追问关键问题。 */
+    /** 系统提示词须区分"事实"与"推测"，信息不足时引导模型先追问关键问题。 */
     @Test
     void insufficientInformationRequiresKeyQuestions() {
         String system = prompts.systemPrompt();
-        assertTrue(system.contains("已知事实"));
+        assertTrue(system.contains("事实"));
         assertTrue(system.contains("推测"));
+        assertTrue(system.contains("信息不足"));
+    }
+
+    /** "非暴力沟通"是普通知识概念，不应因含"暴力"二字被误判为安全风险。 */
+    @Test
+    void nonViolentCommunicationIsNotSafetyRisk() {
+        var decision = safety.evaluate("什么是非暴力沟通？");
+        assertEquals(AnswerSafetyPolicy.Kind.CONTINUE, decision.kind());
+        var withElements = safety.evaluate("非暴力沟通的四个要素分别是什么？");
+        assertEquals(AnswerSafetyPolicy.Kind.CONTINUE, withElements.kind());
     }
 
     /** 诱导对他人做人格/心理诊断的请求应被拒绝，并给出"不能判断或诊断"的直答。 */

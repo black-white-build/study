@@ -39,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
 /**
@@ -269,10 +270,14 @@ public class ConversationServiceImpl implements ConversationService {
                         safetyDecision.context().name())
                 .increment();
         // 安全直接应答或分类判定无需知识时跳过检索，避免无谓的向量查询
+        boolean retrievalSkipped =
+                safetyDecision.respondsDirectly() || !classification.needsKnowledge();
         List<KnowledgeService.Source> sources =
-                safetyDecision.respondsDirectly() || !classification.needsKnowledge()
-                        ? List.of()
-                        : knowledge.retrieve(normalizedContent, 4);
+                retrievalSkipped ? List.of() : knowledge.retrieve(normalizedContent, 4);
+        // 记录检索命中状态：HIT=命中 / MISS=未命中 / SKIPPED=未检索（安全直答或无需知识）
+        String retrievalStatus =
+                retrievalSkipped ? "SKIPPED" : (sources.isEmpty() ? "MISS" : "HIT");
+        metrics.counter("heartpilot.chat.retrieval", "status", retrievalStatus).increment();
 
         // 创建 assistant 占位消息，状态 STREAMING，内容随流式累积
         AiMessage assistant = new AiMessage();
@@ -296,6 +301,8 @@ public class ConversationServiceImpl implements ConversationService {
         audit.put("reasonCodes", classification.reasonCodes());
         audit.put("safetyReason", safetyDecision.reasonCode());
         audit.put("safetyContext", safetyDecision.context().name());
+        audit.put("retrievalStatus", retrievalStatus);
+        audit.put("retrievedCount", sources.size());
         assistant.setAuditJson(writeJson(audit, "{}"));
         try {
             // 把来源引用序列化为 JSON 存起来，前端可展示"参考了哪些文档"
@@ -326,7 +333,7 @@ public class ConversationServiceImpl implements ConversationService {
 
         // 缓存键：安全结论 + 路由 + 知识索引版本 + Prompt 版本 + 用户+模型+Prompt，任一变化都不命中
         String modelCacheKey =
-                "answer-v3|"
+                "answer-v4|"
                         + safetyDecision.kind()
                         + "|"
                         + route
@@ -349,7 +356,8 @@ public class ConversationServiceImpl implements ConversationService {
                         modelCacheKey,
                         !safetyDecision.respondsDirectly(),
                         sources,
-                        route);
+                        route,
+                        retrievalStatus);
         active.put(key, generation);
         AiMessage savedAssistant = assistant;
         // 非计费任务（安全直接应答等）不查缓存，结果也不写回
@@ -374,41 +382,62 @@ public class ConversationServiceImpl implements ConversationService {
             finishSuccess(key, generation);
             return emitter;
         }
-        // 汇总模型流，完成结构化和引用校验后再发送，避免用户先看到未经验证的引用。
-        // 两个数据源二选一：安全直接应答和正常生成
+        // 汇总模型流：逐段推送实现打字机效果，完成后统一做引用校验再收尾。
+        // 两个数据源二选一：安全直接应答（整段）和正常生成（逐段）
         Flux<String> answerStream =
                 safetyDecision.respondsDirectly()
                         ? Flux.just(safetyDecision.directResponse())
                         : ai.stream(prompt);
         generation.disposable =
                 answerStream
-                        // 重试策略
-                        .retryWhen(Retry.backoff(maxRetries, Duration.ofMillis(400)))
-                        // 收集流式片段成一个list
-                        .collectList()
-                        // 拼接片段成一个字符串
-                        .map(parts -> String.join("", parts))
+                        // 重试策略：只允许在首字推送前重试；一旦已有内容发给前端，
+                        // 中断不再自动重试，避免用户看到重复或错位的内容。
+                        .retryWhen(
+                                Retry.from(
+                                        companion ->
+                                                companion.flatMap(
+                                                        retrySignal -> {
+                                                            if (generation.firstToken.get()) {
+                                                                // 已推过首字，放弃重试，直接上抛失败
+                                                                return Mono.error(
+                                                                        retrySignal.failure());
+                                                            }
+                                                            long attempt =
+                                                                    retrySignal.totalRetries();
+                                                            if (attempt >= maxRetries) {
+                                                                // 未推送但已耗尽重试次数，上抛失败
+                                                                return Mono.error(
+                                                                        retrySignal.failure());
+                                                            }
+                                                            return Mono.delay(
+                                                                    Duration.ofMillis(
+                                                                            400L * (attempt + 1)));
+                                                        })))
+                        // 逐段订阅：每收到一个 token 片段就立即通过 SSE 推送，同时累积全文
                         .subscribe(
-                                // 流完成后执行
-                                raw -> {
-                                    // 对整段输出做后处理
-                                    String output = prepareOutput(generation, raw);
+                                chunk -> {
                                     recordFirstToken(generation);
-                                    generation.text.append(output);
-                                    // 把最终回答内容落库
-                                    messages.save(generation.assistant);
-                                    // 通过 SSE 把完整结果推给前端
+                                    generation.text.append(chunk);
                                     event(
                                             emitter,
                                             "delta",
                                             Map.of(
                                                     "content",
-                                                    output,
+                                                    chunk,
                                                     "messageId",
                                                     savedAssistant.getId()));
-                                    finishSuccess(key, generation);
                                 },
-                                error -> finishError(key, generation, error));
+                                error -> finishError(key, generation, error),
+                                // 流正常结束：用累积全文做引用校验与回填，再把修正后的全文
+                                // 随 done 事件一并下发，供前端覆盖流式期间的原始内容
+                                () -> {
+                                    String output =
+                                            prepareOutput(
+                                                    generation, generation.text.toString());
+                                    generation.text.setLength(0);
+                                    generation.text.append(output);
+                                    finishSuccess(key, generation);
+                                });
         // SSE 超时主动停止生成，中断订阅
         emitter.onTimeout(() -> stop(conversationId, userId));
         // 前端断连（关页面/断网）触发：同样主动 stop，释放并发锁和订阅资源
@@ -466,20 +495,27 @@ public class ConversationServiceImpl implements ConversationService {
     private void finishSuccess(String key, Generation generation) {
         if (!active.remove(key, generation)) return;
         persist(generation, AiMessageStatus.COMPLETED);
-        event(
-                generation.emitter,
-                "done",
-                Map.of(
-                        "status",
-                        AiMessageStatus.COMPLETED,
-                        "messageId",
-                        generation.assistant.getId(),
-                        "outputTokens",
-                        generation.assistant.getOutputTokens(),
-                        "cacheHit",
-                        generation.assistant.isCacheHit(),
-                        "estimatedCostMicros",
-                        generation.assistant.getEstimatedCostMicros()));
+        // done 事件：携带修正后的全文、来源引用 JSON 与引用校验状态，前端据此覆盖流式期间的原始内容
+        Map<String, Object> donePayload = new LinkedHashMap<>();
+        donePayload.put("status", AiMessageStatus.COMPLETED);
+        donePayload.put("messageId", generation.assistant.getId());
+        donePayload.put("outputTokens", generation.assistant.getOutputTokens());
+        donePayload.put("cacheHit", generation.assistant.isCacheHit());
+        donePayload.put("estimatedCostMicros", generation.assistant.getEstimatedCostMicros());
+        donePayload.put("retrievalStatus", generation.retrievalStatus);
+        donePayload.put("retrievedCount", generation.sources.size());
+        donePayload.put("content", generation.text.toString());
+        donePayload.put(
+                "sourcesJson",
+                generation.assistant.getSourcesJson() == null
+                        ? "[]"
+                        : generation.assistant.getSourcesJson());
+        donePayload.put(
+                "citationStatus",
+                generation.assistant.getCitationStatus() == null
+                        ? "NOT_APPLICABLE"
+                        : generation.assistant.getCitationStatus());
+        event(generation.emitter, "done", donePayload);
         // 非缓存命中且有内容时才写缓存，避免把空结果或缓存内容再次写回
         if (generation.billable
                 && !generation.assistant.isCacheHit()
@@ -723,12 +759,14 @@ public class ConversationServiceImpl implements ConversationService {
         return userId + ":" + conversationId;
     }
 
-    /** 发送一个 SSE 事件，客户端断开时静默忽略（最终状态由连接回调落库） */
+    /** 发送一个 SSE 事件，客户端断开或连接未就绪时静默忽略（最终状态由连接回调落库）。 */
     private void event(SseEmitter emitter, String name, Object data) {
         try {
             emitter.send(SseEmitter.event().name(name).data(data));
-        } catch (IOException ignored) {
-            // 客户端断开时静默忽略，最终状态由连接回调负责落库。
+        } catch (Exception ignored) {
+            // 客户端断开、连接未就绪或发送失败都静默忽略，不阻断生成主流程。
+            // 连接未初始化时 SseEmitter.send 抛 IllegalStateException（非 IOException），
+            // 因此这里捕获 Exception 而非仅 IOException。
         }
     }
 
@@ -745,6 +783,8 @@ public class ConversationServiceImpl implements ConversationService {
         private final boolean billable;
         /* 本次检索到的知识来源，用于输出后的引用校验与回填 */
         private final List<KnowledgeService.Source> sources;
+        /* 检索状态：HIT=命中 / MISS=未命中 / SKIPPED=未检索（安全直答或无需知识） */
+        private final String retrievalStatus;
         /* 对话路由类型，决定 Prompt 模板与引用渲染策略 */
         private final ConversationClassifier.Route route;
         /* 任务开始的纳秒时间戳，用于 TTFT 与总耗时统计 */
@@ -760,13 +800,15 @@ public class ConversationServiceImpl implements ConversationService {
                 String modelCacheKey,
                 boolean billable,
                 List<KnowledgeService.Source> sources,
-                ConversationClassifier.Route route) {
+                ConversationClassifier.Route route,
+                String retrievalStatus) {
             this.emitter = emitter;
             this.assistant = assistant;
             this.modelCacheKey = modelCacheKey;
             this.billable = billable;
             this.sources = sources;
             this.route = route;
+            this.retrievalStatus = retrievalStatus;
         }
     }
 }
