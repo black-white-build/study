@@ -15,6 +15,8 @@ public enum AgentTaskStatus {
     RUNNING,
     /** 等待用户确认候选计划 */
     AWAITING_CONFIRMATION,
+    /** 需求检查点：结构化需求存在冲突，等待用户调整约束（Tier2 Human-in-the-Loop） */
+    AWAITING_REQUIREMENT,
     /** 等待重试（指数退避中） */
     RETRY_WAIT,
     /** 成功完成（终态） */
@@ -45,10 +47,12 @@ public enum AgentTaskStatus {
      */
     private Set<AgentTaskStatus> allowedTargets() {
         return switch (this) {
-            case WAITING -> EnumSet.of(RUNNING, CANCELLED);
+            case WAITING -> EnumSet.of(RUNNING, AWAITING_REQUIREMENT, CANCELLED);
             case RUNNING ->
-                    EnumSet.of(AWAITING_CONFIRMATION, RETRY_WAIT, SUCCEEDED, FAILED, CANCELLED);
+                    EnumSet.of(AWAITING_CONFIRMATION, AWAITING_REQUIREMENT, RETRY_WAIT, SUCCEEDED, FAILED, CANCELLED);
             case AWAITING_CONFIRMATION -> EnumSet.of(WAITING, RUNNING, CANCELLED);
+            // 需求冲突待调整：用户修改约束后可重新执行（RUNNING），或取消/放弃
+            case AWAITING_REQUIREMENT -> EnumSet.of(RUNNING, CANCELLED, FAILED);
             case RETRY_WAIT -> EnumSet.of(WAITING, RUNNING, FAILED, CANCELLED);
             case FAILED -> EnumSet.of(WAITING, RUNNING, CANCELLED);
             // 成功为终态，无任何后继状态

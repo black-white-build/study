@@ -3,16 +3,26 @@
     <div class="expandable-copy-wrap">
       <p ref="copyRef" class="expandable-copy" :style="{ '--collapsed-lines': lines }">
         <template v-for="(segment, index) in segments" :key="index">
-          <a
-            v-if="segment.href"
-            class="expandable-link"
-            :href="segment.href"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="在新窗口打开链接"
-            @click.stop
-            >{{ segment.text }}</a
-          ><span v-else>{{ segment.text }}</span>
+          <template v-if="segment.href">
+            <a
+              class="expandable-link"
+              :href="segment.href"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="在新窗口打开链接"
+              @click.stop
+              >{{ isUrlExpanded(index) ? segment.text : truncateUrl(segment.text) }}</a
+            >
+            <button
+              v-if="segment.text.length > 30 && !isUrlExpanded(index)"
+              type="button"
+              class="url-expand-btn"
+              @click.stop="toggleUrl(index)"
+            >
+              展开
+            </button>
+          </template>
+          <span v-else>{{ segment.text }}</span>
         </template>
       </p>
     </div>
@@ -29,7 +39,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
@@ -37,31 +47,80 @@ const props = defineProps({
   lines: { type: Number, default: 5 }
 })
 
-const copyRef = ref(null)
+const expandedUrls = ref<Set<number>>(new Set())
+
+const truncateUrl = (url: string) => {
+  if (url.length <= 30) return url
+  // 提取域名部分，后面用...代替
+  const match = url.match(/^(https?:\/\/[^/]+)/)
+  if (match) return match[1] + '/...'
+  return url.slice(0, 25) + '…'
+}
+
+const isUrlExpanded = (index: number) => expandedUrls.value.has(index)
+
+const toggleUrl = (index: number) => {
+  if (expandedUrls.value.has(index)) {
+    expandedUrls.value.delete(index)
+  } else {
+    expandedUrls.value.add(index)
+  }
+}
+
+const copyRef = ref<HTMLElement | null>(null)
 const expanded = ref(false)
 const collapsible = ref(false)
-let resizeObserver
+let resizeObserver: ResizeObserver | undefined
 
-const segments = computed(() => {
-  const source = props.content || ''
-  const result = []
+const segments = computed<{ text: string; href?: string }[]>(() => {
+  // 先清洗掉 Markdown 原始标记，显示更美观
+  let source = props.content || ''
+  // 把行首的 ### 标题标记换成竖线前缀
+  source = source.replace(/^#+\s*/gm, '▎ ')
+  // 把加粗标记 ** 去掉，只保留文字
+  source = source.replace(/\*\*([^*]+)\*\*/g, '$1')
+  const result: { text: string; href?: string }[] = []
+  // 先匹配 Markdown 链接 [文字](https://...)，允许 ] 和 ( 之间有换行/空白（长行自动换行时会断开）
+  const mdLinkPattern = /\[([^\]]+)\]\s*\(\s*(https?:\/\/[^\s)]+?)\s*\)/gi
+  // 再匹配裸 URL（整段里剩下的 http(s)://...）
   const urlPattern = /https?:\/\/[^\s<>"']+/gi
   let cursor = 0
-  let match
+  let match: RegExpExecArray | null
 
-  while ((match = urlPattern.exec(source)) !== null) {
+  // 第一遍：切出 Markdown 链接
+  while ((match = mdLinkPattern.exec(source)) !== null) {
     if (match.index > cursor) result.push({ text: source.slice(cursor, match.index) })
-
-    const rawUrl = match[0]
-    const cleanUrl = rawUrl.replace(/[),.;!?，。；！？、）】》]+$/u, '')
-    const trailing = rawUrl.slice(cleanUrl.length)
-    result.push({ text: cleanUrl, href: cleanUrl })
-    if (trailing) result.push({ text: trailing })
-    cursor = match.index + rawUrl.length
+    result.push({ text: match[2], href: match[2] })
+    cursor = match.index + match[0].length
   }
-
   if (cursor < source.length) result.push({ text: source.slice(cursor) })
-  return result.length ? result : [{ text: source }]
+
+  // 第二遍：对 Markdown 链接之外的纯文本段，把裸 URL 也变成可点击链接
+  const withLinks: { text: string; href?: string }[] = []
+  for (const seg of result) {
+    if (seg.href) {
+      withLinks.push(seg)
+      continue
+    }
+    let subCursor = 0
+    urlPattern.lastIndex = 0
+    let subMatch: RegExpExecArray | null
+    while ((subMatch = urlPattern.exec(seg.text)) !== null) {
+      if (subMatch.index > subCursor) {
+        withLinks.push({ text: seg.text.slice(subCursor, subMatch.index) })
+      }
+      const rawUrl = subMatch[0]
+      const cleanUrl = rawUrl.replace(/[),.;!?，。；！？、）】》]+$/u, '')
+      const trailing = rawUrl.slice(cleanUrl.length)
+      withLinks.push({ text: cleanUrl, href: cleanUrl })
+      if (trailing) withLinks.push({ text: trailing })
+      subCursor = subMatch.index + rawUrl.length
+    }
+    if (subCursor < seg.text.length) {
+      withLinks.push({ text: seg.text.slice(subCursor) })
+    }
+  }
+  return withLinks.length ? withLinks : [{ text: source }]
 })
 
 function checkOverflow() {
@@ -92,7 +151,7 @@ watch(expanded, async (value) => {
 onMounted(() => {
   checkOverflow()
   resizeObserver = new ResizeObserver(checkOverflow)
-  resizeObserver.observe(copyRef.value)
+  if (copyRef.value) resizeObserver.observe(copyRef.value)
 })
 
 onBeforeUnmount(() => resizeObserver?.disconnect())
@@ -123,6 +182,22 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
 .expandable-link:hover {
   color: var(--coral);
   text-decoration-color: currentColor;
+}
+.url-expand-btn {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 6px;
+  border: 1px solid #dfa79e;
+  border-radius: 3px;
+  background: transparent;
+  color: #aa493b;
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.url-expand-btn:hover {
+  background: #f9ecea;
 }
 .expandable-link:focus-visible {
   outline: 2px solid #e5a093;

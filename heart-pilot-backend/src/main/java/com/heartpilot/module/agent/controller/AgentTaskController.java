@@ -1,7 +1,10 @@
 package com.heartpilot.module.agent.controller;
 
 import com.heartpilot.common.api.PageResponse;
+import com.heartpilot.infrastructure.ai.tool.CapabilityStatusRecorder;
 import com.heartpilot.module.agent.dto.AgentTaskDtos;
+import com.heartpilot.module.agent.requirement.RequirementDtos;
+import com.heartpilot.module.agent.requirement.RequirementStateService;
 import com.heartpilot.module.agent.service.AgentTaskService;
 import com.heartpilot.module.agent.service.RouteMapService;
 import com.heartpilot.module.file.entity.GeneratedFile;
@@ -17,6 +20,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -39,16 +43,33 @@ public class AgentTaskController {
     private final CurrentUser current;
     private final StorageService storage;
     private final RouteMapService routeMaps;
+    private final CapabilityStatusRecorder capabilityStatus;
+    /** Tier1 公共底层：结构化需求状态服务（持久化 + 增量修改） */
+    private final RequirementStateService requirementState;
 
     public AgentTaskController(
             AgentTaskService service,
             CurrentUser current,
             StorageService storage,
-            RouteMapService routeMaps) {
+            RouteMapService routeMaps,
+            CapabilityStatusRecorder capabilityStatus,
+            RequirementStateService requirementState) {
         this.service = service;
         this.current = current;
         this.storage = storage;
         this.routeMaps = routeMaps;
+        this.capabilityStatus = capabilityStatus;
+        this.requirementState = requirementState;
+    }
+
+    /**
+     * GET /agent-tasks/capabilities
+     * 暴露 AI 对话与网页搜索两项外部能力的运行时状态（正常/未配置/额度耗尽），
+     * 供前端在任务页可视化提示，避免 key 额度用尽时静默降级成空结果。
+     */
+    @GetMapping("/capabilities")
+    java.util.Map<String, Object> capabilities() {
+        return capabilityStatus.snapshot();
     }
 
     /**
@@ -136,6 +157,49 @@ public class AgentTaskController {
     }
 
     /**
+     * GET /agent-tasks/{id}/requirement
+     * 查询任务的结构化需求（四类约束 + 业务实体 + 代码校验结果）。
+     * 供前端在需求检查点展示约束清单与冲突，任务尚未解析时返回 null。
+     */
+    @GetMapping("/{id}/requirement")
+    RequirementDtos.RequirementResponse requirement(@PathVariable Long id) {
+        return RequirementDtos.RequirementResponse.from(requirementState.get(id));
+    }
+
+    /**
+     * PATCH /agent-tasks/{id}/requirement
+     * 增量局部修改单条约束（改预算、删黑名单、加必去点位等），修改后立即用
+     * 纯 Java 校验器重新校验并返回最新冲突。无需整段重写需求描述。
+     */
+    @PatchMapping("/{id}/requirement")
+    RequirementDtos.RequirementResponse updateRequirement(
+            @PathVariable Long id, @Valid @RequestBody RequirementDtos.UpdateRequest request) {
+        RequirementStateService.Operation operation =
+                switch (request.op().toUpperCase()) {
+                    case "SET" -> RequirementStateService.Operation.SET;
+                    case "ADD" -> RequirementStateService.Operation.ADD;
+                    case "REMOVE" -> RequirementStateService.Operation.REMOVE;
+                    default -> throw new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.BAD_REQUEST,
+                            "不支持的操作：" + request.op());
+                };
+        return RequirementDtos.RequirementResponse.from(
+                requirementState.updateConstraint(id, request.path(), operation, request.value()));
+    }
+
+    /**
+     * POST /agent-tasks/{id}/requirement/approve
+     * 需求检查点确认：用户核对结构化需求无误后调用。标记需求已确认，
+     * 并基于已确认需求重新执行流水线（增量解析 + 重新校验），SSE 推送后续进度。
+     */
+    @PostMapping(
+            value = "/{id}/requirement/approve",
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    SseEmitter approveRequirement(@PathVariable Long id) {
+        return service.approveRequirement(id, current.id());
+    }
+
+    /**
      * POST /agent-tasks/{id}/run
      * 启动任务执行，返回 SSE 流式响应，实时推送执行进度事件。
      */
@@ -169,7 +233,8 @@ public class AgentTaskController {
                 request.province(),
                 request.city(),
                 request.budget(),
-                request.questions());
+                request.questions(),
+                request.contextNotes());
     }
 
     /**
@@ -179,6 +244,16 @@ public class AgentTaskController {
     @PostMapping("/{id}/cancel")
     AgentTaskDtos.TaskResponse cancel(@PathVariable Long id) {
         return AgentTaskDtos.TaskResponse.from(service.cancel(id, current.id()));
+    }
+
+    /**
+     * POST /agent-tasks/{id}/reshuffle-places
+     * 等待确认阶段"换一批候选地点"：从已持久化的候选池里按类别均衡随机重抽卡片，
+     * 不调高德 API、不改行程主线与路线；相邻两批允许部分重合。
+     */
+    @PostMapping("/{id}/reshuffle-places")
+    AgentTaskDtos.TaskResponse reshufflePlaces(@PathVariable Long id) {
+        return AgentTaskDtos.TaskResponse.from(service.reshufflePlaces(id, current.id()));
     }
 
     /**

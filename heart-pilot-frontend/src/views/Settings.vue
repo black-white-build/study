@@ -28,13 +28,18 @@
   <div v-if="toast" class="toast">{{ toast }}</div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { api } from '../api'
 import { refreshMe } from '../stores/auth'
 
-const emotions = ['平静', '开心', '期待', '困惑', '难过', '焦虑', '生气']
-const user = reactive({ nickname: '', emotionStatus: '平静' })
+const emotions: string[] = ['平静', '开心', '期待', '困惑', '难过', '焦虑', '生气']
+interface UserSettings {
+  nickname: string
+  emotionStatus: string
+  [key: string]: unknown
+}
+const user = reactive<UserSettings>({ nickname: '', emotionStatus: '平静' })
 const saving = ref(false)
 const toast = ref('')
 

@@ -30,6 +30,12 @@ import com.heartpilot.module.agent.service.DistributedTaskLockService;
 import com.heartpilot.module.agent.service.PlanModelService;
 import com.heartpilot.module.agent.service.PlanSafetyChecker;
 import com.heartpilot.module.agent.service.PlanningContext;
+import com.heartpilot.module.agent.service.PlaceSearchService;
+import com.heartpilot.module.agent.requirement.RequirementExtractionService;
+import com.heartpilot.module.agent.requirement.RequirementStateService;
+import com.heartpilot.module.agent.requirement.RequirementValidator;
+import com.heartpilot.module.agent.requirement.StructuredRequirement;
+import com.heartpilot.module.agent.requirement.ValidationResult;
 import com.heartpilot.module.file.entity.GeneratedFile;
 import com.heartpilot.module.file.repository.GeneratedFileRepository;
 import com.heartpilot.module.file.service.StorageService;
@@ -108,6 +114,12 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     private final ActionEnrichmentService enrichmentService;
     private final PlanSafetyChecker planSafetyChecker;
     private final PlanModelService planModel;
+    /** Tier1 公共底层：结构化需求抽取 + 代码校验 + 持久化（地点/送礼共用） */
+    private final RequirementExtractionService requirementExtraction;
+    private final RequirementValidator requirementValidator;
+    private final RequirementStateService requirementState;
+    /** 地点检索服务：reshufflePlaces 时从持久化候选池重抽卡片，不调外部 API */
+    private final PlaceSearchService placeSearch;
     /** 当前正在执行的任务 Future 映射（taskId -> Future），用于取消操作中断线程 */
     private final Map<Long, Future<?>> activeFutures = new ConcurrentHashMap<>();
 
@@ -137,7 +149,11 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             ActionDraftProposer draftProposer,
             ActionEnrichmentService enrichmentService,
             PlanSafetyChecker planSafetyChecker,
-            PlanModelService planModel) {
+            PlanModelService planModel,
+            RequirementExtractionService requirementExtraction,
+            RequirementValidator requirementValidator,
+            RequirementStateService requirementState,
+            PlaceSearchService placeSearch) {
         this.tasks = tasks;
         this.steps = steps;
         this.calls = calls;
@@ -160,6 +176,10 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         this.enrichmentService = enrichmentService;
         this.planSafetyChecker = planSafetyChecker;
         this.planModel = planModel;
+        this.requirementExtraction = requirementExtraction;
+        this.requirementValidator = requirementValidator;
+        this.requirementState = requirementState;
+        this.placeSearch = placeSearch;
     }
 
     @Override
@@ -379,8 +399,13 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     @Override
     public SseEmitter run(Long id, Long userId) {
         AgentTask task = owned(id, userId);
-        // 只有等待中或失败的任务可以启动，其他状态（运行中/已完成/等待确认等）拒绝
-        if (!Set.of(AgentTaskStatus.WAITING, AgentTaskStatus.FAILED).contains(task.getStatus())) {
+        // 等待中/失败/需求冲突待调整的任务可以启动（需求冲突任务启动时会基于已确认的
+        // 结构化需求增量解析并重新校验）
+        if (!Set.of(
+                        AgentTaskStatus.WAITING,
+                        AgentTaskStatus.FAILED,
+                        AgentTaskStatus.AWAITING_REQUIREMENT)
+                .contains(task.getStatus())) {
             throw ApiException.badRequest("当前状态不能启动");
         }
         // 尝试获取 5 分钟的分布式锁，获取失败说明任务正在其他实例/线程执行
@@ -421,8 +446,71 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             parameters.put("searchKeywords", analyzed.keywords());
             task.setParametersJson(taskInput.writeParameters(parameters));
 
-            stateMachine.transition(task, AgentTaskStatus.RUNNING);
+            // ---- Tier1 需求解析检查点（地点/送礼共用同一套底层能力）----
+            // 1) 需求解析 Agent 单独抽取固定 Schema 结构化 JSON（硬性/优先/可选/排除 + 业务实体）
+            // 2) 硬性冲突由纯 Java 校验器判定，不交给大模型判断
+            // 3) 结构化 JSON 持久化，支持后续单条约束增量修改
+            RequirementStateService.RequirementSnapshot priorSnapshot =
+                    requirementState.get(task.getId());
+            StructuredRequirement prior =
+                    priorSnapshot == null ? null : priorSnapshot.requirement();
+            StructuredRequirement requirement =
+                    requirementExtraction.extract(task, parameters, prior);
+            ValidationResult validation = requirementValidator.validate(requirement);
+            RequirementStateService.RequirementSnapshot reqSnapshot =
+                    requirementState.save(task.getId(), task.getUserId(), requirement);
+
             task.setErrorMessage(null);
+            // 冲突检查点（Human-in-the-Loop）：检测到硬性冲突时不强行生成方案，
+            // 进入 AWAITING_REQUIREMENT 等待用户调整约束（PATCH /requirement 增量修改后重新执行）
+            if (validation.blocked()) {
+                AgentTaskStep step1 = steps.findByTaskIdAndStepNo(task.getId(), 1).orElseThrow();
+                step1.setStatus(AgentTaskStepStatus.WAITING_CONFIRMATION);
+                step1.setDetail(
+                        "检测到 "
+                                + validation.blockers().size()
+                                + " 个需求冲突，需调整约束后再继续：\n- "
+                                + String.join(
+                                        "\n- ",
+                                        validation.blockers().stream()
+                                                .map(com.heartpilot.module.agent.requirement
+                                                                .RequirementIssue::message)
+                                                .toList()));
+                step1.setStartedAt(Instant.now());
+                step1.setCompletedAt(null);
+                steps.save(step1);
+                task.setCurrentStep(1);
+                stateMachine.transition(task, AgentTaskStatus.AWAITING_REQUIREMENT);
+                trace(
+                        task,
+                        1,
+                        AgentExecutionPhase.ANALYZE,
+                        AgentExecutionEventType.WARNING,
+                        AgentExecutionEventStatus.FAILED,
+                        "结构化需求存在冲突，已暂停生成",
+                        String.join(
+                                "；",
+                                validation.blockers().stream()
+                                        .map(com.heartpilot.module.agent.requirement
+                                                        .RequirementIssue::message)
+                                        .toList()),
+                        reqSnapshot.extractionSource().equals("AI") ? "DashScope" : "规则降级",
+                        null,
+                        validation.blockers().size(),
+                        null,
+                        null,
+                        Map.of("conflictCodes",
+                                validation.blockers().stream()
+                                        .map(com.heartpilot.module.agent.requirement
+                                                        .RequirementIssue::code)
+                                        .toList()));
+                event(emitter, "requirement", requirementEvent(reqSnapshot));
+                event(emitter, "requirement-conflict", requirementEvent(reqSnapshot));
+                emitter.complete();
+                return;
+            }
+
+            stateMachine.transition(task, AgentTaskStatus.RUNNING);
             saveTask(task);
             taskSteps.complete(
                     task,
@@ -436,8 +524,22 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                             + (questions.isEmpty()
                                     ? ""
                                     : "\n需要逐项回答：\n- " + String.join("\n- ", questions))
-                            + ("无".equals(revision) ? "" : "\n累计修改要求：" + revision),
+                            + ("无".equals(revision) ? "" : "\n累计修改要求：" + revision)
+                            + "\n\n" + requirement.summary()
+                            + (validation.hasWarnings()
+                                    ? "\n\n提醒（不影响生成）：\n- "
+                                            + String.join(
+                                                    "\n- ",
+                                                    validation.warnings().stream()
+                                                            .map(com.heartpilot.module.agent
+                                                                            .requirement
+                                                                            .RequirementIssue
+                                                                            ::message)
+                                                            .toList())
+                                    : ""),
                     emitter);
+            // 向前端推送结构化需求清单（需求解析中 → 后续 SSE 分段状态可据此渲染）
+            event(emitter, "requirement", requirementEvent(reqSnapshot));
             trace(
                     task,
                     1,
@@ -665,7 +767,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             String province,
             String city,
             BigDecimal budget,
-            List<String> questions) {
+            List<String> questions,
+            String contextNotes) {
         AgentTask task = owned(id, userId);
         // 仅允许在等待确认状态下调用
         if (task.getStatus() != AgentTaskStatus.AWAITING_CONFIRMATION) {
@@ -689,8 +792,9 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         } else {
             try {
                 Map<String, Object> current = taskInput.readParameters(task);
-                // 是否通过编辑器提交了字段（省份/城市/问题任一非空）
-                boolean editorSubmission = province != null || city != null || questions != null;
+                // 是否通过编辑器提交了字段（省份/城市/问题/背景补充任一非空）
+                boolean editorSubmission =
+                        province != null || city != null || questions != null || contextNotes != null;
                 String currentCity = taskInput.resolveCity(current, task.getObjective());
                 String requestedCity = currentCity;
                 if (province != null || city != null) {
@@ -699,7 +803,20 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                     requestedRegion.put("city", city == null ? "" : city);
                     requestedCity = taskInput.validateAndResolveRegion(requestedRegion);
                 }
-                if (editorSubmission && requestedCity.isBlank())
+                // 地点类任务必须有城市；礼物/消息/练习类没有城市也允许驳回重规划。
+                // 判断依据：原本 parameters 里就填了省/市，或明确指定了 PLACE_VISIT，
+                // 二者都不满足说明创建时就不是地点任务，不能强要城市。
+                String currentKind =
+                        taskInput
+                                .asStringList(current.get("preferredActionKinds"))
+                                .stream()
+                                .findFirst()
+                                .orElse("");
+                boolean originallyHasRegion =
+                        !String.valueOf(current.getOrDefault("province", "")).isBlank()
+                                || !String.valueOf(current.getOrDefault("city", "")).isBlank();
+                boolean placeTask = "PLACE_VISIT".equals(currentKind) || originallyHasRegion;
+                if (editorSubmission && placeTask && requestedCity.isBlank())
                     throw ApiException.badRequest("地点 / 城市不能为空");
                 if (budget != null && budget.signum() < 0)
                     throw ApiException.badRequest("预算不能小于 0");
@@ -707,18 +824,22 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 String requestedBudget =
                         budget == null ? "" : taskInput.normalizeBudget(budget).toPlainString();
                 // 检测哪些字段实际发生了变化
-                boolean cityChanged = !requestedCity.equals(currentCity);
+                boolean cityChanged = placeTask && !requestedCity.equals(currentCity);
                 boolean budgetChanged = editorSubmission && !requestedBudget.equals(currentBudget);
                 boolean questionsChanged =
                         questions != null
                                 && !taskInput
                                         .asStringList(questions)
                                         .equals(taskInput.asStringList(current.get("questions")));
+                String currentNotes = taskInput.parameterText(current.get("contextNotes"), "");
+                boolean notesChanged =
+                        contextNotes != null && !contextNotes.trim().equals(currentNotes);
                 // 驳回时必须至少有一项实际修改，否则无意义
                 if ((note == null || note.isBlank())
                         && !cityChanged
                         && !budgetChanged
-                        && !questionsChanged)
+                        && !questionsChanged
+                        && !notesChanged)
                     throw ApiException.badRequest("请至少修改地点、预算、问题或补充说明中的一项");
                 reviseAndRestart(
                         task,
@@ -727,6 +848,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                         city,
                         budget,
                         questions,
+                        notesChanged ? contextNotes.trim() : null,
                         emitter,
                         lock);
             } catch (RuntimeException preparationFailure) {
@@ -749,12 +871,18 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             String city,
             BigDecimal budget,
             List<String> incomingQuestions,
+            String updatedContextNotes,
             SseEmitter emitter,
             DistributedTaskLockService.LockHandle lock) {
         Map<String, Object> parameters = taskInput.readParameters(task);
         List<String> revisions = taskInput.asStringList(parameters.get("revisions"));
         if (!note.isBlank()) revisions.add(note);
         parameters.put("revisions", revisions);
+        // 礼物/消息/练习类任务的专属字段编辑后透传为背景补充，供下一轮 AI 分析
+        if (updatedContextNotes != null) {
+            if (updatedContextNotes.isBlank()) parameters.remove("contextNotes");
+            else parameters.put("contextNotes", updatedContextNotes);
+        }
         if (province != null || city != null) {
             Map<String, Object> requestedRegion = new LinkedHashMap<>();
             requestedRegion.put("province", province == null ? "" : province);
@@ -923,6 +1051,41 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     }
 
     /**
+     * 换一批候选地点卡片：从任务上持久化的 placePoolJson 反序列化候选池，
+     * 用当前时间做新随机种子，按类别均衡重抽候选卡片。行程主线（places）与路线（routes）
+     * 保持不变，只替换 journeyEvidenceJson 里的 mapCards。
+     * 仅在等待用户确认（AWAITING_CONFIRMATION）阶段允许调用；候选池缺失时直接报 400。
+     */
+    @Transactional
+    @Override
+    public AgentTask reshufflePlaces(Long id, Long userId) {
+        AgentTask task = owned(id, userId);
+        if (task.getStatus() != AgentTaskStatus.AWAITING_CONFIRMATION) {
+            throw ApiException.badRequest("仅在等待确认阶段可换一批候选地点");
+        }
+        String poolJson = task.getPlacePoolJson();
+        String evidenceJson = task.getJourneyEvidenceJson();
+        if (poolJson == null || poolJson.isBlank()
+                || evidenceJson == null || evidenceJson.isBlank()) {
+            throw ApiException.badRequest("尚未取得可换批的候选地点，请先重新规划一次");
+        }
+        try {
+            PlaceSearchService.SearchResult pool =
+                    json.readValue(poolJson, PlaceSearchService.SearchResult.class);
+            PlaceSearchService.JourneyEvidence current =
+                    json.readValue(evidenceJson, PlaceSearchService.JourneyEvidence.class);
+            // nanoTime 做种子：每次点按钮都是新批次，池子固定所以相邻两批允许部分重合
+            PlaceSearchService.JourneyEvidence reshuffled =
+                    placeSearch.reshuffleCandidateCards(current, pool, System.nanoTime());
+            task.setJourneyEvidenceJson(json.writeValueAsString(reshuffled));
+            task.setEvidenceUpdatedAt(Instant.now());
+            return saveTask(task);
+        } catch (Exception e) {
+            throw ApiException.badRequest("换一批地点失败：" + e.getMessage());
+        }
+    }
+
+    /**
      * 删除任务及其全部关联数据（步骤、工具调用、执行轨迹、PDF 文件）。
      * 运行中的任务不允许删除，需先取消。
      * 存储文件删除失败不阻断数据库删除（catch 后继续），避免孤立文件阻塞清理。
@@ -948,9 +1111,39 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         calls.deleteByTaskId(id);
         executionTrace.deleteByTaskId(id);
         steps.deleteByTaskId(id);
+        // 级联清理结构化需求状态（Tier1 持久化）
+        requirementState.delete(id);
         // 级联删除计划产物（计划、版本、行动条目），与任务一起清理
         planModel.deleteByTask(id);
         tasks.delete(task);
+    }
+
+    /**
+     * 确认结构化需求并继续生成（需求检查点交互）。
+     * 标记需求已确认后复用 run() 的执行路径：基于已确认的结构化需求
+     * 增量解析（prior 合并）+ 代码重新校验；仍有冲突则回到 AWAITING_REQUIREMENT。
+     */
+    @Override
+    public SseEmitter approveRequirement(Long id, Long userId) {
+        AgentTask task = owned(id, userId);
+        if (task.getStatus() != AgentTaskStatus.AWAITING_REQUIREMENT) {
+            throw ApiException.badRequest("任务当前不处于需求确认状态");
+        }
+        requirementState.confirm(id);
+        return run(id, userId);
+    }
+
+    /** 把结构化需求快照转成 SSE requirement 事件的负载（约束清单 + 校验结果） */
+    private Map<String, Object> requirementEvent(RequirementStateService.RequirementSnapshot snapshot) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("requirement", snapshot.requirement());
+        data.put("issues", snapshot.validation().issues());
+        data.put("blocked", snapshot.validation().blocked());
+        data.put("hasWarnings", snapshot.validation().hasWarnings());
+        data.put("status", snapshot.status());
+        data.put("extractionSource", snapshot.extractionSource());
+        data.put("summary", snapshot.requirement() == null ? "" : snapshot.requirement().summary());
+        return data;
     }
 
     /**

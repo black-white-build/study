@@ -20,8 +20,11 @@ public interface ActionLanguageService {
             String concreteRequest,
             String exitCondition) {}
 
-    /** 表达计划（礼物/仪式）：准备事项、预算、步骤 */
-    record GiftPlan(String preparation, String budgetText, List<String> steps) {}
+    /** 表达计划（礼物/仪式）：准备事项、预算、步骤 + AI 分析用户输入后给出的具体礼物候选 */
+    record GiftIdea(String title, String reason, String priceHint) {}
+
+    /** 表达计划（礼物/仪式）：准备事项、预算、步骤、具体礼物候选 */
+    record GiftPlan(String preparation, String budgetText, List<String> steps, List<GiftIdea> ideas) {}
 
     /** 自我练习：练习内容、时长（分钟）、完成标准 */
     record PracticePlan(String practiceContent, Integer durationMinutes, String completionCriteria) {}

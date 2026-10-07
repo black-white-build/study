@@ -48,6 +48,8 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
                CONVERSATION(沟通行动) GIFT_RITUAL(表达行动) SELF_PRACTICE(自我练习) OBSERVATION(观察行动)。
             3. 不提供跟踪、监控、纠缠、操控、威胁或诊断他人的内容；观察/练习只针对自己。
             4. 草案 3-6 条为宜，指令用中文，具体、可执行、一句话说清。
+            5. 草案的标题与指令必须引用用户输入中出现的地点、目的或诉求关键词（尽量保留原词，
+               可归纳概括），禁止套用与用户输入无关的固定措辞。
             """;
 
     private final ChatClient client;
@@ -126,13 +128,15 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
     /** 每种执行方式的默认草案模板（提示路径与规则降级共用） */
     private ActionDraft draftTemplate(ExecutionKind kind, GoalType goalType, PlanningContext context) {
         boolean hasCity = context.city() != null && !context.city().isBlank();
+        // 从用户输入字段动态提炼地点/目的关键词，地点行动的文案与检索不再依赖固定话语
+        List<String> keywords = placeKeywords(context);
         return switch (kind) {
             case PLACE_VISIT -> hasCity
                     ? new ActionDraft(
                             kind,
                             goalType,
-                            "安排一次适合谈心的见面",
-                            "选一个安静、不被打扰的地点见面，提前确认对方时间与偏好。",
+                            placeTitle(keywords),
+                            placeInstruction(keywords),
                             Map.of("placeCount", 3))
                     : null;
             case MESSAGE -> new ActionDraft(
@@ -150,8 +154,8 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
             case GIFT_RITUAL -> new ActionDraft(
                     kind,
                     goalType,
-                    "准备一份用心的小表达",
-                    "回想对方最近提过的细节，准备一份贴合偏好的小礼物或仪式，附一张手写卡片。",
+                    giftTitle(context),
+                    giftInstruction(context),
                     Map.of());
             case SELF_PRACTICE -> new ActionDraft(
                     kind,
@@ -211,16 +215,25 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
 
     /** 规则降级：按关键词识别目标类型与行动类型，保证任何输入都有草案 */
     private ActionProposal fallbackPropose(PlanningContext context) {
-        String text = (context.task().getObjective()
-                        + " "
-                        + String.join(" ", context.questions()))
-                .toLowerCase(Locale.ROOT);
+        String text =
+                (context.task().getObjective()
+                                + " "
+                                + String.join(" ", context.questions())
+                                + " "
+                                + String.valueOf(
+                                        context.parameters().getOrDefault("contextNotes", ""))
+                                + " "
+                                + (context.city() == null ? "" : context.city()))
+                        .toLowerCase(Locale.ROOT);
         GoalType goalType = guessGoal(text);
         List<ActionDraft> drafts = new ArrayList<>();
         boolean hasCity = context.city() != null && !context.city().isBlank();
 
-        if (hasCity && matchesAny(text, "见", "约会", "约", "见面", "出去", "逛", "散步", "吃", "地点", "餐厅", "咖啡馆")) {
-            addIfNotNull(drafts, draftTemplate(ExecutionKind.PLACE_VISIT, goalType, context));
+        if (hasCity) {
+            // 按用户文本命中的地点意图类别拆条：景点/电竞/停车/美食等各生成一条 PLACE_VISIT，
+            // 每条 instruction 聚焦该类别，富化时只搜对应类别 POI，避免全部退化成停车场。
+            List<ActionDraft> placeDrafts = placeDraftsByIntent(text, goalType, context);
+            drafts.addAll(placeDrafts);
         }
         if (matchesAny(text, "消息", "微信", "短信", "发信息", "发个", "打招呼")) {
             addIfNotNull(drafts, draftTemplate(ExecutionKind.MESSAGE, goalType, context));
@@ -249,8 +262,102 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
         return new ActionProposal(goalType, drafts, false);
     }
 
+    /**
+     * 动态切句生成多条 PLACE_VISIT 草案：按标点把用户目标拆成子句，
+     * 每个子句直接作为 instruction（不加 wrapper 元描述），不依赖固定类别枚举。
+     * 富化时 PlaceSearchService 会对这句原词做切句+归一化+高德搜索。
+     */
+    private List<ActionDraft> placeDraftsByIntent(String text, GoalType goalType, PlanningContext context) {
+        String objective = context.task().getObjective() == null ? "" : context.task().getObjective();
+        List<ActionDraft> result = new ArrayList<>();
+        for (String clause : objective.split("[｜；。！？，,、？?\\n]+")) {
+            String trimmed = clause.trim();
+            if (trimmed.isEmpty()) continue;
+            if (trimmed.matches("^(?:不|不要|别|避免|排除|拒绝|不能).*")) continue;
+            if (trimmed.matches("^(?:\\d+(?:\\.\\d+)?元?|未限定)$")) continue;
+            String shortLabel = trimmed.length() > 16 ? trimmed.substring(0, 16) : trimmed;
+            result.add(
+                    new ActionDraft(
+                            ExecutionKind.PLACE_VISIT,
+                            goalType,
+                            "安排：" + shortLabel,
+                            trimmed,
+                            Map.of()));
+            if (result.size() >= 3) break;
+        }
+        return result;
+    }
+
     private void addIfNotNull(List<ActionDraft> drafts, ActionDraft draft) {
         if (draft != null) drafts.add(draft);
+    }
+
+    /**
+     * 从用户输入字段动态提炼地点/目的关键词（最多 3 个）。
+     * 聚合任务目标、待回答问题、背景补充与城市，按标点切句，
+     * 过滤否定句、纯预算句与空句，保留用户原词，
+     * 避免固定词表漏掉用户真实的地点或目的诉求。
+     */
+    private List<String> placeKeywords(PlanningContext context) {
+        List<String> sources = new ArrayList<>();
+        if (context.task().getObjective() != null) sources.add(context.task().getObjective());
+        if (context.questions() != null) sources.addAll(context.questions());
+        Object notes = context.parameters().get("contextNotes");
+        if (notes != null && !String.valueOf(notes).isBlank()) sources.add(String.valueOf(notes));
+        if (context.city() != null && !context.city().isBlank()) sources.add(context.city());
+        List<String> keywords = new ArrayList<>();
+        for (String source : sources) {
+            for (String clause : source.split("[｜；。！？，,、？?\\n]+")) {
+                String trimmed = clause.trim();
+                if (trimmed.isBlank()) continue;
+                // 过滤否定句（"不要/别…"）与纯预算句，避免污染检索关键词
+                if (trimmed.matches("^(?:不|不要|别|避免|排除|拒绝|不能).*")) continue;
+                if (trimmed.matches("^(?:\\d+(?:\\.\\d+)?元?|未限定)$")) continue;
+                String keyword = trimmed.length() > 12 ? trimmed.substring(0, 12) : trimmed;
+                if (!keywords.contains(keyword)) keywords.add(keyword);
+                // 上限放到 6：用户在确认阶段可能新加好几个问题（停车/美食/电竞/游泳/住宿…），
+                // 之前写死 3 会把后面新加的需求截掉，导致标题括号和检索都漏掉它们。
+                if (keywords.size() >= 6) return keywords;
+            }
+        }
+        return keywords;
+    }
+
+    /** 地点行动标题：用万能前缀，不随关键词变化；具体覆盖了哪些类别放在下面的描述里展示 */
+    private String placeTitle(List<String> keywords) {
+        if (keywords.isEmpty()) return "安排一次适合谈心的见面";
+        return "按你的需求安排见面（" + String.join("、", keywords) + "）";
+    }
+
+    /**
+     * 地点行动指令：直接用用户原句，不加系统元描述（"选个安静地方见面"等），
+     * 避免这些元描述被后续地点检索当成搜索词，污染高德 keywords。
+     */
+    private String placeInstruction(List<String> keywords) {
+        return keywords.isEmpty() ? "" : String.join("，", keywords);
+    }
+
+    /** 礼物行动标题：直接引用用户目标原词，避免"准备一份用心的小表达"这类模板话术 */
+    private String giftTitle(PlanningContext context) {
+        String objective = context.task().getObjective();
+        if (objective == null || objective.isBlank()) return "为对方选一份合适的礼物";
+        String clipped = objective.length() > 18 ? objective.substring(0, 18) : objective;
+        return "选礼物：" + clipped;
+    }
+
+    /** 礼物行动指令：引用用户目标与背景，交给 AI 做喜好分析与具体候选推荐 */
+    private String giftInstruction(PlanningContext context) {
+        StringBuilder buf = new StringBuilder("围绕你提到的需求选礼物。");
+        String objective = context.task().getObjective();
+        if (objective != null && !objective.isBlank()) {
+            buf.append("用户目标：").append(objective).append("。");
+        }
+        Object notes = context.parameters().get("contextNotes");
+        if (notes != null && !String.valueOf(notes).isBlank()) {
+            buf.append("送礼背景：").append(notes).append("。");
+        }
+        buf.append("先分析送礼对象、场合与对方喜好，再给出具体商品候选，不套用通用套话。");
+        return buf.toString();
     }
 
     /** 从目标文本猜测计划目标类型 */

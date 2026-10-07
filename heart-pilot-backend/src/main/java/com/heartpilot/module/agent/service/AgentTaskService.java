@@ -60,9 +60,16 @@ public interface AgentTaskService {
 
     /**
      * 启动任务执行，返回 SSE 发射器供前端实时接收进度。
-     * 仅允许 WAITING/FAILED 状态，通过分布式锁保证多实例下唯一执行。
+     * 仅允许 WAITING/FAILED/AWAITING_REQUIREMENT 状态，通过分布式锁保证多实例下唯一执行。
      */
     SseEmitter run(Long id, Long userId);
+
+    /**
+     * 确认结构化需求并继续生成（需求检查点交互）。
+     * 仅在 AWAITING_REQUIREMENT 状态下可调用：标记需求已确认，
+     * 然后基于已确认的结构化需求重新执行流水线（增量解析 + 重新校验）。
+     */
+    SseEmitter approveRequirement(Long id, Long userId);
 
     /**
      * 用户确认或驳回候选计划。
@@ -76,7 +83,8 @@ public interface AgentTaskService {
             String province,
             String city,
             BigDecimal budget,
-            List<String> questions);
+            List<String> questions,
+            String contextNotes);
 
     /** 为已完成任务生成 PDF */
     GeneratedFile generatePdf(Long id, Long userId);
@@ -86,6 +94,13 @@ public interface AgentTaskService {
 
     /** 取消任务，中断执行线程并置为 CANCELLED */
     AgentTask cancel(Long id, Long userId);
+
+    /**
+     * 从已持久化的候选池里重新随机抽一批候选地点卡片（不调高德 API、不改变行程主线与路线）。
+     * 用户在"等待确认"阶段点"换一批候选地点"时调用：主线卡片保持，其余位置换一批，
+     * 相邻两批允许部分重合。返回更新后的任务实体。
+     */
+    AgentTask reshufflePlaces(Long id, Long userId);
 
     /** 删除任务及其全部关联数据（运行中任务需先取消） */
     void delete(Long id, Long userId);

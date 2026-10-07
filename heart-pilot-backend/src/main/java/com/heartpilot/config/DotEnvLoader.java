@@ -73,6 +73,17 @@ public final class DotEnvLoader {
         } catch (URISyntaxException | NullPointerException ignored) {
             // 未能从代码位置定位时，由上方诊断日志提示当前工作目录。
         }
+
+        // 兜底：从工作目录向上逐级查找（覆盖工作目录为 heart-pilot-backend、
+        // 而 .env 在上一级 heart-pilot 根目录的常见情况）。
+        Path cwd = Path.of("").toAbsolutePath().normalize();
+        for (int depth = 0; depth < 5 && cwd != null; depth++) {
+            Path candidate = cwd.resolve(".env");
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+            cwd = cwd.getParent();
+        }
         return null;
     }
 

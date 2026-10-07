@@ -11,6 +11,9 @@
           statusText(detail.task.status)
         }}</span
         ><button v-if="canCancel" class="btn danger" @click="cancel">取消任务</button
+        ><button v-else-if="isFailed" class="btn primary" :disabled="retrying" @click="retryTask">
+          {{ retrying ? '重试中…' : '重新执行' }}
+        </button
         ><button v-else class="btn danger" :disabled="deleting" @click="removeTask">
           {{ deleting ? '正在删除…' : '删除记录' }}
         </button>
@@ -20,12 +23,18 @@
       <header class="observer-head">
         <div>
           <span class="eyebrow">Agent 可观测执行</span>
-          <h2>从检索到路线，每一步都有证据</h2>
-          <p>页面每 1.2 秒同步任务轨迹；外部能力不可用时会明确显示降级，不会编造地点和距离。</p>
+          <h2>{{ observerTitle }}</h2>
+          <p>页面每 1.2 秒同步任务轨迹；外部能力不可用时会明确显示降级，不会编造地点、商品和距离。</p>
         </div>
         <div class="capability-badges">
-          <span :class="['capability', evidence.sourceStatus === 'LIVE' ? 'online' : 'offline']"
+          <span
+            v-if="currentKind === 'PLACE_VISIT'"
+            :class="['capability', evidence.sourceStatus === 'LIVE' ? 'online' : 'offline']"
             >地图 {{ evidence.sourceStatus === 'LIVE' ? '实时' : '暂无合格结果' }}</span
+          ><span :class="['capability', aiStatusClass]"
+            >AI 对话 {{ aiStatusText }}</span
+          ><span :class="['capability', webStatusClass]"
+            >网页搜索 {{ webStatusText }}</span
           ><span :class="['capability', reactState === '已参与' ? 'online' : 'offline']"
             >ReAct/MCP {{ reactState }}</span
           >
@@ -119,7 +128,7 @@
             <dt>任务 ID</dt>
             <dd>#{{ detail.task.id }}</dd>
           </div>
-          <div>
+          <div v-if="currentKind === 'PLACE_VISIT'">
             <dt>城市</dt>
             <dd>{{ parameters.city || '—' }}</dd>
           </div>
@@ -127,7 +136,7 @@
             <dt>预算</dt>
             <dd>{{ budgetText(parameters.budget) }}</dd>
           </div>
-          <div>
+          <div v-if="currentKind === 'PLACE_VISIT'">
             <dt>问题数量</dt>
             <dd>{{ (parameters.questions || []).length }} 个</dd>
           </div>
@@ -162,7 +171,7 @@
             <b>执行过程</b><small>当前第 {{ detail.task.currentStep }} 步</small>
           </div>
           <span
-            >{{ detail.steps.filter((x) => x.status === 'COMPLETED').length }}/{{
+            >{{ detail.steps.filter((x: any) => x.status === 'COMPLETED').length }}/{{
               detail.steps.length
             }}</span
           >
@@ -191,6 +200,199 @@
           </div>
         </div>
 
+        <!-- 需求检查点：结构化需求确认 + 冲突交互（Tier1/Tier2） -->
+        <div
+          v-if="detail.task.status === 'AWAITING_REQUIREMENT'"
+          class="confirm-box requirement-checkpoint"
+        >
+          <span>需求检查点</span>
+          <h3>系统已把你的需求解析为结构化约束，先核对再生成方案</h3>
+          <div
+            v-if="requirementBlockers.length"
+            class="requirement-conflicts"
+            role="alert"
+          >
+            <b>发现 {{ requirementBlockers.length }} 个冲突，需先调整约束（硬性冲突不会强行生成方案）：</b>
+            <p
+              v-for="(issue, index) in requirementBlockers"
+              :key="'blocker-' + index"
+              class="requirement-issue"
+            >⚠️ {{ issue.message }}</p>
+            <small>可以下方逐条修改约束（改预算、删点位、放宽时间），修改后立即重新校验。</small>
+          </div>
+          <div
+            v-if="requirementWarnings.length && !requirementBlockers.length"
+            class="requirement-warnings"
+          >
+            <b>提醒（不影响生成，确认后可直接继续）：</b>
+            <p
+              v-for="(issue, index) in requirementWarnings"
+              :key="'warning-' + index"
+              class="requirement-issue"
+            >{{ issue.message }}</p>
+          </div>
+          <div v-if="requirementData?.requirement" class="requirement-panel">
+            <div class="requirement-sections">
+              <!-- 四类约束 -->
+              <section v-for="section in requirementSections" :key="section.path" class="req-section">
+                <b>{{ section.label }}</b>
+                <ul>
+                  <li v-for="item in requirementList(section.path)" :key="item">
+                    {{ item }}
+                    <button
+                      class="req-remove"
+                      title="移除该约束"
+                      @click="removeListConstraint(section.path, item)"
+                    >✕</button>
+                  </li>
+                </ul>
+                <div class="req-add">
+                  <input
+                    v-model="requirementListInput[section.path]"
+                    class="input"
+                    :placeholder="section.placeholder"
+                    @keyup.enter="addListConstraint(section.path)"
+                  />
+                  <button class="btn small" @click="addListConstraint(section.path)">添加</button>
+                </div>
+              </section>
+              <!-- 地点业务实体 -->
+              <template v-if="requirementData?.requirement?.place">
+                <section class="req-section">
+                  <b>时间与出行</b>
+                  <div class="req-grid">
+                    <label>开始时间
+                      <input
+                        v-model="requirementData.requirement.place.startTime"
+                        class="input"
+                        placeholder="14:00"
+                        @change="patchConstraint('place.startTime', 'SET', requirementData.requirement.place.startTime)"
+                      />
+                    </label>
+                    <label>最晚返程
+                      <input
+                        v-model="requirementData.requirement.place.latestReturnTime"
+                        class="input"
+                        placeholder="20:00"
+                        @change="patchConstraint('place.latestReturnTime', 'SET', requirementData.requirement.place.latestReturnTime)"
+                      />
+                    </label>
+                    <label>每点停留（分钟）
+                      <input
+                        v-model.number="requirementData.requirement.place.stayMinutesPerPlace"
+                        class="input"
+                        type="number"
+                        @change="patchConstraint('place.stayMinutesPerPlace', 'SET', requirementData.requirement.place.stayMinutesPerPlace)"
+                      />
+                    </label>
+                    <label>预算上限（元）
+                      <input
+                        v-model.number="requirementData.requirement.place.budgetMax"
+                        class="input"
+                        type="number"
+                        @change="patchConstraint('place.budgetMax', 'SET', requirementData.requirement.place.budgetMax)"
+                      />
+                    </label>
+                  </div>
+                </section>
+                <section v-for="section in placeListSections" :key="section.path" class="req-section">
+                  <b>{{ section.label }}</b>
+                  <ul>
+                    <li v-for="item in requirementList(section.path)" :key="item">
+                      {{ item }}
+                      <button
+                        class="req-remove"
+                        title="移除"
+                        @click="removeListConstraint(section.path, item)"
+                      >✕</button>
+                    </li>
+                  </ul>
+                  <div class="req-add">
+                    <input
+                      v-model="requirementListInput[section.path]"
+                      class="input"
+                      :placeholder="section.placeholder"
+                      @keyup.enter="addListConstraint(section.path)"
+                    />
+                    <button class="btn small" @click="addListConstraint(section.path)">添加</button>
+                  </div>
+                </section>
+              </template>
+              <!-- 送礼业务实体 -->
+              <template v-if="requirementData?.requirement?.gift">
+                <section class="req-section">
+                  <b>预算与对象</b>
+                  <div class="req-grid">
+                    <label>预算上限（元）
+                      <input
+                        v-model.number="requirementData.requirement.gift.budgetMax"
+                        class="input"
+                        type="number"
+                        @change="patchConstraint('gift.budgetMax', 'SET', requirementData.requirement.gift.budgetMax)"
+                      />
+                    </label>
+                    <label>对象年龄
+                      <input
+                        v-model.number="requirementData.requirement.gift.recipientAge"
+                        class="input"
+                        type="number"
+                        @change="patchConstraint('gift.recipientAge', 'SET', requirementData.requirement.gift.recipientAge)"
+                      />
+                    </label>
+                    <label>场合
+                      <input
+                        v-model="requirementData.requirement.gift.occasion"
+                        class="input"
+                        @change="patchConstraint('gift.occasion', 'SET', requirementData.requirement.gift.occasion)"
+                      />
+                    </label>
+                  </div>
+                </section>
+                <section v-for="section in giftListSections" :key="section.path" class="req-section">
+                  <b>{{ section.label }}</b>
+                  <ul>
+                    <li v-for="item in requirementList(section.path)" :key="item">
+                      {{ item }}
+                      <button
+                        class="req-remove"
+                        title="移除"
+                        @click="removeListConstraint(section.path, item)"
+                      >✕</button>
+                    </li>
+                  </ul>
+                  <div class="req-add">
+                    <input
+                      v-model="requirementListInput[section.path]"
+                      class="input"
+                      :placeholder="section.placeholder"
+                      @keyup.enter="addListConstraint(section.path)"
+                    />
+                    <button class="btn small" @click="addListConstraint(section.path)">添加</button>
+                  </div>
+                </section>
+              </template>
+            </div>
+          </div>
+          <div class="confirm-actions">
+            <button
+              class="btn"
+              :disabled="requirementConfirming || !requirementData?.blocked"
+              title="有冲突时重新运行会再次校验，仍冲突会回到本检查点"
+              @click="retryTask"
+            >重新校验需求</button>
+            <button
+              class="btn coral"
+              :disabled="requirementConfirming || requirementData?.blocked"
+              @click="approveRequirement"
+            >
+              {{ requirementConfirming ? '正在生成方案…' : '确认需求无误，继续生成方案' }}
+            </button>
+          </div>
+          <small class="requirement-footnote">
+            单条约束可直接修改（改预算、删黑名单、加必去点位等），系统只更新对应字段，无需整段重写需求描述。
+          </small>
+        </div>
+
         <div v-if="detail.task.status === 'AWAITING_CONFIRMATION'" class="confirm-box">
           <span>等待你的确认</span>
           <h3>先核对当前方案，也可以直接修改约束后重新规划</h3>
@@ -203,51 +405,180 @@
           <div class="plan-editor">
             <div class="editor-title">
               <b>确认前修改当前参数</b
-              ><small
-                >这里的地点、预算和问题清单以最后一次提交为准；应用修改后会新增一个规划分支，并重新提取对应关键词。</small
-              >
+              ><small>{{ editorHint }}</small>
             </div>
-            <div class="grid-2">
-              <div class="field">
-                <label>省 / 直辖市</label>
-                <select v-model="editor.province" class="select">
-                  <option v-for="province in provinces" :key="province" :value="province">
-                    {{ province }}
-                  </option>
-                </select>
+
+            <!-- 地点见面：省/市 + 预算 + 问题清单 -->
+            <template v-if="currentKind === 'PLACE_VISIT'">
+              <div class="grid-2">
+                <div class="field">
+                  <label>省 / 直辖市</label>
+                  <select v-model="editor.province" class="select">
+                    <option v-for="province in provinces" :key="province" :value="province">
+                      {{ province }}
+                    </option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>城市</label>
+                  <select
+                    v-model="editor.city"
+                    class="select"
+                    :disabled="!editor.province || citiesLoading"
+                  >
+                    <option value="" disabled>
+                      {{ citiesLoading ? '加载城市中…' : '请选择城市' }}
+                    </option>
+                    <option v-for="city in cityOptions" :key="city" :value="city">{{ city }}</option>
+                  </select>
+                </div>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <label>预算（元）</label
+                  ><input
+                    v-model.number="editor.budget"
+                    class="input"
+                    type="number"
+                    min="0"
+                    placeholder="500"
+                  />
+                </div>
               </div>
               <div class="field">
-                <label>城市</label>
-                <select
-                  v-model="editor.city"
-                  class="select"
-                  :disabled="!editor.province || citiesLoading"
-                >
-                  <option value="" disabled>
-                    {{ citiesLoading ? '加载城市中…' : '请选择城市' }}
-                  </option>
-                  <option v-for="city in cityOptions" :key="city" :value="city">{{ city }}</option>
-                </select>
+                <label>需要方案逐项回答的问题 <small>每行一个，以当前完整清单为准</small></label
+                ><textarea
+                  v-model="editor.questionsText"
+                  class="textarea questions"
+                  placeholder="哪家店适合安静聊天？&#10;两个地点之间怎么走？&#10;有哪些不去商场、有停车位且适合聊天的备选？"
+                ></textarea>
               </div>
-            </div>
-            <div class="grid-2">
+            </template>
+
+            <!-- 礼物：预算 + 场合 + 形式 + 对方喜好 -->
+            <template v-else-if="currentKind === 'GIFT_RITUAL'">
+              <div class="grid-2">
+                <div class="field">
+                  <label>礼物预算</label
+                  ><input v-model="editor.giftBudget" class="input" placeholder="例如：200到500元" />
+                </div>
+                <div class="field">
+                  <label>送礼场合</label>
+                  <select v-model="editor.occasionType" class="select">
+                    <option value="">不限</option>
+                    <option value="生日">生日</option>
+                    <option value="节日">节日</option>
+                    <option value="道歉">道歉</option>
+                    <option value="感谢">感谢</option>
+                    <option value="纪念日">纪念日</option>
+                  </select>
+                </div>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <label>礼物形式</label>
+                  <select v-model="editor.giftForm" class="select">
+                    <option value="">不限</option>
+                    <option value="实物">实物</option>
+                    <option value="红包">红包</option>
+                    <option value="体验类活动">体验类活动</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>预算（元）</label
+                  ><input
+                    v-model.number="editor.budget"
+                    class="input"
+                    type="number"
+                    min="0"
+                    placeholder="500"
+                  />
+                </div>
+              </div>
               <div class="field">
-                <label>预算（元）</label
+                <label>对方年龄 <small>选填，便于缩小品类范围</small></label
+                ><input v-model="editor.recipientAge" class="input" placeholder="例如：22" />
+              </div>
+              <div class="field">
+                <label>对方喜好或禁忌</label
                 ><input
-                  v-model.number="editor.budget"
+                  v-model="editor.recipientPreferences"
                   class="input"
-                  type="number"
-                  min="0"
-                  placeholder="500"
+                  placeholder="例如：喜欢喝茶，不送香水"
                 />
               </div>
-            </div>
+            </template>
+
+            <!-- 发消息：渠道 + 语气 + 回复期待 -->
+            <template v-else-if="currentKind === 'MESSAGE'">
+              <div class="grid-2">
+                <div class="field">
+                  <label>发送渠道</label>
+                  <select v-model="editor.messageChannel" class="select">
+                    <option value="">不限</option>
+                    <option value="微信">微信</option>
+                    <option value="短信">短信</option>
+                    <option value="邮件">邮件</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>语气风格</label>
+                  <select v-model="editor.toneStyle" class="select">
+                    <option value="">不限</option>
+                    <option value="正式">正式</option>
+                    <option value="亲切">亲切</option>
+                    <option value="幽默">幽默</option>
+                    <option value="委婉">委婉</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label>对方回复期待</label
+                ><input
+                  v-model="editor.replyExpectation"
+                  class="input"
+                  placeholder="例如：希望对方愿意周末出来坐坐"
+                />
+              </div>
+            </template>
+
+            <!-- 自我计划：内容 + 期望效果 + 频率 -->
+            <template v-else-if="currentKind === 'SELF_PRACTICE'">
+              <div class="field">
+                <label>计划要做的事或要达成的目标</label
+                ><input
+                  v-model="editor.planContent"
+                  class="input"
+                  placeholder="例如：练习主动开启对话，控制情绪不急躁"
+                />
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <label>期望效果</label
+                  ><input
+                    v-model="editor.expectedOutcome"
+                    class="input"
+                    placeholder="例如：和对方聊天不再紧张"
+                  />
+                </div>
+                <div class="field">
+                  <label>频率</label>
+                  <select v-model="editor.frequency" class="select">
+                    <option value="">不限</option>
+                    <option value="每日">每日</option>
+                    <option value="每周几次">每周几次</option>
+                  </select>
+                </div>
+              </div>
+            </template>
+
+            <!-- 沟通背景：所有行动类型都可补充/修改，随重规划一起参与计算 -->
             <div class="field">
-              <label>需要方案逐项回答的问题 <small>每行一个，以当前完整清单为准</small></label
+              <label>沟通背景 <small>选填，补充双方关系与最近发生了什么</small></label
               ><textarea
-                v-model="editor.questionsText"
-                class="textarea questions"
-                placeholder="哪家店适合安静聊天？&#10;两个地点之间怎么走？&#10;有哪些不去商场、有停车位且适合聊天的备选？"
+                v-model="editor.contextNotes"
+                class="textarea"
+                placeholder="例如：上次见面聊得不愉快，最近联系变少，想缓和一下"
               ></textarea>
             </div>
           </div>
@@ -273,10 +604,21 @@
           <span class="eyebrow">真实地点与路线证据</span>
           <h2>{{ evidence.city }} · {{ evidence.topics }}</h2>
         </div>
-        <small>更新时间：{{ evidence.searchedAt || '—' }}</small>
+        <div class="evidence-head-side">
+          <small>更新时间：{{ evidence.searchedAt || '—' }}</small>
+          <button
+            v-if="canReshufflePlaces"
+            class="btn ghost"
+            :disabled="reshuffling"
+            @click="reshufflePlaces"
+            title="不调外部地图接口，从已检索到的候选池里按类别均衡随机换一批，相邻两批允许部分重合"
+          >
+            {{ reshuffling ? '换一批中…' : '换一批候选地点' }}
+          </button>
+        </div>
       </div>
       <div v-if="mapCards.length" class="place-grid">
-        <article v-for="place in mapCards" :key="place.poiId || place.name" class="map-card">
+        <article v-for="place in visibleMapCards" :key="place.poiId || place.name" class="map-card">
           <img v-if="place.coverImageUrl" :src="place.coverImageUrl" :alt="place.name" />
           <span class="place-index">地图卡片</span>
           <h3>{{ place.name }}</h3>
@@ -302,11 +644,16 @@
           </div>
         </article>
       </div>
+      <div v-if="mapCards.length > 6" class="place-more-row">
+        <button class="place-more-btn" @click="showAllMapCards = !showAllMapCards">
+          {{ showAllMapCards ? '收起地点' : `展开全部 ${mapCards.length} 个地点` }}
+        </button>
+      </div>
       <div v-else class="evidence-empty">
         {{ evidence.notice || '没有取得符合当前地点范围的可核验地图地点。' }}
       </div>
       <div v-if="evidence.routes?.length" class="route-list">
-        <h3>地点间路线</h3>
+        <h3>地点间路线 <small class="route-hint">（距离与耗时仅供简单参考，实际出行请以地图实时路况为准）</small></h3>
         <div class="route-map-overview">
           <div class="route-map-title">
             <div><b>路线总览</b><small>A → B → C → D 按行程顺序连接</small></div>
@@ -420,6 +767,22 @@
               <ul v-if="item.payload.steps?.length" class="key-list">
                 <li v-for="line in item.payload.steps" :key="line">{{ line }}</li>
               </ul>
+              <div v-if="item.payload.giftIdeas?.length" class="gift-ideas">
+                <p><b>AI 分析后的礼物候选</b>（基于你的喜好与预算推荐，价格以实际为准）</p>
+                <ul class="key-list">
+                  <li v-for="idea in item.payload.giftIdeas" :key="idea.title">
+                    <a
+                      v-if="idea.url"
+                      :href="idea.url"
+                      target="_blank"
+                      rel="noreferrer"
+                      >{{ idea.title }} ↗</a
+                    ><b v-else>{{ idea.title }}</b>
+                    <span v-if="idea.priceHint" class="muted">（约 {{ idea.priceHint }}）</span>
+                    <div v-if="idea.reason" class="muted">{{ idea.reason }}</div>
+                  </li>
+                </ul>
+              </div>
             </template>
             <template v-else-if="item.executionKind === 'SELF_PRACTICE'">
               <p v-if="item.payload.practiceContent" class="pre-line">
@@ -506,33 +869,116 @@
   >
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, streamSSE } from '../api'
 import ExpandableText from '../components/ExpandableText.vue'
 import StructuredText from '../components/StructuredText.vue'
 
+interface EditorState {
+  province: string
+  city: string
+  budget: number | null
+  questionsText: string
+  contextNotes: string
+  giftBudget: string
+  occasionType: string
+  giftForm: string
+  recipientAge: string
+  recipientPreferences: string
+  messageChannel: string
+  toneStyle: string
+  replyExpectation: string
+  planContent: string
+  expectedOutcome: string
+  frequency: string
+}
+
 const route = useRoute()
 const router = useRouter()
-const detail = ref()
-const plan = ref()
+const detail = ref<any>()
+const plan = ref<any>()
 const error = ref('')
-const timer = ref()
-const errorTimer = ref()
+const timer = ref<number>()
+const errorTimer = ref<number>()
 const pdfGenerating = ref(false)
 const pdfDownloading = ref(false)
 const submitting = ref(false)
 const deleting = ref(false)
+const retrying = ref(false)
+const reshuffling = ref(false)
 const hydratedKey = ref('')
-const expandedBranches = ref(new Set())
+const expandedBranches = ref<Set<number>>(new Set())
 const routeMapUrl = ref('')
 const routeMapKey = ref('')
 const routeMapLoading = ref(false)
 const routeMapUnavailable = ref(false)
-const editor = reactive({ province: '', city: '', budget: null, questionsText: '' })
-const cityOptions = ref([])
+const editor = reactive<EditorState>({
+  province: '',
+  city: '',
+  budget: null,
+  questionsText: '',
+  // 沟通背景（选填，确认阶段可补充/修改，参与重规划）
+  contextNotes: '',
+  // 礼物专属
+  giftBudget: '',
+  occasionType: '',
+  giftForm: '',
+  recipientAge: '',
+  recipientPreferences: '',
+  // 发消息专属
+  messageChannel: '',
+  toneStyle: '',
+  replyExpectation: '',
+  // 自我计划专属
+  planContent: '',
+  expectedOutcome: '',
+  frequency: ''
+})
+const cityOptions = ref<string[]>([])
 const citiesLoading = ref(false)
+// ---- 结构化需求检查点（Tier1/Tier2）----
+const requirementData = ref<any>(null)
+const requirementListInput = ref<Record<string, string>>({})
+const requirementConfirming = ref(false)
+const requirementIssueClass = (issue: any) =>
+  issue?.severity === 'BLOCKER' ? 'req-issue-blocker' : 'req-issue-warning'
+const requirementBlockers = computed(() => {
+  const issues = requirementData.value?.issues
+  return Array.isArray(issues) ? issues.filter((i: any) => i.severity === 'BLOCKER') : []
+})
+const requirementWarnings = computed(() => {
+  const issues = requirementData.value?.issues
+  return Array.isArray(issues) ? issues.filter((i: any) => i.severity === 'WARNING') : []
+})
+/** 四类约束的可编辑分组（地点/送礼共用） */
+const requirementSections = computed(() => [
+  { path: 'hardConstraints', label: '硬性约束（必须满足）', placeholder: '如：晚上8点前到家' },
+  { path: 'priorityPreferences', label: '优先偏好（尽量满足）', placeholder: '如：喜欢广西菜' },
+  { path: 'optionalEnhancements', label: '可选加分项（有余力再做）', placeholder: '如：下雨的室内备选' },
+  { path: 'exclusions', label: '排除黑名单（坚决不做）', placeholder: '如：不去吵闹的商场' }
+])
+const placeListSections = computed(() => [
+  { path: 'place.mustVisit', label: '必去点位', placeholder: '如：人民公园' },
+  { path: 'place.recommendedVisit', label: '推荐点位', placeholder: '如：咖啡馆' },
+  { path: 'place.forbiddenPlaces', label: '禁止点位', placeholder: '如：某商场' }
+])
+const giftListSections = computed(() => [
+  { path: 'gift.stylePreferences', label: '风格偏好', placeholder: '如：喜欢喝茶' },
+  { path: 'gift.forbiddenCategories', label: '禁止品类', placeholder: '如：不送香水' }
+])
+/** 按点分路径读取结构化需求列表（不存在时返回空数组） */
+function requirementList(path: string): string[] {
+  const requirement = requirementData.value?.requirement
+  if (!requirement) return []
+  let current: any = requirement
+  for (const segment of path.split('.')) {
+    if (current == null) return []
+    current = current[segment]
+  }
+  return Array.isArray(current) ? current : []
+}
 const provinces = [
   '北京市',
   '天津市',
@@ -578,7 +1024,7 @@ watch(
       cityOptions.value = await api.get('/agent-tasks/region-cities', { params: { province } })
       if (previousProvince && previousProvince !== province) editor.city = ''
       if (cityOptions.value.length === 1) editor.city = cityOptions.value[0]
-    } catch (requestError) {
+    } catch (requestError: any) {
       showError(requestError.response?.data?.message || '城市列表加载失败')
     } finally {
       citiesLoading.value = false
@@ -586,16 +1032,74 @@ watch(
   }
 )
 
-const phaseDefinitions = [
-  { code: 'ANALYZE', label: '分析行程需求' },
-  { code: 'SEARCH', label: '检索展览 / 餐厅' },
-  { code: 'FILTER', label: '筛选真实地点' },
-  { code: 'ROUTE', label: '计算地点路线' },
-  { code: 'GENERATE', label: '生成最终计划' }
-]
+const parameters = computed<any>(() => parseJson(detail.value?.task.parametersJson, {}))
 
-const parameters = computed(() => parseJson(detail.value?.task.parametersJson, {}))
-const evidence = computed(() =>
+// 当前任务的行动类型：优先取创建时指定的 preferredActionKinds，缺省按地点见面展示
+const currentKind = computed<string>(() => {
+  const kinds: any[] = parameters.value?.preferredActionKinds
+  if (Array.isArray(kinds) && kinds.length) return String(kinds[0])
+  return 'PLACE_VISIT'
+})
+
+// 仅在地点类任务、且处于等待用户确认阶段时，才展示"换一批候选地点"按钮
+const canReshufflePlaces = computed(
+  () =>
+    currentKind.value === 'PLACE_VISIT' &&
+    detail.value?.task?.status === 'AWAITING_CONFIRMATION' &&
+    mapCards.value.length > 0
+)
+
+// 顶部副标题：不同行动类型走不同的能力链路，文案随之变化
+const observerTitle = computed(() =>
+  ({
+    GIFT_RITUAL: '从联网检索到礼物候选，每一步都有证据',
+    MESSAGE: '从沟通分析到消息草稿，每一步都有证据',
+    SELF_PRACTICE: '从练习设计到复盘标准，每一步都有证据'
+  })[currentKind.value] || '从检索到路线，每一步都有证据'
+)
+
+// 步骤条按行动类型切换：地点见面走地图检索流程，礼物走联网商品检索，消息/练习走文案生成
+const phaseDefinitions = computed(() => {
+  const base = [
+    { code: 'GENERATE', label: '生成最终计划' }
+  ]
+  switch (currentKind.value) {
+    case 'GIFT_RITUAL':
+      return [
+        { code: 'ANALYZE', label: '分析送礼需求' },
+        { code: 'SEARCH', label: '检索礼物候选' },
+        { code: 'FILTER', label: '筛选合适礼物' },
+        { code: 'ROUTE', label: '准备与送出时机' },
+        ...base
+      ]
+    case 'MESSAGE':
+      return [
+        { code: 'ANALYZE', label: '分析沟通目标' },
+        { code: 'SEARCH', label: '起草消息草稿' },
+        { code: 'FILTER', label: '语气与表达检查' },
+        { code: 'ROUTE', label: '确定发送时机' },
+        ...base
+      ]
+    case 'SELF_PRACTICE':
+      return [
+        { code: 'ANALYZE', label: '分析练习目标' },
+        { code: 'SEARCH', label: '设计练习内容' },
+        { code: 'FILTER', label: '制定节奏与标准' },
+        { code: 'ROUTE', label: '准备复盘记录' },
+        ...base
+      ]
+    default:
+      return [
+        { code: 'ANALYZE', label: '分析行程需求' },
+        { code: 'SEARCH', label: '检索展览 / 餐厅' },
+        { code: 'FILTER', label: '筛选真实地点' },
+        { code: 'ROUTE', label: '计算地点路线' },
+        ...base
+      ]
+  }
+})
+
+const evidence = computed<any>(() =>
   parseJson(detail.value?.task.journeyEvidenceJson, {
     places: [],
     routes: [],
@@ -603,14 +1107,18 @@ const evidence = computed(() =>
     notice: ''
   })
 )
-const mapCards = computed(() =>
+const mapCards = computed<any[]>(() =>
   evidence.value.mapCards?.length ? evidence.value.mapCards : evidence.value.places || []
 )
-const executionEvents = computed(() => detail.value?.executionEvents || [])
-const currentVersionEvents = computed(() =>
+const showAllMapCards = ref(false)
+const visibleMapCards = computed<any[]>(() =>
+  showAllMapCards.value ? mapCards.value : mapCards.value.slice(0, 6)
+)
+const executionEvents = computed<any[]>(() => detail.value?.executionEvents || [])
+const currentVersionEvents = computed<any[]>(() =>
   executionEvents.value.filter((item) => eventVersion(item) === (detail.value?.task.versionNo || 0))
 )
-const eventBranches = computed(() => {
+const eventBranches = computed<any[]>(() => {
   const grouped = new Map()
   executionEvents.value.forEach((event) => {
     const version = eventVersion(event)
@@ -645,7 +1153,11 @@ const eventBranches = computed(() => {
         version,
         events,
         title: version === 0 ? '首次规划' : `第 ${version} 次修改重规划`,
-        summary: `${city || '地点待确认'} · ${budgetText(budget)} · ${questionCount} 个问题 · ${events.length} 条轨迹`,
+        summary:
+          `${city || (currentKind.value === 'PLACE_VISIT' ? '地点待确认' : '不限地点')} · ` +
+          `${budgetText(budget)}` +
+          (currentKind.value === 'PLACE_VISIT' ? ` · ${questionCount} 个问题` : '') +
+          ` · ${events.length} 条轨迹`,
         keywords,
         ...branchStatus(version, events, isCurrent)
       }
@@ -661,9 +1173,42 @@ const reactState = computed(() => {
   if (currentVersionEvents.value.some((item) => item.title.includes('未启用'))) return '未启用'
   return '待调用'
 })
+
+// 外部能力状态：AI 对话 key 与网页搜索 key 的运行时状态（正常/未配置/额度耗尽）
+const capabilities = ref<any>({ webSearch: {}, aiChat: {} })
+function capabilityText(entry: any) {
+  switch (entry?.status) {
+    case 'OK':
+      return '正常'
+    case 'NO_KEY':
+      return '未配置 key'
+    case 'QUOTA_EXHAUSTED':
+      return '额度不足'
+    case 'AUTH_FAILED':
+      return 'key 无效'
+    default:
+      return '检测中'
+  }
+}
+const aiStatusText = computed(() => capabilityText(capabilities.value.aiChat))
+const webStatusText = computed(() => capabilityText(capabilities.value.webSearch))
+const aiStatusClass = computed(() =>
+  capabilities.value.aiChat?.status === 'OK' ? 'online' : 'offline'
+)
+const webStatusClass = computed(() =>
+  capabilities.value.webSearch?.status === 'OK' ? 'online' : 'offline'
+)
+async function loadCapabilities() {
+  try {
+    capabilities.value = await api.get('/agent-tasks/capabilities')
+  } catch {
+    // 接口失败不阻塞任务页
+  }
+}
 const canCancel = computed(
   () => detail.value && !['SUCCEEDED', 'CANCELLED', 'FAILED'].includes(detail.value.task.status)
 )
+const isFailed = computed(() => detail.value?.task.status === 'FAILED')
 const originalQuestions = computed(() =>
   Array.isArray(parameters.value.questions) ? parameters.value.questions : []
 )
@@ -677,15 +1222,120 @@ const enteredQuestions = computed(() =>
     .map((value) => value.trim())
     .filter(Boolean)
 )
-const canRevise = computed(
-  () =>
-    Boolean(editor.province) &&
-    Boolean(editor.city.trim()) &&
-    (editor.province !== (parameters.value.province || '') ||
-      editor.city.trim() !== (parameters.value.city || '') ||
-      normalizeBudgetValue(editor.budget) !== normalizeBudgetValue(parameters.value.budget) ||
-      JSON.stringify(enteredQuestions.value) !== JSON.stringify(originalQuestions.value))
+
+// 确认表单副标题：按行动类型说明本轮改什么
+const editorHint = computed(() =>
+  ({
+    GIFT_RITUAL: '修改预算、场合与对方喜好后重新分析，AI 会重新推荐具体礼物候选。',
+    MESSAGE: '修改渠道、语气与回复期待后，AI 会重新生成消息草稿。',
+    SELF_PRACTICE: '修改练习内容、期望效果与频率后，AI 会重新生成练习计划。'
+  })[currentKind.value] ||
+  '这里的地点、预算和问题清单以最后一次提交为准；应用修改后会新增一个规划分支，并重新提取对应关键词。'
 )
+
+// 确认编辑器可编辑的专属字段标签（按"标签：内容"行格式识别）
+const EDITABLE_KIND_KEYS = new Set([
+  '礼物预算',
+  '送礼场合',
+  '礼物形式',
+  '对方喜好',
+  '发送渠道',
+  '语气风格',
+  '回复期待',
+  '计划内容',
+  '期望效果',
+  '频率'
+])
+
+// 把非地点任务的专属字段按"标签：内容"行格式拼进 contextNotes（与创建页格式一致）。
+// 关键：必须保留创建时填写的"时间约束 / 沟通背景 / 明确边界"等非专属行，
+// 只替换编辑器可改的专属行与沟通背景，避免重规划时丢掉用户最初提交的描述。
+function buildContextNotes() {
+  const lines = []
+  // 1. 保留原始说明中的非专属行；"沟通背景"行在原位置用编辑器最新值替换（为空则移除该行）
+  const originalLines: string[] = (parameters.value?.contextNotes || '').split(/\n/)
+  const backgroundKey = '沟通背景'
+  let backgroundInserted = false
+  originalLines.forEach((line) => {
+    const idx = line.indexOf('：')
+    const key = idx > 0 ? line.slice(0, idx).trim() : ''
+    if (EDITABLE_KIND_KEYS.has(key)) return
+    if (key === backgroundKey) {
+      if (editor.contextNotes.trim()) {
+        lines.push(`${backgroundKey}：${editor.contextNotes.trim()}`)
+        backgroundInserted = true
+      }
+      return
+    }
+    if (line.trim()) lines.push(line.trim())
+  })
+  // 原始没有沟通背景行但用户填了新描述 → 追加到保留行末尾
+  if (editor.contextNotes.trim() && !backgroundInserted)
+    lines.push(`${backgroundKey}：${editor.contextNotes.trim()}`)
+  // 2. 追加当前行动类型的专属字段行
+  if (currentKind.value === 'GIFT_RITUAL') {
+    if (editor.giftBudget.trim()) lines.push(`礼物预算：${editor.giftBudget.trim()}`)
+    if (editor.occasionType) lines.push(`送礼场合：${editor.occasionType}`)
+    if (editor.giftForm) lines.push(`礼物形式：${editor.giftForm}`)
+    if (editor.recipientAge.trim()) lines.push(`对方年龄：${editor.recipientAge.trim()}岁`)
+    if (editor.recipientPreferences.trim())
+      lines.push(`对方喜好：${editor.recipientPreferences.trim()}`)
+  } else if (currentKind.value === 'MESSAGE') {
+    if (editor.messageChannel) lines.push(`发送渠道：${editor.messageChannel}`)
+    if (editor.toneStyle) lines.push(`语气风格：${editor.toneStyle}`)
+    if (editor.replyExpectation.trim()) lines.push(`回复期待：${editor.replyExpectation.trim()}`)
+  } else if (currentKind.value === 'SELF_PRACTICE') {
+    if (editor.planContent.trim()) lines.push(`计划内容：${editor.planContent.trim()}`)
+    if (editor.expectedOutcome.trim()) lines.push(`期望效果：${editor.expectedOutcome.trim()}`)
+    if (editor.frequency) lines.push(`频率：${editor.frequency}`)
+  }
+  return lines.join('\n')
+}
+
+// 从已有 contextNotes 中按"标签：内容"回显专属字段
+function hydrateKindFields(notesText: string) {
+  const map: Record<string, string> = {}
+  ;(notesText || '').split(/\n/).forEach((line) => {
+    const idx = line.indexOf('：')
+    if (idx > 0) map[line.slice(0, idx).trim()] = line.slice(idx + 1).trim()
+  })
+  editor.giftBudget = map['礼物预算'] || ''
+  editor.occasionType = map['送礼场合'] || ''
+  editor.giftForm = map['礼物形式'] || ''
+  editor.recipientAge = (map['对方年龄'] || '').replace(/岁$/, '')
+  editor.recipientPreferences = map['对方喜好'] || ''
+  editor.messageChannel = map['发送渠道'] || ''
+  editor.toneStyle = map['语气风格'] || ''
+  editor.replyExpectation = map['回复期待'] || ''
+  editor.planContent = map['计划内容'] || ''
+  editor.expectedOutcome = map['期望效果'] || ''
+  editor.frequency = map['频率'] || ''
+  editor.contextNotes = map['沟通背景'] || ''
+}
+
+// 当前 contextNotes（含本表单修改）与原始值是否一致
+const notesChanged = computed(
+  () => buildContextNotes() !== (parameters.value.contextNotes || '')
+)
+
+const canRevise = computed(() => {
+  if (currentKind.value === 'PLACE_VISIT') {
+    return (
+      Boolean(editor.province) &&
+      Boolean(editor.city.trim()) &&
+      (editor.province !== (parameters.value.province || '') ||
+        editor.city.trim() !== (parameters.value.city || '') ||
+        normalizeBudgetValue(editor.budget) !== normalizeBudgetValue(parameters.value.budget) ||
+        JSON.stringify(enteredQuestions.value) !== JSON.stringify(originalQuestions.value) ||
+        notesChanged.value)
+    )
+  }
+  // 非地点任务：只要专属字段或预算有修改即可重规划
+  return (
+    notesChanged.value ||
+    normalizeBudgetValue(editor.budget) !== normalizeBudgetValue(parameters.value.budget)
+  )
+})
 const runningTitle = computed(() =>
   detail.value?.task.currentStep >= 6 ? '正在补充检索并生成计划书' : '正在合并修改并重新规划'
 )
@@ -697,6 +1347,7 @@ const runningHint = computed(() =>
 
 onMounted(async () => {
   await load()
+  loadCapabilities()
   startPolling()
 })
 onBeforeUnmount(() => {
@@ -705,31 +1356,31 @@ onBeforeUnmount(() => {
   if (routeMapUrl.value) URL.revokeObjectURL(routeMapUrl.value)
 })
 
-function parseJson(value, fallback) {
+function parseJson(value: string | null | undefined, fallback: any): any {
   try {
     return JSON.parse(value || '')
   } catch {
     return fallback
   }
 }
-function eventVersion(event) {
+function eventVersion(event: any): number {
   return Number.isInteger(event.taskVersion) ? event.taskVersion : 0
 }
-function eventMetadata(event) {
+function eventMetadata(event: any): any {
   return parseJson(event?.metadataJson, {})
 }
-function normalizeBudgetValue(value) {
+function normalizeBudgetValue(value: any): string {
   if (value === null || value === undefined || value === '') return ''
   const amount = Number(value)
   return Number.isFinite(amount) ? String(amount) : String(value).trim()
 }
-function budgetText(value) {
+function budgetText(value: any): string {
   const normalized = normalizeBudgetValue(value)
   if (!normalized) return '未限定'
   const amount = Number(normalized)
   return `${Number.isFinite(amount) ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 20 }).format(amount) : normalized} 元`
 }
-function branchStatus(version, events, isCurrent) {
+function branchStatus(version: number, events: any[], isCurrent: boolean) {
   if (!isCurrent) return { statusText: '已产生后续修改', statusClass: 'revised' }
   const status = detail.value?.task.status
   if (['RUNNING', 'WAITING', 'RETRY_WAIT'].includes(status))
@@ -740,10 +1391,10 @@ function branchStatus(version, events, isCurrent) {
     return { statusText: '执行异常', statusClass: 'failed' }
   return { statusText: statusText(status), statusClass: '' }
 }
-function isBranchExpanded(version) {
+function isBranchExpanded(version: number) {
   return expandedBranches.value.has(version)
 }
-function toggleBranch(version) {
+function toggleBranch(version: number) {
   const next = new Set(expandedBranches.value)
   next.has(version) ? next.delete(version) : next.add(version)
   expandedBranches.value = next
@@ -760,6 +1411,7 @@ function hydrateEditor() {
   editor.city = parameters.value.city || ''
   editor.budget = parameters.value.budget ?? null
   editor.questionsText = originalQuestions.value.join('\n')
+  hydrateKindFields(parameters.value.contextNotes || '')
   hydratedKey.value = key
 }
 async function load() {
@@ -773,9 +1425,88 @@ async function load() {
       plan.value = null
     }
     if (next.task.status === 'AWAITING_CONFIRMATION') hydrateEditor()
+    if (next.task.status === 'AWAITING_REQUIREMENT') await loadRequirement()
     if (!['RUNNING', 'WAITING'].includes(next.task.status)) clearInterval(timer.value)
   } catch {
     showError('任务读取失败')
+  }
+}
+
+// ---- 结构化需求检查点（Tier1/Tier2）----
+async function loadRequirement() {
+  try {
+    const response = await api.get(`/agent-tasks/${route.params.id}/requirement`)
+    requirementData.value = response || null
+    if (!response?.blocked) requirementConfirming.value = false
+  } catch {
+    requirementData.value = null
+  }
+}
+
+/** 单条约束局部修改：PATCH 后端 JSON 字段后重新校验（无需整段重写需求） */
+async function patchConstraint(path: string, op: string, value: unknown) {
+  try {
+    const response = await api.patch(`/agent-tasks/${route.params.id}/requirement`, {
+      path,
+      op,
+      value
+    })
+    requirementData.value = response
+    requirementListInput.value[path] = ''
+    if (!response?.blocked) {
+      requirementConfirming.value = false
+      showError('约束已更新，校验通过，可以继续生成方案')
+    } else {
+      showError('约束已更新，但仍有冲突需要调整')
+    }
+  } catch (requestError: any) {
+    showError(requestError.response?.data?.message || '约束修改失败')
+  }
+}
+
+/** 列表约束：追加一项 */
+async function addListConstraint(path: string) {
+  const value = (requirementListInput.value[path] || '').trim()
+  if (!value) return
+  await patchConstraint(path, 'ADD', value)
+}
+
+/** 列表约束：移除一项 */
+async function removeListConstraint(path: string, value: string) {
+  await patchConstraint(path, 'REMOVE', value)
+}
+
+/** 需求检查点确认：核对无误后继续生成方案（SSE 流式推送后续进度） */
+async function approveRequirement() {
+  if (requirementConfirming.value || requirementData.value?.blocked) return
+  requirementConfirming.value = true
+  error.value = ''
+  startPolling()
+  try {
+    const stream = await streamSSE(`/agent-tasks/${route.params.id}/requirement/approve`, null, {
+      step: load,
+      revision: load,
+      confirmation: load,
+      requirement: (event: any) => {
+        requirementData.value = event || requirementData.value
+      },
+      done: load,
+      error: (event: any) => showError(event.message || '任务执行失败'),
+      close: async () => {
+        await load()
+        startPolling()
+      },
+      transportError: async () => {
+        await load()
+        startPolling()
+      }
+    })
+    await stream.completed
+  } catch (requestError: any) {
+    await load()
+    showError(requestError.response?.data?.message || requestError.message || '确认失败')
+  } finally {
+    requirementConfirming.value = false
   }
 }
 async function loadRouteMap() {
@@ -795,10 +1526,10 @@ async function loadRouteMap() {
     routeMapLoading.value = false
   }
 }
-function optimisticRun(approved) {
+function optimisticRun(approved: boolean) {
   detail.value.task.status = 'RUNNING'
   detail.value.task.currentStep = approved ? 6 : 1
-  detail.value.steps.forEach((step) => {
+  detail.value.steps.forEach((step: any) => {
     if (approved) {
       if (step.stepNo === 5)
         Object.assign(step, {
@@ -817,17 +1548,19 @@ function optimisticRun(approved) {
     }
   })
 }
-async function confirmTask(approved) {
+async function confirmTask(approved: boolean) {
   if (submitting.value || (approved && canRevise.value) || (!approved && !canRevise.value)) return
   submitting.value = true
   error.value = ''
+  const isPlace = currentKind.value === 'PLACE_VISIT'
   const payload = {
     approved,
     note: '',
-    province: approved ? null : editor.province,
-    city: approved ? null : editor.city.trim(),
-    budget: approved ? null : editor.budget === '' ? null : editor.budget,
-    questions: enteredQuestions.value
+    province: approved || !isPlace ? null : editor.province,
+    city: approved || !isPlace ? null : editor.city.trim(),
+    budget: approved ? null : (editor.budget ?? '') === '' ? null : editor.budget,
+    questions: approved || !isPlace ? null : enteredQuestions.value,
+    contextNotes: approved ? null : buildContextNotes()
   }
   optimisticRun(approved)
   startPolling()
@@ -848,7 +1581,7 @@ async function confirmTask(approved) {
       }
     })
     await stream.completed
-  } catch (requestError) {
+  } catch (requestError: any) {
     await load()
     if (['RUNNING', 'SUCCEEDED'].includes(detail.value?.task.status)) return
     const message = requestError.response?.data?.message || requestError.message || '提交失败'
@@ -858,7 +1591,24 @@ async function confirmTask(approved) {
     submitting.value = false
   }
 }
-function phaseStatus(code) {
+
+// 换一批候选地点：后端从已持久化的候选池里按类别均衡随机重抽卡片，
+// 不调外部地图接口、不改行程主线与路线；成功后直接刷新详情即可看到新一批卡片。
+async function reshufflePlaces() {
+  if (reshuffling.value) return
+  reshuffling.value = true
+  error.value = ''
+  try {
+    await api.post(`/agent-tasks/${route.params.id}/reshuffle-places`)
+    await load()
+  } catch (e: any) {
+    showError(e?.response?.data?.message || e?.message || '换一批地点失败')
+  } finally {
+    reshuffling.value = false
+  }
+}
+
+function phaseStatus(code: string) {
   const events = currentVersionEvents.value.filter((item) => item.phase === code)
   if (!events.length) return 'pending'
   const latest = events.at(-1)
@@ -866,41 +1616,42 @@ function phaseStatus(code) {
   if (latest.status === 'RUNNING') return 'active'
   return 'done'
 }
-function phaseHint(code) {
+function phaseHint(code: string) {
   return (
     currentVersionEvents.value.filter((item) => item.phase === code).at(-1)?.title ||
     '等待前一步完成'
   )
 }
-function eventIcon(event) {
+function eventIcon(event: any) {
+  const kind = String(event.eventType || '')
   return (
-    { THOUGHT: '想', ACTION: '行', OBSERVATION: '观', RESULT: '果', WARNING: '!', ERROR: '×' }[
-      event.eventType
+    ({ THOUGHT: '想', ACTION: '行', OBSERVATION: '观', RESULT: '果', WARNING: '!', ERROR: '×' } as Record<string, string>)[
+      kind
     ] || '·'
   )
 }
-function formatDistance(meters) {
+function formatDistance(meters: number) {
   return meters >= 1000 ? `${(meters / 1000).toFixed(1)} 公里` : `${meters} 米`
 }
-function effectiveRouteMode(route) {
-  if (route.mode && route.mode !== 'WALKING') return route.mode
+function effectiveRouteMode(route: any): string {
+  if (route.mode && route.mode !== 'WALKING') return String(route.mode)
   if (route.distanceMeters <= 1800) return 'WALKING'
   if (route.distanceMeters <= 6000) return 'BICYCLING'
   return 'DRIVING'
 }
-function routeModeText(route) {
+function routeModeText(route: any) {
   return (
     { WALKING: '步行', BICYCLING: '骑行', TRANSIT: '地铁/公交', DRIVING: '驾车' }[
       effectiveRouteMode(route)
     ] || '出行'
   )
 }
-function routeModeText2(mode) {
+function routeModeText2(mode: string) {
   return (
     { WALKING: '步行', BICYCLING: '骑行', TRANSIT: '地铁/公交', DRIVING: '驾车' }[mode] || '出行'
   )
 }
-const goalTypeLabel = (value) =>
+const goalTypeLabel = (value: string) =>
   ({
     CONNECTION: '增进连接',
     REPAIR: '修复关系',
@@ -909,16 +1660,16 @@ const goalTypeLabel = (value) =>
     DECISION: '共同决策',
     SELF_GROWTH: '自我成长'
   })[value] || '未指定'
-const actionKindLabel = (value) =>
+const actionKindLabel = (value: string) =>
   ({
     PLACE_VISIT: '地点见面',
-    MESSAGE: '消息草稿',
-    CONVERSATION: '沟通脚本',
-    GIFT_RITUAL: '礼物 / 仪式',
-    SELF_PRACTICE: '自我练习',
+    MESSAGE: '发消息',
+    CONVERSATION: '当面沟通',
+    GIFT_RITUAL: '礼物',
+    SELF_PRACTICE: '自我计划',
     OBSERVATION: '观察记录'
   })[value] || value
-const cardKindClass = (value) =>
+const cardKindClass = (value: string) =>
   ({
     PLACE_VISIT: 'card-place',
     MESSAGE: 'card-message',
@@ -927,30 +1678,30 @@ const cardKindClass = (value) =>
     SELF_PRACTICE: 'card-practice',
     OBSERVATION: 'card-observation'
   })[value] || ''
-const itemStatusText = (value) =>
+const itemStatusText = (value: string) =>
   ({ PENDING: '待执行', COMPLETED: '已完成', SKIPPED: '已跳过' })[value] || value || '待执行'
-const versionStatusText = (value) =>
+const versionStatusText = (value: string) =>
   ({
     DRAFT: '候选草稿',
     APPROVED: '正式版本',
     SUPERSEDED: '已被新版本取代',
     REJECTED: '已驳回'
   })[value] || value
-const planStatusText = (value) =>
+const planStatusText = (value: string) =>
   ({ DRAFT: '候选计划，待确认', APPROVED: '已确认', ARCHIVED: '已归档' })[value] || value || '—'
-const riskText = (value) =>
+const riskText = (value: string) =>
   ({ LOW: '低风险', MEDIUM: '需留意', HIGH: '高风险' })[value] || value || ''
-const riskClass = (value) => String(value || '').toLowerCase()
-function routeNavigationUrl(route) {
+const riskClass = (value: string) => String(value || '').toLowerCase()
+function routeNavigationUrl(route: any) {
   const mode = { WALKING: 'walk', BICYCLING: 'ride', TRANSIT: 'bus', DRIVING: 'car' }[
     effectiveRouteMode(route)
   ]
   return route.navigationUrl?.replace(/([?&]mode=)[^&]*/, `$1${mode}`) || '#'
 }
-function businessStatus(status) {
+function businessStatus(status: string) {
   return { OPEN: '营业中', CLOSED: '已打烊', UNKNOWN: '营业状态待核验' }[status] || '营业状态待核验'
 }
-function showError(message) {
+function showError(message: string) {
   clearTimeout(errorTimer.value)
   error.value = message
   errorTimer.value = setTimeout(() => {
@@ -961,7 +1712,7 @@ async function generatePdf() {
   pdfGenerating.value = true
   try {
     detail.value.pdfFile = await api.post(`/agent-tasks/${route.params.id}/pdf`)
-  } catch (requestError) {
+  } catch (requestError: any) {
     showError(requestError.response?.data?.message || 'PDF 生成失败，请稍后重试')
   } finally {
     pdfGenerating.value = false
@@ -974,7 +1725,7 @@ async function downloadPdf() {
       `/agent-tasks/${route.params.id}/pdf`,
       `行动计划书-${detail.value.task.title}.pdf`
     )
-  } catch (requestError) {
+  } catch (requestError: any) {
     showError(requestError.response?.data?.message || 'PDF 下载失败，请稍后重试')
   } finally {
     pdfDownloading.value = false
@@ -985,50 +1736,96 @@ async function cancel() {
   await api.post(`/agent-tasks/${route.params.id}/cancel`)
   await load()
 }
+async function retryTask() {
+  retrying.value = true
+  error.value = ''
+  startPolling()
+  try {
+    const stream = await streamSSE(`/agent-tasks/${route.params.id}/run`, null, {
+      step: load,
+      revision: load,
+      confirmation: load,
+      requirement: async (event: any) => {
+        requirementData.value = event || requirementData.value
+        if (event?.blocked) {
+          await load()
+          startPolling()
+        }
+      },
+      'requirement-conflict': async (event: any) => {
+        requirementData.value = event || requirementData.value
+        await load()
+      },
+      done: load,
+      error: (event) => showError(event.message || '任务执行失败'),
+      close: async () => {
+        await load()
+        startPolling()
+      },
+      transportError: async () => {
+        await load()
+        startPolling()
+      }
+    })
+    await stream.completed
+  } catch (requestError: any) {
+    await load()
+    showError(requestError.response?.data?.message || requestError.message || '重试失败')
+  } finally {
+    retrying.value = false
+  }
+}
 async function removeTask() {
   if (!window.confirm('删除该行程记录、执行步骤和已生成的 PDF？此操作不可恢复。')) return
   deleting.value = true
   try {
     await api.delete(`/agent-tasks/${route.params.id}`)
     router.push('/plans')
-  } catch (requestError) {
+  } catch (requestError: any) {
     showError(requestError.response?.data?.message || '删除失败')
   } finally {
     deleting.value = false
   }
 }
-function fileSize(bytes) {
+function fileSize(bytes: number) {
   return bytes >= 1048576
     ? `${(bytes / 1048576).toFixed(1)} MB`
     : `${Math.max(1, Math.ceil(bytes / 1024))} KB`
 }
-function statusText(status) {
+function statusText(status: string) {
   return (
     {
       WAITING: '准备执行',
       RUNNING: '执行中',
       RETRY_WAIT: '等待重试',
       AWAITING_CONFIRMATION: '等待确认',
+      AWAITING_REQUIREMENT: '等待需求确认',
       SUCCEEDED: '已完成',
       FAILED: '执行失败',
       CANCELLED: '已取消'
     }[status] || status
   )
 }
-function statusClass(status) {
-  return status === 'SUCCEEDED' ? 'green' : status === 'AWAITING_CONFIRMATION' ? 'coral' : ''
+function statusClass(status: string) {
+  return status === 'SUCCEEDED'
+    ? 'green'
+    : status === 'AWAITING_CONFIRMATION' || status === 'AWAITING_REQUIREMENT'
+      ? 'coral'
+      : ''
 }
-function stepHint(step) {
+function stepHint(step: any) {
   return step.status === 'RUNNING'
     ? '正在执行…'
     : step.status === 'WAITING_CONFIRMATION'
-      ? '等待你的确认'
+      ? step.stepNo === 1
+        ? '等待你调整需求约束'
+        : '等待你的确认'
       : '等待前一步完成'
 }
-function date(value) {
+function date(value: string) {
   return new Date(value).toLocaleString('zh-CN')
 }
-function time(value) {
+function time(value: string) {
   return new Date(value).toLocaleTimeString('zh-CN', {
     hour: '2-digit',
     minute: '2-digit',
@@ -1362,6 +2159,28 @@ function time(value) {
   color: var(--muted);
   font-size: 11px;
 }
+.evidence-head-side {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.evidence-head-side small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.btn.ghost {
+  background: transparent;
+  border: 1px solid var(--border, #d9d9d9);
+  color: var(--text, #333);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn.ghost:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .evidence-empty {
   padding: 18px;
   margin-top: 18px;
@@ -1382,6 +2201,23 @@ function time(value) {
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 12px;
   margin-top: 20px;
+}
+.place-more-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+.place-more-btn {
+  padding: 8px 20px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+.place-more-btn:hover {
+  background: var(--soft);
 }
 .place-grid article {
   position: relative;
@@ -1501,6 +2337,12 @@ function time(value) {
 }
 .route-list > h3 {
   font-size: 16px;
+}
+.route-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted, #888);
+  margin-left: 6px;
 }
 .route-list article {
   display: flex;
@@ -1700,6 +2542,121 @@ function time(value) {
 .confirm-box h3 {
   margin: 8px 0 14px;
   font-size: 18px;
+}
+/* ---- 需求检查点（Tier1/Tier2）---- */
+.requirement-checkpoint {
+  border-color: #efd3bf;
+  background: #fdf6ef;
+}
+.requirement-checkpoint > span {
+  color: #a86a39;
+}
+.requirement-conflicts {
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border: 1px solid #e8b4a4;
+  border-radius: 10px;
+  background: #fdeae3;
+  color: #8c2f1d;
+}
+.requirement-warnings {
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border: 1px solid #ecd7a8;
+  border-radius: 10px;
+  background: #fdf6e0;
+  color: #7a5a16;
+}
+.requirement-issue {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.requirement-panel {
+  margin: 12px 0;
+  border: 1px solid #f0d8c4;
+  border-radius: 12px;
+  background: #fffefa;
+}
+.requirement-sections {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+.req-section {
+  padding: 12px 14px;
+  border: 1px dashed #ecd7c4;
+  border-radius: 10px;
+  background: #fffdf8;
+}
+.req-section > b {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #7a5a3a;
+}
+.req-section ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.req-section ul li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f7ead9;
+  font-size: 12.5px;
+  color: #6b4a2a;
+}
+.req-remove {
+  border: 0;
+  background: transparent;
+  color: #a86a39;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+.req-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.req-add .input {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+.req-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.req-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: #7a5a3a;
+}
+.req-grid .input {
+  font-size: 13px;
+}
+.requirement-footnote {
+  display: block;
+  margin-top: 10px;
+  color: #9a7a5a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.req-add .btn.small {
+  min-height: 32px;
+  padding: 5px 12px;
+  font-size: 13px;
 }
 .preview {
   max-height: 420px;

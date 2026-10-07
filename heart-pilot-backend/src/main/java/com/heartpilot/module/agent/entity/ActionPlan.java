@@ -10,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.time.LocalDate;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -61,4 +62,12 @@ public class ActionPlan extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private ActionPlanStatus status = ActionPlanStatus.DRAFT;
+
+    /** 计划开始日期，默认创建当天 */
+    @Column(nullable = false)
+    private LocalDate startDate = LocalDate.now();
+
+    /** 计划结束日期，默认创建当天，确认后可由业务更新 */
+    @Column(nullable = false)
+    private LocalDate endDate = LocalDate.now();
 }

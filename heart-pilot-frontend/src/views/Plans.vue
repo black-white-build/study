@@ -9,15 +9,14 @@
   </div>
   <section v-if="planningMode" class="agent-brief panel">
     <div>
-      <span class="badge green">城市严格匹配</span>
+      <span class="badge green">按行动类型定制</span>
       <h2>每一步都看得见，关键决定由你确认。</h2>
       <p>
-        Agent
-        会按你填写的城市检索餐厅、景点与公开地点信息，整理地址、路线、预算和备选方案。你确认后才生成最终计划。
+        Agent 会先分析你的目标与约束，再按行动类型调用对应能力：地点见面检索真实餐厅/景点与路线，礼物联网检索公开商品推荐，发消息与自我计划生成定制方案。你确认后才生成最终计划。
       </p>
     </div>
     <div class="mini-flow">
-      <span>分析</span><i>→</i><span>真实地点</span><i>→</i><span>预算</span><i>→</i
+      <span>需求分析</span><i>→</i><span>信息检索</span><i>→</i><span>定制方案</span><i>→</i
       ><span class="confirm">你确认</span><i>→</i><span>方案 / PDF</span>
     </div>
   </section>
@@ -91,25 +90,27 @@
         ></textarea>
       </div>
       <div class="field">
-        <label>规划目标 <small>选填，不选则由 Agent 根据目标文本判断</small></label>
-        <select v-model="form.goalType" class="select">
-          <option value="">自动判断目标类型</option>
+        <label>规划目标 <small>必选</small></label>
+        <select v-model="form.goalType" class="select" required>
+          <option value="" disabled>请选择规划目标</option>
           <option v-for="(label, value) in goalTypeOptions" :key="value" :value="value">
             {{ label }}
           </option>
         </select>
       </div>
       <div class="field">
-        <label>希望生成的行动类型 <small>可多选，不选则由 Agent 自动识别</small></label>
+        <label>希望生成的行动类型 <small>必选，选择后填写对应信息</small></label>
         <div class="kind-grid">
           <label v-for="(label, value) in actionKindOptions" :key="value" class="kind-box">
-            <input v-model="form.actionKinds" type="checkbox" :value="value" />
+            <input v-model="form.actionKind" type="radio" :value="value" />
             <span>{{ label }}</span>
           </label>
         </div>
       </div>
-      <div v-if="placeSelected" class="location-box">
-        <div class="location-title">已选择地点型行动，请补充地点与检索约束</div>
+
+      <!-- 地点见面专属字段 -->
+      <div v-if="form.actionKind === 'PLACE_VISIT'" class="location-box">
+        <div class="location-title">地点见面，请补充地点与检索约束</div>
         <div class="grid-2">
           <div class="field">
             <label>省 / 直辖市</label>
@@ -133,14 +134,42 @@
             </select>
           </div>
         </div>
+        <div class="grid-2">
+          <div class="field">
+            <label>预算（元）</label
+            ><input
+              v-model.number="form.budget"
+              class="input"
+              type="number"
+              min="0"
+              placeholder="500"
+            />
+          </div>
+          <div class="field">
+            <label>参与人数</label
+            ><input
+              v-model.number="form.partySize"
+              class="input"
+              type="number"
+              min="1"
+              :placeholder="'2'"
+            />
+          </div>
+        </div>
         <div class="field">
-          <label>预算（元）</label
-          ><input
-            v-model.number="form.budget"
+          <label>场所类型 <small>可多选</small></label>
+          <div class="tag-row">
+            <label v-for="t in venueTypes" :key="t" class="tag-chip">
+              <input v-model="form.venueTypes" type="checkbox" :value="t" />
+              <span>{{ t }}</span>
+            </label>
+          </div>
+          <input
+            v-if="form.venueTypes.includes('其他')"
+            v-model="form.customVenue"
             class="input"
-            type="number"
-            min="0"
-            placeholder="500"
+            style="margin-top: 10px"
+            placeholder="请输入场所关键词，例如：桌游吧、书店、手工坊"
           />
         </div>
         <div class="field">
@@ -153,17 +182,132 @@
           ></textarea>
         </div>
       </div>
+
+      <!-- 发消息专属字段 -->
+      <div v-else-if="form.actionKind === 'MESSAGE'" class="kind-extra-box">
+        <div class="location-title">发消息，请补充消息细节</div>
+        <div class="grid-2">
+          <div class="field">
+            <label>发送渠道</label>
+            <select v-model="form.messageChannel" class="select">
+              <option value="">不限</option>
+              <option value="微信">微信</option>
+              <option value="短信">短信</option>
+              <option value="邮件">邮件</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>语气风格</label>
+            <select v-model="form.toneStyle" class="select">
+              <option value="">不限</option>
+              <option value="正式">正式</option>
+              <option value="亲切">亲切</option>
+              <option value="幽默">幽默</option>
+              <option value="委婉">委婉</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label>对方回复期待 <small>希望对方回应什么</small></label
+          ><input
+            v-model="form.replyExpectation"
+            class="input"
+            placeholder="例如：希望对方愿意周末出来坐坐"
+          />
+        </div>
+      </div>
+
+      <!-- 礼物专属字段 -->
+      <div v-else-if="form.actionKind === 'GIFT_RITUAL'" class="kind-extra-box">
+        <div class="location-title">礼物，请补充送礼细节</div>
+        <div class="grid-2">
+          <div class="field">
+            <label>预算范围</label
+            ><input
+              v-model="form.giftBudget"
+              class="input"
+              placeholder="例如：200到500元"
+            />
+          </div>
+          <div class="field">
+            <label>场合类型</label>
+            <select v-model="form.occasionType" class="select">
+              <option value="">不限</option>
+              <option value="生日">生日</option>
+              <option value="节日">节日</option>
+              <option value="道歉">道歉</option>
+              <option value="感谢">感谢</option>
+              <option value="纪念日">纪念日</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label>礼物形式</label>
+            <select v-model="form.giftForm" class="select">
+              <option value="">不限</option>
+              <option value="实物">实物</option>
+              <option value="红包">红包</option>
+              <option value="体验类活动">体验类活动</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>对方年龄 <small>选填，便于缩小品类范围</small></label
+            ><input v-model="form.recipientAge" class="input" placeholder="例如：22" />
+          </div>
+        </div>
+        <div class="field">
+          <label>对方喜好或禁忌</label
+          ><input
+            v-model="form.recipientPreferences"
+            class="input"
+            placeholder="例如：喜欢喝茶，不送香水"
+          />
+        </div>
+      </div>
+
+      <!-- 自我计划专属字段 -->
+      <div v-else-if="form.actionKind === 'SELF_PRACTICE'" class="kind-extra-box">
+        <div class="location-title">自我计划，请补充计划内容</div>
+        <div class="field">
+          <label>计划要做的事或要达成的目标</label
+          ><input
+            v-model="form.planContent"
+            class="input"
+            placeholder="例如：练习主动开启对话，控制情绪不急躁"
+          />
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label>期望效果</label
+            ><input
+              v-model="form.expectedOutcome"
+              class="input"
+              placeholder="例如：和对方聊天不再紧张"
+            />
+          </div>
+          <div class="field">
+            <label>频率</label>
+            <select v-model="form.frequency" class="select">
+              <option value="">不限</option>
+              <option value="每日">每日</option>
+              <option value="每周几次">每周几次</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       <div class="grid-2">
         <div class="field">
           <label>时间约束 <small>选填</small></label
           ><input
             v-model="form.timeConstraint"
             class="input"
-            placeholder="例如：这周六下午，对方晚上 8 点前要回家"
+            :placeholder="timePlaceholder"
           />
         </div>
       </div>
-      <div class="field">
+      <div v-if="form.actionKind !== 'SELF_PRACTICE'" class="field">
         <label>沟通背景 <small>选填，补充双方关系与最近发生了什么</small></label
         ><textarea
           v-model="form.contextNotes"
@@ -182,7 +326,7 @@
       <p v-if="createError" class="form-error">{{ createError }}</p>
       <footer>
         <button type="button" class="btn" @click="showCreate = false">取消</button
-        ><button class="btn primary" :disabled="creating">
+        ><button class="btn primary" :disabled="creating || !form.actionKind || !form.goalType">
           {{ creating ? '创建中…' : '创建并开始' }}
         </button>
       </footer>
@@ -190,31 +334,82 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, streamSSE } from '../api'
+
+interface TaskLite {
+  id: number
+  title: string
+  objective: string
+  status: string
+  currentStep: number
+  maxSteps: number
+  [key: string]: unknown
+}
+interface TaskForm {
+  title: string
+  objective: string
+  goalType: string
+  actionKind: string
+  timeConstraint: string
+  contextNotes: string
+  boundary: string
+  province: string
+  city: string
+  budget: number | null
+  questionsText: string
+  partySize: number | null
+  venueTypes: string[]
+  customVenue: string
+  messageChannel: string
+  toneStyle: string
+  replyExpectation: string
+  giftBudget: string
+  occasionType: string
+  recipientPreferences: string
+  giftForm: string
+  recipientAge: string
+  planContent: string
+  expectedOutcome: string
+  frequency: string
+}
 const router = useRouter(),
   route = useRoute(),
-  tasks = ref([]),
+  tasks = ref<TaskLite[]>([]),
   filter = ref(''),
   showCreate = ref(false),
   creating = ref(false),
   createError = ref(''),
-  cityOptions = ref([]),
+  cityOptions = ref<string[]>([]),
   citiesLoading = ref(false),
-  form = reactive({
+  form = reactive<TaskForm>({
     title: '',
     objective: '',
     goalType: '',
-    actionKinds: [],
+    actionKind: '',
     timeConstraint: '',
     contextNotes: '',
     boundary: '',
     province: '',
     city: '',
     budget: null,
-    questionsText: ''
+    questionsText: '',
+    partySize: null,
+    venueTypes: [],
+    customVenue: '',
+    messageChannel: '',
+    toneStyle: '',
+    replyExpectation: '',
+    giftBudget: '',
+    occasionType: '',
+    recipientPreferences: '',
+    giftForm: '',
+    recipientAge: '',
+    planContent: '',
+    expectedOutcome: '',
+    frequency: ''
   }),
   provinces = [
     '北京市',
@@ -256,8 +451,18 @@ const filtered = computed(() =>
   filter.value ? tasks.value.filter((x) => x.status === filter.value) : tasks.value
 )
 const planningMode = computed(() => route.meta.planning === true)
-const placeSelected = computed(() => form.actionKinds.includes('PLACE_VISIT'))
-const goalTypeOptions = {
+const placeSelected = computed(() => form.actionKind === 'PLACE_VISIT')
+const venueTypes: string[] = ['吃饭', '咖啡', '公园', '看展', '散步', '其他']
+const timePlaceholder = computed(() => {
+  switch (form.actionKind) {
+    case 'PLACE_VISIT': return '例如：这周六下午，对方晚上 8 点前要回家'
+    case 'MESSAGE': return '例如：今晚 9 点左右发比较合适'
+    case 'GIFT_RITUAL': return '例如：这周五前送到，赶上周日生日'
+    case 'SELF_PRACTICE': return '例如：每天晚上复盘 15 分钟'
+    default: return '例如：这周六下午，对方晚上 8 点前要回家'
+  }
+})
+const goalTypeOptions: Record<string, string> = {
   CONNECTION: '增进连接',
   REPAIR: '修复关系',
   BOUNDARY: '建立边界',
@@ -265,18 +470,31 @@ const goalTypeOptions = {
   DECISION: '共同决策',
   SELF_GROWTH: '自我成长'
 }
-const actionKindOptions = {
+const actionKindOptions: Record<string, string> = {
   PLACE_VISIT: '地点见面',
-  MESSAGE: '发条消息',
-  CONVERSATION: '当面沟通',
-  GIFT_RITUAL: '礼物 / 仪式',
-  SELF_PRACTICE: '自我练习',
-  OBSERVATION: '观察记录'
+  MESSAGE: '发消息',
+  GIFT_RITUAL: '礼物',
+  SELF_PRACTICE: '自我计划'
 }
 onMounted(() => {
   if (planningMode.value) showCreate.value = true
   else load()
 })
+// /planning 与 /plans 共用同一个 Plans.vue 组件，Vue Router 切换时会复用实例，
+// onMounted 不会再次触发。这里 watch 路由模式变化：从"行动规划"切到"我的计划"时
+// 主动重新拉一次任务列表，否则首次点侧边栏"我的计划"会显示空列表，必须刷新才行。
+watch(
+  () => route.meta.planning === true,
+  (isPlanning, wasPlanning) => {
+    if (isPlanning) {
+      showCreate.value = true
+    } else {
+      showCreate.value = false
+      if (!wasPlanning) return
+      load()
+    }
+  }
+)
 watch(
   () => form.province,
   async (province) => {
@@ -287,7 +505,7 @@ watch(
     try {
       cityOptions.value = await api.get('/agent-tasks/region-cities', { params: { province } })
       if (cityOptions.value.length === 1) form.city = cityOptions.value[0]
-    } catch (e) {
+    } catch (e: any) {
       createError.value = e.response?.data?.message || '城市列表加载失败'
     } finally {
       citiesLoading.value = false
@@ -320,6 +538,12 @@ async function create() {
   creating.value = true
   createError.value = ''
   try {
+    if (!form.actionKind) {
+      throw new Error('请先选择行动类型')
+    }
+    if (!form.goalType) {
+      throw new Error('请选择规划目标')
+    }
     const questions = form.questionsText
       .split(/\n/)
       .map((x) => x.trim())
@@ -327,12 +551,39 @@ async function create() {
     // 只有选择了地点型行动才要求并传地点、预算与问题；否则后端无需地点检索
     const place = placeSelected.value
     if (place && (!form.province || !form.city.trim())) {
-      throw new Error('选择地点型行动时需要填写省和城市')
+      throw new Error('选择地点见面时需要填写省和城市')
+    }
+    const extraLines = []
+    if (place) {
+      if (form.partySize) extraLines.push(`参与人数：${form.partySize}人`)
+      if (form.venueTypes.length) {
+        const types = form.venueTypes.filter(t => t !== '其他')
+        if (types.length) extraLines.push(`场所偏好：${types.join('、')}`)
+        if (form.customVenue) extraLines.push(`其他场所：${form.customVenue}`)
+      }
+    }
+    if (form.actionKind === 'MESSAGE') {
+      if (form.messageChannel) extraLines.push(`发送渠道：${form.messageChannel}`)
+      if (form.toneStyle) extraLines.push(`语气风格：${form.toneStyle}`)
+      if (form.replyExpectation) extraLines.push(`回复期待：${form.replyExpectation}`)
+    }
+    if (form.actionKind === 'GIFT_RITUAL') {
+      if (form.giftBudget) extraLines.push(`礼物预算：${form.giftBudget}`)
+      if (form.occasionType) extraLines.push(`送礼场合：${form.occasionType}`)
+      if (form.giftForm) extraLines.push(`礼物形式：${form.giftForm}`)
+      if (form.recipientAge) extraLines.push(`对方年龄：${form.recipientAge}岁`)
+      if (form.recipientPreferences) extraLines.push(`对方喜好：${form.recipientPreferences}`)
+    }
+    if (form.actionKind === 'SELF_PRACTICE') {
+      if (form.planContent) extraLines.push(`计划内容：${form.planContent}`)
+      if (form.expectedOutcome) extraLines.push(`期望效果：${form.expectedOutcome}`)
+      if (form.frequency) extraLines.push(`频率：${form.frequency}`)
     }
     const background = [
       form.timeConstraint ? `时间约束：${form.timeConstraint}` : '',
       form.contextNotes ? `沟通背景：${form.contextNotes}` : '',
-      form.boundary ? `明确边界：${form.boundary}` : ''
+      form.boundary ? `明确边界：${form.boundary}` : '',
+      ...extraLines
     ]
       .filter(Boolean)
       .join('\n')
@@ -348,27 +599,28 @@ async function create() {
           budget: place ? form.budget : null,
           questions: place ? questions : [],
           goalType: form.goalType || undefined,
-          preferredActionKinds: form.actionKinds.length ? [...form.actionKinds] : undefined,
+          preferredActionKinds: [form.actionKind],
           contextNotes: background || undefined
         }
       },
       { headers: { 'Idempotency-Key': key } }
     )
     showCreate.value = false
-    await streamSSE(`/agent-tasks/${t.id}/run`, null, {})
+    // 触发任务在后台运行，不等待完成，立刻跳转到详情页看生成进度
+    streamSSE(`/agent-tasks/${t.id}/run`, null, {}).catch(() => {})
     router.push(`/plans/${t.id}`)
-  } catch (e) {
+  } catch (e: any) {
     createError.value = e.response?.data?.message || e.message || '任务创建失败'
   } finally {
     creating.value = false
   }
 }
-async function removeTask(t) {
+async function removeTask(t: TaskLite) {
   if (!confirm(`删除「${t.title}」、执行记录和已生成的 PDF？`)) return
   await api.delete(`/agent-tasks/${t.id}`)
   tasks.value = tasks.value.filter((item) => item.id !== t.id)
 }
-function statusText(s) {
+function statusText(s: string) {
   return (
     {
       WAITING: '待启动',
@@ -381,7 +633,7 @@ function statusText(s) {
     }[s] || s
   )
 }
-function statusIcon(s) {
+function statusIcon(s: string) {
   return s === 'SUCCEEDED'
     ? '✓'
     : s === 'AWAITING_CONFIRMATION'
@@ -390,7 +642,7 @@ function statusIcon(s) {
         ? '↻'
         : '↗'
 }
-function statusClass(s) {
+function statusClass(s: string) {
   return s === 'SUCCEEDED' ? 'green' : s === 'AWAITING_CONFIRMATION' ? 'coral' : ''
 }
 </script>
@@ -675,6 +927,43 @@ function statusClass(s) {
   background: #fff8f4;
   display: grid;
   gap: 14px;
+}
+.kind-extra-box {
+  padding: 16px;
+  border: 1px solid #e8e4da;
+  border-radius: 12px;
+  background: #faf8f3;
+  display: grid;
+  gap: 14px;
+}
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: white;
+  cursor: pointer;
+  font-size: 13px;
+  transition: 0.15s;
+}
+.tag-chip:hover {
+  border-color: #e6b8ae;
+}
+.tag-chip:has(input:checked) {
+  border-color: var(--coral);
+  background: var(--coral-soft);
+  color: #9b4637;
+  font-weight: 600;
+}
+.tag-chip input {
+  accent-color: var(--coral);
 }
 .location-title {
   color: #a0493b;

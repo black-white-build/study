@@ -111,15 +111,15 @@
   </div>
   <div v-if="toast" class="toast">{{ toast }}</div>
 </template>
-<script setup>
+<script setup lang="ts">
 import { reactive, ref, onMounted } from 'vue'
 import { api } from '../api'
-const documents = ref([]),
+const documents = ref<any[]>([]),
   uploading = ref(false),
-  approvingId = ref(null),
+  approvingId = ref<number | null>(null),
   toast = ref(''),
-  flow = ['文本解析', '内容清洗', '分段切片', '关键词补充', 'Embedding', 'PGVector']
-const categories = [
+  flow: string[] = ['文本解析', '内容清洗', '分段切片', '关键词补充', 'Embedding', 'PGVector']
+const categories: string[] = [
   '沟通基础',
   '冲突与修复',
   '边界与同意',
@@ -131,7 +131,7 @@ const categories = [
 ]
 // 表单项只暴露"分类"和"来源"两项；其余字段由前端写死默认值随 FormData 传给后端，
 // 新上传文档固定进入待审核状态，管理员确认切片内容后再点“通过”进入 RAG 检索池。
-const metadata = reactive({
+const metadata = reactive<Record<string, string>>({
   category: '沟通基础',
   applicableScenario: '通用沟通',
   relationshipStage: '通用',
@@ -155,8 +155,9 @@ async function load() {
   const page = await api.get('/admin/knowledge')
   documents.value = page.content
 }
-async function upload(e) {
-  const file = e.target.files?.[0]
+async function upload(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
   if (!file) return
   uploading.value = true
   try {
@@ -166,15 +167,15 @@ async function upload(e) {
     await api.post('/admin/knowledge/documents', form)
     toast.value = '文档处理完成，等待审核'
     await load()
-  } catch (err) {
+  } catch (err: any) {
     toast.value = err.response?.data?.message || '上传失败'
   } finally {
     uploading.value = false
-    e.target.value = ''
+    input.value = ''
     setTimeout(() => (toast.value = ''), 2600)
   }
 }
-async function viewContent(d) {
+async function viewContent(d: any) {
   contentDialog.open = true
   contentDialog.loading = true
   contentDialog.name = d.originalName
@@ -185,7 +186,7 @@ async function viewContent(d) {
     contentDialog.name = result.originalName
     contentDialog.chunkCount = result.chunkCount
     contentDialog.content = result.content
-  } catch (err) {
+  } catch (err: any) {
     contentDialog.open = false
     showToast(err.response?.data?.message || '内容加载失败')
   } finally {
@@ -195,45 +196,45 @@ async function viewContent(d) {
 function closeContent() {
   contentDialog.open = false
 }
-async function approve(d) {
+async function approve(d: any) {
   approvingId.value = d.id
   try {
     await api.patch(`/admin/knowledge/documents/${d.id}/approve`)
     showToast('审核已通过，文档现已进入检索池')
     await load()
-  } catch (err) {
+  } catch (err: any) {
     showToast(err.response?.data?.message || '审核通过失败')
   } finally {
     approvingId.value = null
   }
 }
-async function remove(d) {
+async function remove(d: any) {
   if (!confirm(`删除《${d.originalName}》及其全部切片？`)) return
   try {
     await api.delete(`/admin/knowledge/documents/${d.id}`)
     showToast('文档已删除')
     await load()
-  } catch (err) {
+  } catch (err: any) {
     showToast(err.response?.data?.message || '删除失败')
   }
 }
-function showToast(message) {
+function showToast(message: string) {
   toast.value = message
   setTimeout(() => (toast.value = ''), 2600)
 }
-function extension(n) {
-  return n.split('.').pop().toUpperCase()
+function extension(n: string) {
+  return (n.split('.').pop() || '').toUpperCase()
 }
-function size(n) {
+function size(n: number) {
   return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.ceil(n / 1024) + ' KB'
 }
-function status(s) {
+function status(s: string) {
   return { UPLOADED: '待处理', PROCESSING: '处理中', READY: '处理完成', FAILED: '失败' }[s] || s
 }
-function reviewStatus(s) {
+function reviewStatus(s: string) {
   return { DRAFT: '草稿', IN_REVIEW: '待审核', APPROVED: '已审核', REJECTED: '已驳回' }[s] || s
 }
-function date(v) {
+function date(v: string) {
   return new Date(v).toLocaleDateString('zh-CN')
 }
 </script>

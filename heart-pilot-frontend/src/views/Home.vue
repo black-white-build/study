@@ -85,7 +85,7 @@
     </footer>
   </div>
 </template>
-<script setup>
+<script setup lang="ts">
 import { authState } from '../stores/auth'
 </script>
 <style scoped>

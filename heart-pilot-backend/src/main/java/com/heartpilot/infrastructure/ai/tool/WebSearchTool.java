@@ -30,9 +30,15 @@ public class WebSearchTool {
     private static final Set<String> IRRELEVANT = Set.of("世界卫生组织", "心理健康", "精神卫生", "医学论文", "学术文档");
     /** searchapi.io API Key，来自配置项 search-api.api-key；为空时搜索降级为返回空结果 */
     private final String apiKey;
+    private final CapabilityStatusRecorder statusRecorder;
 
-    public WebSearchTool(@Value("${search-api.api-key:}") String apiKey) {
+    public WebSearchTool(
+            @Value("${search-api.api-key:}") String apiKey, CapabilityStatusRecorder statusRecorder) {
         this.apiKey = apiKey;
+        this.statusRecorder = statusRecorder;
+        if (apiKey == null || apiKey.isBlank()) {
+            statusRecorder.recordWebSearch(CapabilityStatusRecorder.Status.NO_KEY, "未配置 SEARCH_API_KEY");
+        }
     }
 
     /**
@@ -92,11 +98,25 @@ public class WebSearchTool {
                     HttpUtil.get(URL, Map.of("q", query, "api_key", apiKey, "engine", "baidu"));
             JSONObject root = JSONUtil.parseObj(response);
             if (root.containsKey("error")) {
-                log.warn("Web search API returned an error: {}", root.get("error"));
+                String error = root.getStr("error", "");
+                log.warn("Web search API returned an error: {}", error);
+                // 额度耗尽 / 鉴权失败要可视化，让前端提示用户去充值或换 key
+                if (error.toLowerCase().contains("all of the searches") || error.contains("429")) {
+                    statusRecorder.recordWebSearch(
+                            CapabilityStatusRecorder.Status.QUOTA_EXHAUSTED,
+                            "搜索 key 当月免费额度已用完，请充值或更换 key");
+                } else if (error.contains("401") || error.toLowerCase().contains("api key")) {
+                    statusRecorder.recordWebSearch(
+                            CapabilityStatusRecorder.Status.AUTH_FAILED, "搜索 key 无效或已过期");
+                } else {
+                    statusRecorder.recordWebSearch(
+                            CapabilityStatusRecorder.Status.ERROR, error.length() > 120 ? error.substring(0, 120) : error);
+                }
                 return List.of();
             }
             JSONArray items = root.getJSONArray("organic_results");
             if (items == null || items.isEmpty()) return List.of();
+            statusRecorder.recordWebSearch(CapabilityStatusRecorder.Status.OK, "");
             List<WebResult> results = new ArrayList<>();
             for (int i = 0; i < items.size() && results.size() < limit; i++) {
                 JSONObject item = items.getJSONObject(i);

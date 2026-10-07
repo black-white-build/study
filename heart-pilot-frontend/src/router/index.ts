@@ -1,7 +1,7 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
 import { authState } from '../stores/auth'
 
-const routes = [
+const routes: RouteRecordRaw[] = [
   {
     path: '/',
     component: () => import('../views/Home.vue'),
@@ -56,7 +56,7 @@ const router = createRouter({
   scrollBehavior: () => ({ top: 0 })
 })
 router.beforeEach((to) => {
-  document.title = to.meta.title || '心旅 HeartPilot'
+  document.title = String(to.meta.title || '心旅 HeartPilot')
   if (!to.meta.public && !authState.token)
     return { path: '/login', query: { redirect: to.fullPath } }
   if (to.meta.guestOnly && authState.token) return '/consult'

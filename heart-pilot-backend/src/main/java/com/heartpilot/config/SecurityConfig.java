@@ -1,6 +1,7 @@
 package com.heartpilot.config;
 
 import com.heartpilot.security.*;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
@@ -61,7 +62,10 @@ public class SecurityConfig {
     /**
      * 核心安全过滤链。
      * 过滤顺序：JWT 认证过滤器 → 限流过滤器 → 授权规则。
-     * 放行路径：登录注册 /auth/**、健康检查 /health、Swagger 文档；其余接口必须认证。
+     * 放行路径：ASYNC/ERROR 派发、登录注册 /auth/**、健康检查 /health、Swagger 文档；其余接口必须认证。
+     * ASYNC/ERROR 派发放行是 SSE（SseEmitter）异步接口正常运行的前提：接口返回后容器会发起
+     * 异步派发并再次经过本过滤链，此时认证上下文在线程间不传递，若再次执行
+     * anyRequest().authenticated() 会误判为匿名并中断 SSE 流。
      * @param http Spring Security 的 HttpSecurity 构建器
      * @param jwt JWT 认证过滤器，从请求头解析令牌并设置 SecurityContext
      * @param rate 限流过滤器，在认证通过后按用户维度限流
@@ -86,7 +90,12 @@ public class SecurityConfig {
                                                         "Unauthorized")))
                 .authorizeHttpRequests(
                         x ->
-                                x.requestMatchers(
+                                x.dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR)
+                                        .permitAll()
+                                        // 放行 ASYNC/ERROR 派发：SSE（SseEmitter）等异步接口在
+                                        // Servlet 异步派发时会再次进入本过滤器链，此时无需重新授权，
+                                        // 首次 REQUEST 派发时已做过认证与授权检查。
+                                        .requestMatchers(
                                                 "/auth/**",
                                                 "/health",
                                                 "/actuator/health",

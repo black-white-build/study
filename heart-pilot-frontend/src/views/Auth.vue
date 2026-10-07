@@ -50,15 +50,20 @@
     <small class="auth-note">继续即表示你理解：AI 建议不替代专业服务。</small>
   </div>
 </template>
-<script setup>
+<script setup lang="ts">
 import { reactive, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { setSession } from '../stores/auth'
+interface Credentials {
+  username: string
+  password: string
+  nickname: string
+}
 const route = useRoute(),
   router = useRouter(),
   registering = computed(() => route.path === '/register'),
-  form = reactive({ username: '', password: '', nickname: '' }),
+  form = reactive<Credentials>({ username: '', password: '', nickname: '' }),
   loading = ref(false),
   error = ref('')
 async function submit() {
@@ -67,8 +72,9 @@ async function submit() {
   try {
     const data = await api.post(registering.value ? '/auth/register' : '/auth/login', form)
     setSession(data)
-    router.push(route.query.redirect || '/consult')
-  } catch (e) {
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/consult'
+    router.push(redirect)
+  } catch (e: any) {
     error.value = e.response?.data?.message || e.message || '操作失败'
   } finally {
     loading.value = false

@@ -51,6 +51,7 @@ public final class AgentTaskDtos {
      * @param city 调整后的城市
      * @param budget 调整后的预算
      * @param questions 用户补充的问题列表（单条最长 500）
+     * @param contextNotes 调整后的背景补充（礼物/消息/练习类任务的专属字段编辑后透传）
      */
     public record ConfirmRequest(
             boolean approved,
@@ -58,7 +59,8 @@ public final class AgentTaskDtos {
             @Size(max = 30) String province,
             @Size(max = 80) String city,
             BigDecimal budget,
-            List<@Size(max = 500) String> questions) {}
+            List<@Size(max = 500) String> questions,
+            @Size(max = 4_000) String contextNotes) {}
 
     /**
      * 任务列表/详情中的任务基本信息响应。

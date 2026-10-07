@@ -2,97 +2,182 @@
   <div class="structured-text">
     <template v-for="(line, index) in lines" :key="index">
       <h3 v-if="line.type === 'heading'">
-        <template v-for="(part, i) in line.parts" :key="i"
-          ><a
-            v-if="part.url"
-            :href="part.url"
-            :target="part.url.startsWith('#') ? undefined : '_blank'"
-            rel="noopener noreferrer"
-            >{{ part.text }}</a
-          ><template v-else>{{ part.text }}</template></template
-        >
+        <template v-for="(part, i) in line.parts" :key="i">
+          <template v-if="part.url">
+            <a
+              :href="part.url"
+              :target="part.url.startsWith('#') ? undefined : '_blank'"
+              rel="noopener noreferrer"
+              >{{ isUrlExpanded(part.url) ? part.text : truncateUrl(part.text) }}</a
+            >
+            <button
+              v-if="part.text.length > 30 && !isUrlExpanded(part.url) && !part.url.startsWith('#')"
+              type="button"
+              class="url-expand-btn"
+              @click.prevent="toggleUrl(part.url)"
+            >
+              展开
+            </button>
+          </template>
+          <template v-else>{{ part.text }}</template>
+        </template>
       </h3>
       <p v-else-if="line.type === 'bullet'" class="bullet">
-        <span>•</span
-        ><span
-          ><template v-for="(part, i) in line.parts" :key="i"
-            ><a
-              v-if="part.url"
-              :href="part.url"
-              :target="part.url.startsWith('#') ? undefined : '_blank'"
-              rel="noopener noreferrer"
-              >{{ part.text }}</a
-            ><template v-else>{{ part.text }}</template></template
-          ></span
-        >
+        <span>•</span>
+        <span>
+          <template v-for="(part, i) in line.parts" :key="i">
+            <template v-if="part.url">
+              <a
+                :href="part.url"
+                :target="part.url.startsWith('#') ? undefined : '_blank'"
+                rel="noopener noreferrer"
+                >{{ isUrlExpanded(part.url) ? part.text : truncateUrl(part.text) }}</a
+              >
+              <button
+                v-if="part.text.length > 30 && !isUrlExpanded(part.url) && !part.url.startsWith('#')"
+                type="button"
+                class="url-expand-btn"
+                @click.prevent="toggleUrl(part.url)"
+              >
+                展开
+              </button>
+            </template>
+            <template v-else>{{ part.text }}</template>
+          </template>
+        </span>
       </p>
       <p v-else-if="line.type === 'numbered'" class="numbered">
-        <span>{{ line.marker }}</span
-        ><span
-          ><template v-for="(part, i) in line.parts" :key="i"
-            ><a
-              v-if="part.url"
+        <span>{{ line.marker }}</span>
+        <span>
+          <template v-for="(part, i) in line.parts" :key="i">
+            <template v-if="part.url">
+              <a
+                :href="part.url"
+                :target="part.url.startsWith('#') ? undefined : '_blank'"
+                rel="noopener noreferrer"
+                >{{ isUrlExpanded(part.url) ? part.text : truncateUrl(part.text) }}</a
+              >
+              <button
+                v-if="part.text.length > 30 && !isUrlExpanded(part.url) && !part.url.startsWith('#')"
+                type="button"
+                class="url-expand-btn"
+                @click.prevent="toggleUrl(part.url)"
+              >
+                展开
+              </button>
+            </template>
+            <template v-else>{{ part.text }}</template>
+          </template>
+        </span>
+      </p>
+      <p v-else-if="line.type === 'table'" class="table-row">
+        <template v-for="(part, i) in line.parts" :key="i">
+          <template v-if="part.url">
+            <a
               :href="part.url"
               :target="part.url.startsWith('#') ? undefined : '_blank'"
               rel="noopener noreferrer"
-              >{{ part.text }}</a
-            ><template v-else>{{ part.text }}</template></template
-          ></span
-        >
-      </p>
-      <p v-else-if="line.type === 'table'" class="table-row">
-        <template v-for="(part, i) in line.parts" :key="i"
-          ><a
-            v-if="part.url"
-            :href="part.url"
-            :target="part.url.startsWith('#') ? undefined : '_blank'"
-            rel="noopener noreferrer"
-            >{{ part.text }}</a
-          ><template v-else>{{ part.text }}</template></template
-        >
+              >{{ isUrlExpanded(part.url) ? part.text : truncateUrl(part.text) }}</a
+            >
+            <button
+              v-if="part.text.length > 30 && !isUrlExpanded(part.url) && !part.url.startsWith('#')"
+              type="button"
+              class="url-expand-btn"
+              @click.prevent="toggleUrl(part.url)"
+            >
+              展开
+            </button>
+          </template>
+          <template v-else>{{ part.text }}</template>
+        </template>
       </p>
       <div v-else-if="line.type === 'space'" class="space"></div>
       <p v-else>
-        <template v-for="(part, i) in line.parts" :key="i"
-          ><a
-            v-if="part.url"
-            :href="part.url"
-            :target="part.url.startsWith('#') ? undefined : '_blank'"
-            rel="noopener noreferrer"
-            >{{ part.text }}</a
-          ><template v-else>{{ part.text }}</template></template
-        >
+        <template v-for="(part, i) in line.parts" :key="i">
+          <template v-if="part.url">
+            <a
+              :href="part.url"
+              :target="part.url.startsWith('#') ? undefined : '_blank'"
+              rel="noopener noreferrer"
+              >{{ isUrlExpanded(part.url) ? part.text : truncateUrl(part.text) }}</a
+            >
+            <button
+              v-if="part.text.length > 30 && !isUrlExpanded(part.url) && !part.url.startsWith('#')"
+              type="button"
+              class="url-expand-btn"
+              @click.prevent="toggleUrl(part.url)"
+            >
+              展开
+            </button>
+          </template>
+          <template v-else>{{ part.text }}</template>
+        </template>
       </p>
     </template>
   </div>
 </template>
 
-<script setup>
-import { computed } from 'vue'
+<script setup lang="ts">
+import { computed, ref } from 'vue'
 
 const props = defineProps({ content: { type: String, default: '' } })
-const cleanInline = (text) =>
+
+const expandedUrls = ref<Set<string>>(new Set())
+
+const truncateUrl = (url: string) => {
+  if (url.length <= 30) return url
+  const match = url.match(/^(https?:\/\/[^/]+)/)
+  if (match) return match[1] + '/...'
+  return url.slice(0, 25) + '…'
+}
+
+const isUrlExpanded = (url: string) => expandedUrls.value.has(url)
+
+const toggleUrl = (url: string) => {
+  if (expandedUrls.value.has(url)) {
+    expandedUrls.value.delete(url)
+  } else {
+    expandedUrls.value.add(url)
+  }
+}
+
+interface TextPart {
+  text: string
+  url?: string
+}
+type StructuredLine =
+  | {
+      type: 'heading' | 'bullet' | 'numbered' | 'table' | 'text'
+      text: string
+      parts: TextPart[]
+      marker?: string
+    }
+  | { type: 'space'; text: string }
+
+const cleanInline = (text: string): string =>
   text
     .replace(/^>\s*/, '')
     .replace(/\*\*|__/g, '')
     .replace(/`/g, '')
-const linkify = (text) => {
-  const parts = []
+const linkify = (text: string): TextPart[] => {
+  const parts: TextPart[] = []
   let cursor = 0
   const matcher = /https?:\/\/[^\s<>()]+|\[来源\s*\d+\]/g
-  let match
+  let match: RegExpExecArray | null
   while ((match = matcher.exec(text))) {
     if (match.index > cursor) parts.push({ text: text.slice(cursor, match.index) })
     const clean = match[0].replace(/[，。；、,.;!?！？]+$/, '')
     const citation = clean.match(/^\[来源\s*(\d+)\]$/)
-    parts.push({ text: clean, url: citation ? `#source-${citation[1]}` : clean })
+    if (!citation) {
+      parts.push({ text: clean, url: clean })
+    }
     if (clean.length < match[0].length) parts.push({ text: match[0].slice(clean.length) })
     cursor = match.index + match[0].length
   }
   if (cursor < text.length) parts.push({ text: text.slice(cursor) })
   return parts.length ? parts : [{ text }]
 }
-const lines = computed(() =>
+const lines = computed<StructuredLine[]>(() =>
   props.content.split(/\r?\n/).map((raw) => {
     const text = raw.trim()
     if (!text) return { type: 'space', text: '' }
@@ -172,6 +257,22 @@ const lines = computed(() =>
   text-decoration: underline;
   text-underline-offset: 3px;
   overflow-wrap: anywhere;
+}
+.url-expand-btn {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 6px;
+  border: 1px solid #e0b0a8;
+  border-radius: 3px;
+  background: transparent;
+  color: #b04e3e;
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.url-expand-btn:hover {
+  background: #f9efed;
 }
 .bullet > span:last-child,
 .numbered > span:last-child {

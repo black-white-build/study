@@ -44,7 +44,7 @@
     </main>
   </div>
 </template>
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { authState, logout } from '../stores/auth'

@@ -107,21 +107,42 @@
   </div>
   <div v-if="toast" class="toast">{{ toast }}</div>
 </template>
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted, nextTick } from 'vue'
-import { api, streamSSE } from '../api'
+import { api, streamSSE, SSEHandlers } from '../api'
 import { authState } from '../stores/auth'
 import StructuredText from '../components/StructuredText.vue'
-const conversations = ref([]),
-  messages = ref([]),
-  activeId = ref(null),
-  current = ref(null),
+
+interface Conversation {
+  id: number
+  title: string
+  lastMessageAt?: string
+  model?: string
+  [key: string]: unknown
+}
+interface Message {
+  id: string
+  role: string
+  content: string
+  status?: string
+  createdAt?: string
+  outputTokens?: number
+  inputTokens?: number
+  sourcesJson?: string
+  auditJson?: string
+  citationStatus?: string
+  [key: string]: unknown
+}
+const conversations = ref<Conversation[]>([]),
+  messages = ref<Message[]>([]),
+  activeId = ref<number | null>(null),
+  current = ref<Conversation | null>(null),
   draft = ref(''),
   generating = ref(false),
   error = ref(''),
   toast = ref(''),
-  scrollEl = ref(),
-  streamController = ref()
+  scrollEl = ref<HTMLElement | null>(null),
+  streamController = ref<any>(null)
 onMounted(loadConversations)
 async function loadConversations() {
   const page = await api.get('/conversations')
@@ -134,9 +155,9 @@ async function createConversation() {
   conversations.value.unshift(c)
   await selectConversation(c.id)
 }
-async function selectConversation(id) {
+async function selectConversation(id: number) {
   activeId.value = id
-  current.value = conversations.value.find((x) => x.id === id)
+  current.value = conversations.value.find((x) => x.id === id) || null
   const page = await api.get(`/conversations/${id}/messages`)
   messages.value = page.content
   scrollBottom()
@@ -153,7 +174,7 @@ async function send() {
     status: 'COMPLETED',
     createdAt: new Date().toISOString()
   })
-  const assistant = ref({
+  const assistant = ref<Message>({
     id: `stream-${Date.now()}`,
     role: 'ASSISTANT',
     content: '',
@@ -171,7 +192,7 @@ async function send() {
     )
   } catch (e) {
     generating.value = false
-    error.value = e.message
+    error.value = (e as Error).message
   }
 }
 async function refreshCurrent() {
@@ -181,7 +202,7 @@ async function refreshCurrent() {
   ])
   messages.value = messagePage.content
   conversations.value = conversationPage.content
-  current.value = conversations.value.find((x) => x.id === activeId.value)
+  current.value = conversations.value.find((x) => x.id === activeId.value) || null
   scrollBottom()
 }
 async function stop() {
@@ -190,11 +211,11 @@ async function stop() {
   generating.value = false
   await refreshCurrent()
 }
-async function regenerate(m) {
+async function regenerate(m: Message) {
   if (generating.value) return
   error.value = ''
   generating.value = true
-  const assistant = {
+  const assistant: Message = {
     id: `stream-${Date.now()}`,
     role: 'ASSISTANT',
     content: '',
@@ -208,12 +229,12 @@ async function regenerate(m) {
       null,
       streamHandlers(assistant)
     )
-  } catch (e) {
+  } catch (e: any) {
     generating.value = false
     error.value = e.message
   }
 }
-function streamHandlers(assistant) {
+function streamHandlers(assistant: Message): SSEHandlers {
   return {
     delta: (d) => {
       assistant.content += d.content || ''
@@ -258,7 +279,7 @@ function streamHandlers(assistant) {
   }
 }
 async function renameConversation() {
-  const title = prompt('新的会话名称', current.value.title)
+  const title = prompt('新的会话名称', current.value?.title || '')
   if (!title) return
   await api.patch(`/conversations/${activeId.value}`, { title })
   await loadConversations()
@@ -271,14 +292,14 @@ async function removeConversation() {
   messages.value = []
   await loadConversations()
 }
-function sources(m) {
+function sources(m: Message): any {
   try {
     return JSON.parse(m.sourcesJson || '[]')
   } catch {
     return []
   }
 }
-function retrieval(m) {
+function retrieval(m: Message): any {
   try {
     const audit = JSON.parse(m.auditJson || '{}')
     const status = audit.retrievalStatus
@@ -288,23 +309,23 @@ function retrieval(m) {
     return null
   }
 }
-function evidenceText(level) {
+function evidenceText(level: string) {
   return (
     { HIGH: '高证据', MEDIUM: '中等证据', LOW: '低证据', UNVERIFIED: '未核验' }[level] || '未核验'
   )
 }
-function citationStatusText(status) {
+function citationStatusText(status: string) {
   return (
     { PASSED: '通过', REPAIRED: '已修复', DEGRADED: '已降级', NOT_APPLICABLE: '不适用' }[status] ||
     status
   )
 }
-function time(v) {
+function time(v?: string) {
   return v ? new Date(v).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : ''
 }
-function relative(v) {
+function relative(v?: string) {
   if (!v) return ''
-  const d = (Date.now() - new Date(v)) / 864e5
+  const d = (Date.now() - new Date(v).getTime()) / 864e5
   return d < 1 ? '今天' : d < 2 ? '昨天' : `${Math.floor(d)} 天前`
 }
 async function scrollBottom() {

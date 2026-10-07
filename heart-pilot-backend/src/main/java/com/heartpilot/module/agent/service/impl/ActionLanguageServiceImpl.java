@@ -1,6 +1,8 @@
 package com.heartpilot.module.agent.service.impl;
 
+import com.heartpilot.infrastructure.ai.tool.CapabilityStatusRecorder;
 import com.heartpilot.module.agent.service.ActionLanguageService;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
@@ -33,12 +35,47 @@ public class ActionLanguageServiceImpl implements ActionLanguageService {
 
     private final ChatClient client;
     private final boolean enabled;
+    private final CapabilityStatusRecorder statusRecorder;
 
     public ActionLanguageServiceImpl(
             @Qualifier("dashscopeChatModel") ChatModel model,
-            @Value("${spring.ai.dashscope.api-key:}") String apiKey) {
+            @Value("${spring.ai.dashscope.api-key:}") String apiKey,
+            CapabilityStatusRecorder statusRecorder) {
         this.client = ChatClient.builder(model).build();
         this.enabled = apiKey != null && !apiKey.isBlank() && !"not-configured".equals(apiKey);
+        this.statusRecorder = statusRecorder;
+        if (!enabled) {
+            statusRecorder.recordAiChat(CapabilityStatusRecorder.Status.NO_KEY, "未配置 DASHSCOPE_API_KEY");
+        }
+    }
+
+    /** AI 调用异常是否属于额度/限流类（额度不足、QPS 超限、欠费） */
+    private boolean isQuotaError(Exception e) {
+        String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
+        return msg.contains("429")
+                || msg.contains("quota")
+                || msg.contains("insufficient")
+                || msg.contains("billing")
+                || msg.contains("throttl")
+                || msg.contains("rate limit");
+    }
+
+    /** 记录 AI 调用结果：成功标记 OK，失败按是否额度问题分类 */
+    private void recordAiSuccess() {
+        statusRecorder.recordAiChat(CapabilityStatusRecorder.Status.OK, "");
+    }
+
+    private void recordAiFailure(Exception e) {
+        if (isQuotaError(e)) {
+            statusRecorder.recordAiChat(
+                    CapabilityStatusRecorder.Status.QUOTA_EXHAUSTED,
+                    "对话 key 额度不足或已欠费，请检查通义账户余额");
+        } else {
+            String detail = e.getMessage() == null ? "" : e.getMessage();
+            statusRecorder.recordAiChat(
+                    CapabilityStatusRecorder.Status.ERROR,
+                    detail.length() > 120 ? detail.substring(0, 120) : detail);
+        }
     }
 
     @Override
@@ -60,6 +97,7 @@ public class ActionLanguageServiceImpl implements ActionLanguageService {
                             .entity(MessageModel.class);
             if (model == null || model.text() == null || model.text().isBlank())
                 return fallbackMessage(goal, background);
+            recordAiSuccess();
             return new MessageDraft(
                     model.text().trim(),
                     blankTo(model.tone(), "平静、真诚"),
@@ -67,7 +105,8 @@ public class ActionLanguageServiceImpl implements ActionLanguageService {
                     model.forbiddenExpressions() == null
                             ? List.of("指责", "翻旧账", "威胁")
                             : model.forbiddenExpressions());
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            recordAiFailure(e);
             return fallbackMessage(goal, background);
         }
     }
@@ -92,6 +131,7 @@ public class ActionLanguageServiceImpl implements ActionLanguageService {
                             .entity(ConversationModel.class);
             if (model == null || model.opening() == null || model.opening().isBlank())
                 return fallbackConversation(goal, background);
+            recordAiSuccess();
             return new ConversationScript(
                     blankTo(model.goal(), goal),
                     model.opening().trim(),
@@ -100,7 +140,8 @@ public class ActionLanguageServiceImpl implements ActionLanguageService {
                     blankTo(
                             model.exitCondition(),
                             "如果对方现在不想聊，尊重并约定一个更合适的时间"));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            recordAiFailure(e);
             return fallbackConversation(goal, background);
         }
     }
@@ -115,22 +156,48 @@ public class ActionLanguageServiceImpl implements ActionLanguageService {
                             .user(
                                     """
                                     计划目标：%s
-                                    背景：%s
+                                    背景（含送礼场合、预算、对方喜好或禁忌）：%s
                                     预算：%s
 
-                                    请生成一份表达/礼物计划：准备事项、预算安排、执行步骤（3-5 步）。
-                                    强调心意与用心，而不是价格攀比。
+                                    你先像懂行的朋友一样分析这次送礼：
+                                    - 送礼对象是谁、什么场合（生日/节日/道歉/感谢/纪念）；
+                                    - 对方的兴趣爱好、生活方式与明确禁忌；
+                                    - 预算区间能买到什么档次的东西。
+                                    然后给出准备事项、预算安排、执行步骤（3-5 步），
+                                    以及 5-8 个具体的礼物候选（ideas）：
+                                    - title 要具体到商品品类或方向，不要空泛（例如"明前龙井礼盒"、
+                                      "客制化机械键盘"、"手写手账套装"，而不是"一份心意"）；
+                                    - 对方喜欢游戏就推荐游戏外设/耳机/键帽，喜欢喝茶就推荐茶具/好茶，
+                                      严格围绕背景里透露的喜好推断，不要自说自话；
+                                    - reason 一句话说清为什么适合这次送礼；
+                                    - priceHint 给出大致价位（如"200-400元"）。
+                                    强调心意与用心，不鼓励价格攀比。
                                     """
                                             .formatted(goal, background, budget))
                             .call()
                             .entity(GiftModel.class);
             if (model == null || model.preparation() == null || model.preparation().isBlank())
                 return fallbackGift(goal, background, budget);
+            recordAiSuccess();
+            List<GiftIdea> ideas = new ArrayList<>();
+            if (model.ideas() != null) {
+                for (GiftIdeaModel raw : model.ideas()) {
+                    if (raw == null || raw.title() == null || raw.title().isBlank()) continue;
+                    ideas.add(new GiftIdea(
+                            raw.title().trim(),
+                            raw.reason() == null ? "" : raw.reason().trim(),
+                            raw.priceHint() == null ? "" : raw.priceHint().trim()));
+                    if (ideas.size() >= 8) break;
+                }
+            }
+            if (ideas.isEmpty()) ideas = fallbackIdeas(background);
             return new GiftPlan(
                     model.preparation().trim(),
                     blankTo(model.budgetText(), budget),
-                    model.steps() == null ? List.of() : model.steps());
-        } catch (Exception ignored) {
+                    model.steps() == null ? List.of() : model.steps(),
+                    ideas);
+        } catch (Exception e) {
+            recordAiFailure(e);
             return fallbackGift(goal, background, budget);
         }
     }
@@ -155,6 +222,7 @@ public class ActionLanguageServiceImpl implements ActionLanguageService {
                             .entity(PracticeModel.class);
             if (model == null || model.practiceContent() == null || model.practiceContent().isBlank())
                 return fallbackPractice(goal, background);
+            recordAiSuccess();
             Integer minutes = model.durationMinutes();
             return new PracticePlan(
                     model.practiceContent().trim(),
@@ -162,7 +230,8 @@ public class ActionLanguageServiceImpl implements ActionLanguageService {
                     blankTo(
                             model.completionCriteria(),
                             "按结构写完一次，并读出来感受是否自然"));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            recordAiFailure(e);
             return fallbackPractice(goal, background);
         }
     }
@@ -187,13 +256,15 @@ public class ActionLanguageServiceImpl implements ActionLanguageService {
                             .entity(ObservationModel.class);
             if (model == null || model.observeContent() == null || model.observeContent().isBlank())
                 return fallbackObservation(goal, background);
+            recordAiSuccess();
             return new ObservationPlan(
                     model.observeContent().trim(),
                     model.recordFields() == null ? List.of() : model.recordFields(),
                     blankTo(
                             model.forbiddenInferences(),
                             "不推断对方的动机或人格，不把观察结果当作对方有问题的证据"));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            recordAiFailure(e);
             return fallbackObservation(goal, background);
         }
     }
@@ -227,7 +298,23 @@ public class ActionLanguageServiceImpl implements ActionLanguageService {
                 budget.isBlank() ? "量力而行，心意优先" : budget,
                 List.of("写下 3 个候选想法，选最贴合对方偏好的 1 个",
                         "准备一张手写卡片，写一句具体的话（为什么选它）",
-                        "在自然时机送出，不强调价格"));
+                        "在自然时机送出，不强调价格"),
+                fallbackIdeas(background));
+    }
+
+    /** 规则降级的礼物候选：从用户背景里抽喜好词，给通用但不空泛的方向 */
+    private List<GiftIdea> fallbackIdeas(String background) {
+        List<GiftIdea> ideas = new ArrayList<>();
+        String text = background == null ? "" : background;
+        if (text.contains("茶"))
+            ideas.add(new GiftIdea("对方常喝的茶或一套小品茶具", "围绕喝茶的日常爱好，实用且有仪式感", ""));
+        if (text.contains("游戏") || text.contains("外设") || text.contains("电脑"))
+            ideas.add(new GiftIdea("游戏外设（键盘/鼠标/耳机）", "贴合游戏爱好，使用频率高", ""));
+        if (text.contains("香") || text.contains("香水"))
+            ideas.add(new GiftIdea("香薰蜡烛或家居香氛", "提升日常幸福感，不贴身不易踩雷", ""));
+        if (ideas.isEmpty())
+            ideas.add(new GiftIdea("手写卡片 + 对方提过的小物", "记录一起经历的细节，心意具体", ""));
+        return ideas;
     }
 
     private PracticePlan fallbackPractice(String goal, String background) {
@@ -263,7 +350,10 @@ public class ActionLanguageServiceImpl implements ActionLanguageService {
             String concreteRequest,
             String exitCondition) {}
 
-    public record GiftModel(String preparation, String budgetText, List<String> steps) {}
+    public record GiftModel(
+            String preparation, String budgetText, List<String> steps, List<GiftIdeaModel> ideas) {}
+
+    public record GiftIdeaModel(String title, String reason, String priceHint) {}
 
     public record PracticeModel(String practiceContent, Integer durationMinutes, String completionCriteria) {}
 

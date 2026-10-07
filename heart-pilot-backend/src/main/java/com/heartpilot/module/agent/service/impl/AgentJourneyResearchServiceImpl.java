@@ -6,6 +6,8 @@ import com.heartpilot.module.agent.entity.enums.AgentExecutionEventStatus;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionEventType;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionPhase;
 import com.heartpilot.module.agent.repository.TaskRepository;
+import com.heartpilot.module.agent.requirement.CandidateSelector;
+import com.heartpilot.module.agent.requirement.StructuredRequirement;
 import com.heartpilot.module.agent.runtime.PublicInfoResearchAgent;
 import com.heartpilot.module.agent.service.AgentExecutionTraceService;
 import com.heartpilot.module.agent.service.AgentJourneyResearchService;
@@ -36,6 +38,8 @@ import org.springframework.stereotype.Service;
 public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchService {
     /** 地点检索服务（高德 + 网页搜索） */
     private final PlaceSearchService placeSearch;
+    /** 候选挑选 Agent（Tier2 候选池前置：只从池内挑选排序，不编造地点） */
+    private final CandidateSelector candidateSelector;
     /** 工具执行器：统一处理外部调用的幂等、超时、重试与审计 */
     private final AgentToolExecutor toolExecutor;
     /** 执行轨迹记录器 */
@@ -54,6 +58,7 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
      */
     public AgentJourneyResearchServiceImpl(
             PlaceSearchService placeSearch,
+            CandidateSelector candidateSelector,
             AgentToolExecutor toolExecutor,
             AgentExecutionTraceService executionTrace,
             PublicInfoResearchAgent researchAgent,
@@ -61,6 +66,7 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
             ObjectMapper json,
             @Value("${app.agent.react-enabled:true}") boolean reactEnabled) {
         this.placeSearch = placeSearch;
+        this.candidateSelector = candidateSelector;
         this.toolExecutor = toolExecutor;
         this.executionTrace = executionTrace;
         this.researchAgent = researchAgent;
@@ -190,6 +196,144 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
                                 .distinct()
                                 .toList()));
         return new JourneyResearch(result.formatted(), evidence);
+    }
+
+    /**
+     * 候选池前置的行程研究（Tier2，参考 ITINERA）。
+     * 与 researchJourney 的差异：先拉大候选池（每类更多 POI），
+     * 再让候选挑选 Agent 只从池内挑选排序（禁止凭空编造地点），
+     * 最后基于挑选点位规划路线产出证据。挑选结果非法时自动重试（Tier3 重试闭环）。
+     */
+    @Override
+    public JourneyResearch researchJourneyFromPool(
+            AgentTask task,
+            int stepNo,
+            String city,
+            StructuredRequirement requirement,
+            String requirements,
+            String toolName)
+            throws Exception {
+        trace(
+                task,
+                stepNo,
+                AgentExecutionPhase.SEARCH,
+                AgentExecutionEventType.ACTION,
+                AgentExecutionEventStatus.RUNNING,
+                "正在拉取候选点位池并挑选行程地点",
+                "系统先调用高德拉取周边 POI 候选池，再由候选挑选 Agent 仅从池内挑选排序。",
+                "高德地图 + Web Search",
+                toolName,
+                null,
+                null,
+                "https://www.amap.com",
+                Map.of("city", city));
+        long started = System.nanoTime();
+        PlaceSearchService.SearchResult pool =
+                toolExecutor.executeJson(
+                        task,
+                        stepNo,
+                        toolName,
+                        city + "｜" + requirements,
+                        PlaceSearchService.SearchResult.class,
+                        () -> placeSearch.searchPool(city, requirements));
+        long poolMs = elapsedMillis(started);
+
+        // 候选挑选 Agent：只从池内挑选，代码校验索引合法性，非法时自动重试
+        CandidateSelector.SelectionResult selection =
+                candidateSelector.select(requirement, pool, maxPlacesFor(requirement));
+        long selectionMs = elapsedMillis(started);
+
+        PlaceSearchService.JourneyEvidence evidence =
+                placeSearch.researchFromPool(city, selection.places());
+        // 首次检索后把候选池整体持久化到任务上：用户点"换一批候选地点"时不再调高德 API，
+        // 直接从这个池子里按类别均衡随机抽样，既省外部配额又能让相邻两批结果部分重合。
+        task.setPlacePoolJson(json.writeValueAsString(pool));
+        // 用当前时间做种子，把候选池里每类多取的 POI 一并扩成地图卡片：
+        // 主线卡片排最前带路线，其余按类别均衡补到最多 12 张，让前端"展开全部"按钮有内容可点。
+        evidence =
+                placeSearch.reshuffleCandidateCards(
+                        evidence, pool, System.nanoTime());
+        // 把证据 JSON 持久化到任务，供后续静态路线图、最终报告复用
+        task.setJourneyEvidenceJson(json.writeValueAsString(evidence));
+        task.setEvidenceUpdatedAt(Instant.now());
+        AgentTask saved = tasks.saveAndFlush(task);
+        task.setLockVersion(saved.getLockVersion());
+
+        trace(
+                task,
+                stepNo,
+                AgentExecutionPhase.FILTER,
+                AgentExecutionEventType.RESULT,
+                AgentExecutionEventStatus.SUCCEEDED,
+                "候选池已挑选行程地点",
+                evidence.places().isEmpty()
+                        ? "候选池中没有满足约束的可核验地点，系统不会编造店名或地址。"
+                        : String.join(
+                                "、",
+                                evidence.places().stream()
+                                        .map(PlaceSearchService.Place::name)
+                                        .toList()),
+                selection.aiGenerated() ? "候选挑选 Agent" : "规则挑选器",
+                toolName,
+                evidence.places().size(),
+                selectionMs,
+                null,
+                Map.of(
+                        "poolSize", pool.places().size(),
+                        "aiSelected", selection.aiGenerated()));
+        String routeDetail =
+                evidence.routes().isEmpty()
+                        ? evidence.notice()
+                        : String.join(
+                                "\n",
+                                evidence.routes().stream()
+                                        .map(PlaceSearchService.RoutePlan::formatted)
+                                        .toList());
+        trace(
+                task,
+                stepNo,
+                AgentExecutionPhase.ROUTE,
+                evidence.routes().isEmpty()
+                        ? AgentExecutionEventType.WARNING
+                        : AgentExecutionEventType.RESULT,
+                AgentExecutionEventStatus.SUCCEEDED,
+                evidence.routes().isEmpty() ? "实时路线暂不可用" : "已计算挑选点位间路线",
+                routeDetail,
+                "高德地图",
+                "distance-aware-route",
+                evidence.routes().size(),
+                poolMs,
+                evidence.routes().isEmpty()
+                        ? "https://www.amap.com"
+                        : evidence.routes().getFirst().navigationUrl(),
+                Map.of(
+                        "modes",
+                        evidence.routes().stream()
+                                .map(PlaceSearchService.RoutePlan::mode)
+                                .distinct()
+                                .toList()));
+        return new JourneyResearch(
+                (evidence.places().isEmpty()
+                        ? evidence.notice()
+                        : "候选池挑选了 "
+                                + evidence.places().size()
+                                + " 个地点：\n"
+                                + String.join(
+                                        "、",
+                                        evidence.places().stream()
+                                                .map(PlaceSearchService.Place::name)
+                                                .toList()))
+                        + "\n" + routeDetail,
+                evidence);
+    }
+
+    /** 候选池最大挑选数量：按需求时间窗口粗估，默认 6，最多 8 */
+    private int maxPlacesFor(StructuredRequirement requirement) {
+        if (requirement == null || requirement.place() == null) return 6;
+        com.heartpilot.module.agent.requirement.PlaceRequirement place = requirement.place();
+        int must = place.mustVisit().size();
+        int recommend = place.recommendedVisit().size();
+        return Math.min(Math.max(must + Math.min(recommend, 2), 1), 8);
     }
 
     /**

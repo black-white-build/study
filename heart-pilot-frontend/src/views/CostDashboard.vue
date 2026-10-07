@@ -72,31 +72,31 @@
   <div v-else class="panel empty">正在读取成本数据…</div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../api'
 const days = ref(30)
-const dashboard = ref()
+const dashboard = ref<any>()
 const maxCost = computed(() =>
-  Math.max(1, ...(dashboard.value?.daily || []).map((x) => x.costMicros))
+  Math.max(1, ...((dashboard.value?.daily || []) as any[]).map((x: any) => x.costMicros))
 )
 onMounted(load)
 async function load() {
   dashboard.value = await api.get('/usage/cost-dashboard', { params: { days: days.value } })
 }
-function cny(micros) {
+function cny(micros: number) {
   return ((micros || 0) / 1_000_000).toFixed(6)
 }
-function percent(value) {
+function percent(value?: number) {
   return `${((value || 0) * 100).toFixed(1)}%`
 }
-function number(value) {
+function number(value?: number) {
   return new Intl.NumberFormat('zh-CN').format(value || 0)
 }
-function shortDate(value) {
+function shortDate(value: string) {
   return value.slice(5)
 }
-function bar(value) {
+function bar(value?: number) {
   return `${Math.max(4, Math.round(((value || 0) / maxCost.value) * 130))}px`
 }
 </script>

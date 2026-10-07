@@ -23,6 +23,25 @@ public interface PlaceSearchService {
     SearchResult search(String city, String objective);
 
     /**
+     * 拉取候选点位池（Tier2：候选池前置，参考 ITINERA）。
+     * 与 search 的区别：每个检索主题取更多 POI（扩大候选池），
+     * 后续由候选挑选 Agent 只从池内挑选排序，禁止凭空编造地点。
+     * @param city 目标城市
+     * @param objective 检索需求
+     * @return 候选池检索结果（分组，每类候选数量更多）
+     */
+    SearchResult searchPool(String city, String objective);
+
+    /**
+     * 基于已挑选的点位构建行程证据（候选挑选 Agent 输出 → 路线规划 → 证据）。
+     * 对挑选出的点位逐个规划相邻路线，并生成地图卡片。
+     * @param city 目标城市
+     * @param selectedPlaces 已挑选并按序排列的点位
+     * @return 行程证据（路线 + 地图卡片 + 说明）
+     */
+    JourneyEvidence researchFromPool(String city, List<Place> selectedPlaces);
+
+    /**
      * 执行完整行程研究：地点检索 + 路线规划。
      * @param city 目标城市
      * @param objective 检索需求
@@ -36,6 +55,19 @@ public interface PlaceSearchService {
      * @return 行程证据
      */
     JourneyEvidence buildJourneyEvidence(SearchResult searchResult);
+
+    /**
+     * 基于已持久化的候选池，重新随机抽取一批候选地点卡片（不调外部 API）。
+     * 行程主线（places）与路线（routes）保持不变，仅替换 mapCards：
+     * 主线卡片排最前并保留路线信息，其余位置按类别均衡随机抽样填充，
+     * 用 seed 控制随机性，多次调用传入不同 seed 可得到不同批次（允许与上一批部分重合）。
+     *
+     * @param current 当前行程证据（保留其 places/routes/notice 等不变字段）
+     * @param pool    首次检索时持久化的候选池（分组结果）
+     * @param seed    随机种子，每次"换一批"传入新值
+     * @return 替换了 mapCards 的新证据
+     */
+    JourneyEvidence reshuffleCandidateCards(JourneyEvidence current, SearchResult pool, long seed);
 
     /**
      * 单个 POI 地点。
@@ -287,7 +319,7 @@ public interface PlaceSearchService {
                     + "，约 "
                     + durationMinutes
                     + " 分钟\n路线："
-                    + navigationUrl;
+                    + "[打开导航](" + navigationUrl + ")";
         }
     }
 

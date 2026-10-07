@@ -60,6 +60,14 @@ public class AgentTask extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String journeyEvidenceJson;
 
+    /**
+     * 地点候选池的 JSON 快照（Tier2 searchPool 返回的分组结果）。
+     * 首次检索后持久化，用户点"换一批候选地点"时不再调高德 API，
+     * 直接从这个池子里按类别均衡随机抽样，保证每次换一批结果可部分重合且不消耗外部配额。
+     */
+    @Column(columnDefinition = "TEXT")
+    private String placePoolJson;
+
     /** 氛围图相关数据的 JSON 快照 */
     @Column(columnDefinition = "TEXT")
     private String ambienceImagesJson;

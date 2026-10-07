@@ -50,6 +50,12 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     /** 一次任务最多拆出的检索主题数，控制外部调用量 */
     private static final int MAX_TOPICS = 5;
+    /** 地图卡片总数硬上限：防止某个类别 POI 特别多时一次塞太多 */
+    private static final int HARD_MAX_CARDS = 20;
+    /** 每类最少补充的候选卡片数（主线卡片之外） */
+    private static final int MIN_CANDIDATES_PER_CATEGORY = 2;
+    /** 每类最多补充的候选卡片数（主线卡片之外），按该类实际 POI 数量动态取中间值 */
+    private static final int MAX_CANDIDATES_PER_CATEGORY = 4;
     /** 高德 Web 服务 Key */
     private final String amapKey;
     /** 网页搜索工具，补充高德 POI 之外的公开信息 */
@@ -71,12 +77,89 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
      */
     @Override
     public SearchResult search(String city, String objective) {
+        return searchWithPoolSize(city, objective, 10);
+    }
+
+    /**
+     * 拉取候选点位池（Tier2 候选池前置）。
+     * 与 search 唯一区别：每个主题取更多 POI（每类最多 18 个），
+     * 供候选挑选 Agent 从池内挑选排序，减少 LLM 凭空编造地点的空间。
+     */
+    @Override
+    public SearchResult searchPool(String city, String objective) {
+        return searchWithPoolSize(city, objective, 18);
+    }
+
+    /**
+     * 基于已挑选点位构建行程证据（候选挑选 Agent → 路线 + 地图卡片）。
+     * 相邻点位间逐条规划实时路线；至少两个点位才计算路线。
+     */
+    @Override
+    public JourneyEvidence researchFromPool(String city, List<Place> selectedPlaces) {
+        if (selectedPlaces == null) selectedPlaces = List.of();
+        List<RoutePlan> routes = new ArrayList<>();
+        if (amapKey != null && !amapKey.isBlank()) {
+            for (int i = 0; i + 1 < selectedPlaces.size(); i++) {
+                RoutePlan route = planRoute(selectedPlaces.get(i), selectedPlaces.get(i + 1));
+                if (route != null) routes.add(route);
+            }
+        }
+        String notice;
+        if (selectedPlaces.isEmpty()) {
+            notice = "候选池中没有满足约束的可核验地点，系统不会编造店名或地址。";
+        } else if (selectedPlaces.size() == 1) {
+            notice = "已取得一个真实地点，至少需要两个地点才能计算地点间路线。";
+        } else if (routes.isEmpty()) {
+            notice = "地点已取得，但实时路线暂不可用；出发前请打开地图链接核验。";
+        } else {
+            notice = "距离、耗时和出行方式来自高德地图实时路线；出发前仍建议核验路况与营业状态。";
+        }
+        List<MapCard> cards = new ArrayList<>();
+        int limit = Math.min(selectedPlaces.size(), 12);
+        for (int index = 0; index < limit; index++) {
+            Place place = selectedPlaces.get(index);
+            RoutePlan routeFromPrevious = null;
+            if (index > 0 && index - 1 < routes.size()) routeFromPrevious = routes.get(index - 1);
+            String[] coordinates = place.location().split(",", 2);
+            cards.add(new MapCard(
+                    place.poiId(),
+                    place.name(),
+                    place.address(),
+                    place.type(),
+                    place.tel(),
+                    coordinates.length > 0 ? coordinates[0] : "",
+                    coordinates.length > 1 ? coordinates[1] : "",
+                    place.mapUrl(),
+                    place.photoUrl(),
+                    place.rating(),
+                    place.businessHours(),
+                    place.businessStatus(),
+                    place.statusCheckedAt(),
+                    place.businessHours().isBlank() ? "NO_OPENING_HOURS" : "DERIVED_FROM_AMAP_OPENING_HOURS",
+                    "高德地图",
+                    place.mapUrl(),
+                    routeFromPrevious));
+        }
+        return new JourneyEvidence(
+                "按类别独立检索",
+                city,
+                selectedPlaces.stream().map(Place::name).toList().toString(),
+                selectedPlaces,
+                routes,
+                selectedPlaces.isEmpty() ? "DEGRADED" : "LIVE",
+                notice,
+                SEARCH_TIME.format(ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))),
+                cards);
+    }
+
+    /** 按主题分组检索地点，perTopicLimit 控制每个主题取的 POI 数量（普通检索 10，候选池 18） */
+    private SearchResult searchWithPoolSize(String city, String objective, int perTopicLimit) {
         List<SearchTopic> topics = inferTopics(objective);
         List<SearchGroup> groups = new ArrayList<>();
         Map<String, Place> allPlaces = new LinkedHashMap<>();
         for (SearchTopic topic : topics) {
             List<Place> places =
-                    amapKey == null || amapKey.isBlank() ? List.of() : searchAmap(city, topic);
+                    amapKey == null || amapKey.isBlank() ? List.of() : searchAmap(city, topic, perTopicLimit);
             places.forEach(
                     place ->
                             allPlaces.putIfAbsent(
@@ -116,7 +199,8 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
      */
     @Override
     public JourneyEvidence buildJourneyEvidence(SearchResult searchResult) {
-        List<Place> selectedPlaces = selectItineraryPlaces(searchResult, 4);
+        // 选 6 个路线点（每个类别取第一个），用于路线规划与默认展示
+        List<Place> selectedPlaces = selectItineraryPlaces(searchResult, 6);
         List<RoutePlan> routes = new ArrayList<>();
         // 相邻地点间逐条规划路线
         if (amapKey != null && !amapKey.isBlank()) {
@@ -138,6 +222,8 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
         } else {
             notice = "距离、耗时和出行方式来自高德地图实时路线；短途步行，中途骑行，较远路程驾车，出发前仍建议核验路况与营业状态。";
         }
+        // 地图卡片：为全部候选地点建卡片（上限 12 个），路线信息只附在 selectedPlaces 上
+        List<MapCard> allCards = buildMapCards(searchResult.places(), routes, selectedPlaces);
         return new JourneyEvidence(
                 searchResult.provider(),
                 searchResult.city(),
@@ -147,41 +233,128 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
                 selectedPlaces.isEmpty() ? "DEGRADED" : "LIVE",
                 notice,
                 SEARCH_TIME.format(ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))),
-                buildMapCards(selectedPlaces, routes));
+                allCards);
     }
 
-    private List<MapCard> buildMapCards(List<Place> places, List<RoutePlan> routes) {
+    /**
+     * 为候选地点建地图卡片。默认展示前 6 个，其余通过前端"展开更多"查看；
+     * 路线信息（上一站驾车/步行）只附在 selectedPlaces 范围内的卡片上。
+     */
+    private List<MapCard> buildMapCards(List<Place> places, List<RoutePlan> routes, List<Place> selectedPlaces) {
         List<MapCard> cards = new ArrayList<>();
-        for (int index = 0; index < places.size(); index++) {
+        int limit = Math.min(places.size(), 12);
+        for (int index = 0; index < limit; index++) {
             Place place = places.get(index);
             // routes 按相邻地点对顺序排列：routes.get(i) 是 places[i]→places[i+1] 的路线，
             // 因此第 index 个地点（index>0）的"上一段路线"对应 routes.get(index-1)；首地点无来路
-            RoutePlan routeFromPrevious =
-                    index == 0 || index - 1 >= routes.size() ? null : routes.get(index - 1);
-            String[] coordinates = place.location().split(",", 2);
-            cards.add(
-                    new MapCard(
-                            place.poiId(),
-                            place.name(),
-                            place.address(),
-                            place.type(),
-                            place.tel(),
-                            coordinates.length > 0 ? coordinates[0] : "",
-                            coordinates.length > 1 ? coordinates[1] : "",
-                            place.mapUrl(),
-                            place.photoUrl(),
-                            place.rating(),
-                            place.businessHours(),
-                            place.businessStatus(),
-                            place.statusCheckedAt(),
-                            place.businessHours().isBlank()
-                                    ? "NO_OPENING_HOURS"
-                                    : "DERIVED_FROM_AMAP_OPENING_HOURS",
-                            "高德地图",
-                            place.mapUrl(),
-                            routeFromPrevious));
+            // 只有在 selectedPlaces 序列中的地点才附带路线信息
+            RoutePlan routeFromPrevious = null;
+            if (index > 0 && selectedPlaces.contains(place) && index - 1 < routes.size()) {
+                routeFromPrevious = routes.get(index - 1);
+            }
+            cards.add(toMapCard(place, routeFromPrevious));
         }
         return cards;
+    }
+
+    /**
+     * 把单个 Place 组装成 MapCard（含经纬度拆分、营业时间兜底标记、高德来源标记）。
+     * categoryOverride 非空时覆盖 place.type()，用于把检索类别 label（如"过山车""美食"）
+     * 写进卡片，方便前端与等待确认文本按类别分组展示。
+     */
+    private MapCard toMapCard(Place place, RoutePlan routeFromPrevious) {
+        return toMapCard(place, routeFromPrevious, null);
+    }
+
+    private MapCard toMapCard(Place place, RoutePlan routeFromPrevious, String categoryOverride) {
+        String[] coordinates = place.location().split(",", 2);
+        String category = (categoryOverride != null && !categoryOverride.isBlank())
+                ? categoryOverride
+                : place.type();
+        return new MapCard(
+                place.poiId(),
+                place.name(),
+                place.address(),
+                category,
+                place.tel(),
+                coordinates.length > 0 ? coordinates[0] : "",
+                coordinates.length > 1 ? coordinates[1] : "",
+                place.mapUrl(),
+                place.photoUrl(),
+                place.rating(),
+                place.businessHours(),
+                place.businessStatus(),
+                place.statusCheckedAt(),
+                place.businessHours().isBlank()
+                        ? "NO_OPENING_HOURS"
+                        : "DERIVED_FROM_AMAP_OPENING_HOURS",
+                "高德地图",
+                place.mapUrl(),
+                routeFromPrevious);
+    }
+
+    /**
+     * 基于已持久化的候选池，按类别均衡随机重抽一批候选卡片（不调外部 API）。
+     * 行程主线 selectedPlaces 与路线 routes 原样保留，主线卡片排最前并附路线；
+     * 其余位置从每个类别内部洗牌后抽取：每类最少补 {@link #MIN_CANDIDATES_PER_CATEGORY} 个、
+     * 最多补 {@link #MAX_CANDIDATES_PER_CATEGORY} 个，按该类实际 POI 数动态取中间值。
+     * 总卡片数根据候选池实际大小动态封顶（最少 10、最多 {@link #HARD_MAX_CARDS}），
+     * 前端默认展示前 6 个，"展开全部"按钮显示剩余。seed 不同 → 抽样顺序不同 → 每次换一批。
+     */
+    @Override
+    public JourneyEvidence reshuffleCandidateCards(JourneyEvidence current, SearchResult pool, long seed) {
+        List<Place> selectedPlaces = current.places();
+        List<RoutePlan> routes = current.routes();
+
+        // 主线卡片排最前，路线信息按相邻位置附在第 i 个地点上
+        List<MapCard> cards = new ArrayList<>();
+        for (int i = 0; i < selectedPlaces.size(); i++) {
+            RoutePlan rp = (i > 0 && i - 1 < routes.size()) ? routes.get(i - 1) : null;
+            cards.add(toMapCard(selectedPlaces.get(i), rp));
+        }
+
+        // 主线里已有的地点不再作为候选重复出现
+        java.util.Set<String> selectedKeys = new java.util.HashSet<>();
+        for (Place p : selectedPlaces) selectedKeys.add(placeKey(p));
+
+        // 总卡片数按候选池实际大小动态封顶：池小就全展示，池大就封顶 HARD_MAX_CARDS
+        int effectiveMax = Math.max(10, Math.min(pool.places().size(), HARD_MAX_CARDS));
+
+        // 每个分组内部用 seed 驱动的 Random 洗牌，再按该类 POI 数量动态取前 N 个候选
+        java.util.Random rnd = new java.util.Random(seed);
+        for (SearchGroup group : pool.groups()) {
+            if (cards.size() >= effectiveMax) break;
+            List<Place> shuffled = new ArrayList<>(group.places());
+            java.util.Collections.shuffle(shuffled, rnd);
+            // 每类补几个：按该类 POI 数线性插值，最少 MIN_CANDIDATES_PER_CATEGORY、最多 MAX_CANDIDATES_PER_CATEGORY
+            int perCategory =
+                    Math.max(
+                            MIN_CANDIDATES_PER_CATEGORY,
+                            Math.min(
+                                    MAX_CANDIDATES_PER_CATEGORY,
+                                    shuffled.size()));
+            int picked = 0;
+            for (Place p : shuffled) {
+                if (picked >= perCategory) break;
+                if (cards.size() >= effectiveMax) break;
+                if (selectedKeys.contains(placeKey(p))) continue;
+                // 把该类别 label（如"过山车""美食"）写进卡片 category 字段，
+                // 等待确认文本按类别分组时就能直接用，不用再回查 pool。
+                cards.add(toMapCard(p, null, group.label()));
+                picked++;
+            }
+        }
+
+        return new JourneyEvidence(
+                current.provider(),
+                current.city(),
+                current.topics(),
+                selectedPlaces,
+                routes,
+                current.sourceStatus(),
+                current.notice(),
+                current.searchedAt(),
+                cards);
     }
 
     /**
@@ -322,16 +495,20 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
      * 调用高德 POI 文本检索接口取一个主题下的地点。
      * citylimit=true 限定城市，extensions=all 取详情；逐条 POI 先按主题过滤（matchesTopic），
      * 再按行政范围过滤（matchesRequestedScope），最后组装 Place。接口失败记 warn 并返回空。
+     * perTopicLimit：普通检索 10，候选池前置检索 18（供候选挑选 Agent 使用）。
      */
-    private List<Place> searchAmap(String city, SearchTopic topic) {
+    private List<Place> searchAmap(String city, SearchTopic topic, int perTopicLimit) {
         String keywords = topic.query();
         try {
+            // 高德 city 参数只认"XX市"/"XX"/adcode，不认"XX省XX市"这种省+市拼接；
+            // 传拼接值会导致 citylimit 失效、返回全国结果。去掉省前缀，只保留"XX市"。
+            String amapCity = city == null ? "" : city.replaceFirst("^.+省", "");
             Map<String, Object> parameters = new LinkedHashMap<>();
             parameters.put("key", amapKey);
-            parameters.put("keywords", city + " " + keywords);
-            parameters.put("city", city);
+            parameters.put("keywords", keywords);
+            parameters.put("city", amapCity);
             parameters.put("citylimit", "true");
-            parameters.put("offset", "12");
+            parameters.put("offset", String.valueOf(Math.max(perTopicLimit + 4, 14)));
             parameters.put("page", "1");
             parameters.put("extensions", "all");
             if (!topic.amapTypeCodes().isEmpty()) {
@@ -351,7 +528,7 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
             JSONArray pois = root.getJSONArray("pois");
             Map<String, Place> uniquePlaces = new LinkedHashMap<>();
             if (pois != null) {
-                for (int i = 0; i < Math.min(10, pois.size()); i++) {
+                for (int i = 0; i < Math.min(perTopicLimit, pois.size()); i++) {
                     JSONObject poi = pois.getJSONObject(i);
                     String poiId = poi.getStr("id", "").trim();
                     String name = poi.getStr("name", "未命名地点");
@@ -364,8 +541,12 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
                     String provinceName = poi.getStr("pname", "");
                     String cityName = poi.getStr("cityname", "");
                     String districtName = poi.getStr("adname", "");
-                    if (!matchesRequestedScope(city, provinceName, cityName, districtName, address))
+                    if (!matchesRequestedScope(city, provinceName, cityName, districtName, address)) {
+                        log.info(
+                                "AMap scope reject: requested='{}', pname='{}', cityname='{}', adname='{}', name='{}'",
+                                city, provinceName, cityName, districtName, name);
                         continue;
+                    }
                     JSONObject business = poi.getJSONObject("business");
                     JSONObject bizExt = poi.getJSONObject("biz_ext");
                     String businessHours =
@@ -461,10 +642,13 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
 
     static boolean matchesTopic(String topic, String name, String type, String typeCode) {
         var category = LocalPlaceIntentCatalog.classify(topic);
-        if (category.isPresent()) return category.get().matches(topic, name, type, typeCode);
-        String combined = (name == null ? "" : name) + " " + (type == null ? "" : type);
-        String keyword = normalizeIntent(topic);
-        return !keyword.isBlank() && combined.contains(keyword);
+        if (category.isPresent()) {
+            // 命中已知类别：用类别规则做精度过滤，避免搜出无关 POI
+            return category.get().matches(topic, name, type, typeCode);
+        }
+        // 动态词（CUSTOM）：用户提到的新词/长尾词（如"剧本杀""猫咖""穿越火线"），
+        // 高德已按 keywords + citylimit 搜过，这里放行所有城市范围内结果，不再用固定词表硬过滤。
+        return true;
     }
 
     /**
@@ -486,7 +670,7 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
     private List<SearchTopic> inferTopics(String objective) {
         String safeObjective = objective == null ? "" : objective.trim();
         List<String> clauses =
-                List.of(safeObjective.split("[｜；。！？，,？?\\n]+")).stream()
+                List.of(safeObjective.split("[｜；。！？，,、？?\\n]+")).stream()
                         .filter(value -> !value.trim().matches("^(?:不|不要|别|避免|排除|拒绝|不能).*"))
                         .map(String::trim)
                         .filter(value -> !value.isBlank())
@@ -498,16 +682,26 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
             if (intent.isBlank()) intent = clause;
             String label = shorten(intent, 24);
             var category = LocalPlaceIntentCatalog.classify(intent);
+            // 动态提取策略：
+            // - 命中已知类别：用类别预置短词（"景点""网吧""停车场"）作为 keywords，types 做精度过滤
+            // - CUSTOM 动态词（剧本杀/猫咖等新词）：用用户原词搜，不传 types，matchesTopic 放行
+            final String searchWord = intent;
+            String query =
+                    category
+                            .map(LocalPlaceIntentCatalog::searchKeywords)
+                            .filter(ks -> !ks.isEmpty())
+                            .map(ks -> ks.get(0))
+                            .orElse(searchWord);
             topics.putIfAbsent(
                     label,
                     new SearchTopic(
                             label,
-                            label,
+                            query,
                             category.map(Enum::name).orElse("CUSTOM"),
                             category.map(LocalPlaceIntentCatalog::amapTypesForRequest)
                                     .orElseGet(List::of),
                             category.map(LocalPlaceIntentCatalog::searchKeywords)
-                                    .orElseGet(() -> List.of(label))));
+                                    .orElseGet(() -> List.of(searchWord))));
             if (topics.size() >= MAX_TOPICS) break;
         }
         return new ArrayList<>(topics.values());
@@ -515,7 +709,7 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
 
     /**
      * 归一化用户口语意图：去掉开头的礼貌/请求前缀（"请问""我想找""有没有"等）和结尾的语气/推荐后缀（"呢""吗""推荐一下"等），
-     * 以及前导编号，得到干净的意图关键词，再交给 LocalPlaceIntentCatalog 分类。
+     * 以及"附近/周边/相关/地方/地点"等无信息量泛词，得到干净的核心关键词，再交给高德全文搜索。
      */
     private static String normalizeIntent(String value) {
         if (value == null) return "";
@@ -525,6 +719,8 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
                 .replaceFirst("^(?:地方|地点)", "")
                 .replaceAll("(?:的地方|相关地点|相关信息|哪里有|哪里可以|怎么样|怎么安排|推荐一下|推荐|吗|呢)$", "")
                 .replaceAll("^[\\d.、\\s]+", "")
+                // 去掉"附近/周边/相关"等无信息量泛词，让 keywords 聚焦核心名词
+                .replaceAll("(?:附近|周边|相关)", "")
                 .trim();
     }
 
