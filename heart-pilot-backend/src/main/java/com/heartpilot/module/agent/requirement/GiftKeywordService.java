@@ -13,14 +13,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * 送礼关键词池服务（Tier2：候选池前置 + 黑名单过滤，保持合规边界）。
+ * 送礼关键词池服务：候选池前置 + 黑名单过滤。
  *
  * <p>角色定义（轻量串行多 Agent 流水线的第 2 个角色）：商品检索 Agent。
  * 基于结构化约束生成多组差异化搜索词（3 套方案强制分属不同品类），
  * 随后由纯 Java 代码做两层把关：
  * <ol>
  *   <li>黑名单过滤：命中排除/禁止品类的关键词直接删除，并抽取排除词附加到搜索链接（减号过滤）</li>
- *   <li>平台 URL 生成：只生成淘宝 / 京东 / 抖音的搜索跳转链接，不抓取电商商品数据、不接入 CPS</li>
+ *   <li>平台 URL 生成：生成淘宝 / 京东 / 抖音的搜索跳转链接</li>
  * </ol>
  */
 @Service
@@ -130,7 +130,7 @@ public class GiftKeywordService {
             filtered = fallbackGroups(fallbackSeed);
             excludedTerms.clear();
         }
-        // 生成多平台搜索跳转链接（纯代码，合规：不抓取商品数据）
+        // 生成多平台搜索跳转链接
         Map<String, List<PlatformUrl>> urls = new java.util.LinkedHashMap<>();
         for (KeywordGroup group : filtered) {
             for (String keyword : group.keywords()) {
@@ -226,7 +226,12 @@ public class GiftKeywordService {
         return groups.subList(0, Math.min(GROUP_COUNT, groups.size()));
     }
 
-    /** 生成淘宝/京东/抖音搜索跳转链接（合规：仅跳转，不抓取商品、价格与图片） */
+    /**
+     * 生成淘宝/京东/拼多多搜索跳转链接。
+     * 平台选择说明：京东、拼多多网页版匿名即可查看搜索结果；
+     * 淘宝网页版首次打开需登录（登录一次后浏览器记住 Cookie 不再弹）；
+     * 抖音网页版强制登录/验证码，已移除该入口。
+     */
     private List<PlatformUrl> platformUrls(String keyword, List<String> excludedTerms) {
         // 电商搜索排除语法（减号过滤）：京东支持，其余平台尽力兼容
         String jdQuery = excludedTerms.isEmpty()
@@ -235,7 +240,7 @@ public class GiftKeywordService {
         return List.of(
                 new PlatformUrl("淘宝", "https://s.taobao.com/search?q=" + encode(keyword)),
                 new PlatformUrl("京东", "https://search.jd.com/Search?keyword=" + encode(jdQuery)),
-                new PlatformUrl("抖音", "https://www.douyin.com/search/" + encode(keyword)));
+                new PlatformUrl("拼多多", "https://mobile.yangkeduo.com/search_result.html?search_key=" + encode(keyword)));
     }
 
     private String encode(String value) {

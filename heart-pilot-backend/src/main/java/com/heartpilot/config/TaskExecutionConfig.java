@@ -2,6 +2,7 @@ package com.heartpilot.config;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -22,5 +23,20 @@ public class TaskExecutionConfig {
     @Bean(name = "agentTaskExecutor", destroyMethod = "close")
     ExecutorService agentTaskExecutor() {
         return Executors.newVirtualThreadPerTaskExecutor();
+    }
+
+    /**
+     * 分布式锁续租调度器 Bean。
+     * 单线程、daemon 的调度执行器：Agent 任务持锁执行期间，每隔固定间隔续租一次，
+     * 防止任务执行超过锁租期（5 分钟）后锁自动过期、其他实例重复执行同一任务。
+     * destroyMethod = shutdownNow 确保应用关闭时停止续租调度。
+     */
+    @Bean(name = "lockRenewScheduler", destroyMethod = "shutdownNow")
+    ScheduledExecutorService lockRenewScheduler() {
+        return Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "task-lock-renew");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 }

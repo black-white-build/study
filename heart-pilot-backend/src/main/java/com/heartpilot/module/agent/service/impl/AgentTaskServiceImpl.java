@@ -53,6 +53,9 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -106,6 +109,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     private final int maxTaskRetries;
     /** Agent 任务专用线程池，Bean 名称 agentTaskExecutor */
     private final ExecutorService executor;
+    /** 分布式锁续租调度器：持锁执行期间定时 renew，防止锁租期（5 分钟）内任务未完成导致锁过期 */
+    private final ScheduledExecutorService lockRenewScheduler;
     private final DistributedTaskLockService locks;
     private final AgentTaskStateMachine stateMachine;
     private final AgentTaskPdfService pdfService;
@@ -142,6 +147,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             @Value("${app.agent.max-steps:10}") int maxSteps,
             @Value("${app.agent.max-task-retries:2}") int maxTaskRetries,
             @Qualifier("agentTaskExecutor") ExecutorService executor,
+            @Qualifier("lockRenewScheduler") ScheduledExecutorService lockRenewScheduler,
             DistributedTaskLockService locks,
             AgentTaskStateMachine stateMachine,
             AgentTaskPdfService pdfService,
@@ -168,6 +174,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         this.maxSteps = maxSteps;
         this.maxTaskRetries = maxTaskRetries;
         this.executor = executor;
+        this.lockRenewScheduler = lockRenewScheduler;
         this.locks = locks;
         this.stateMachine = stateMachine;
         this.pdfService = pdfService;
@@ -412,11 +419,15 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         DistributedTaskLockService.LockHandle lock = locks.tryAcquire(id, Duration.ofMinutes(5));
         if (lock == null) throw ApiException.conflict("TASK_ALREADY_RUNNING", "任务正在运行");
         task.setCancelRequested(false);
-        // SSE 超时 180 秒，超时后自动取消任务
+        // SSE 超时 180 秒：超时只结束推送流，不取消任务（见下方 onTimeout 注释）
         SseEmitter emitter = new SseEmitter(180_000L);
         Future<?> future = executor.submit(() -> executeUntilConfirmation(task, emitter, lock));
         activeFutures.put(id, future);
-        emitter.onTimeout(() -> cancel(id, userId));
+        // SSE 只负责实时订阅推送：连接超时/客户端断开仅结束推送流，绝不取消后台任务。
+        // 任务执行与通知通道解耦——取消只能由用户显式调用 /cancel；
+        // 前端在 close/transportError 后通过任务详情接口轮询获取最终状态。
+        emitter.onTimeout(() -> completeQuietly(emitter));
+        emitter.onError(ignored -> completeQuietly(emitter));
         return emitter;
     }
 
@@ -432,6 +443,9 @@ public class AgentTaskServiceImpl implements AgentTaskService {
      */
     private void executeUntilConfirmation(
             AgentTask task, SseEmitter emitter, DistributedTaskLockService.LockHandle lock) {
+        // 启动分布式锁续租守护：任务执行可能超过锁租期（5 分钟），
+        // 定期 renew 防止锁过期后其他实例重复执行同一任务；结束时在 finally 停止。
+        ScheduledFuture<?> lockRenewal = startLockRenewal(lock);
         try {
             Map<String, Object> parameters = taskInput.readParameters(task);
             String city = taskInput.resolveCity(parameters, task.getObjective());
@@ -459,6 +473,13 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             ValidationResult validation = requirementValidator.validate(requirement);
             RequirementStateService.RequirementSnapshot reqSnapshot =
                     requirementState.save(task.getId(), task.getUserId(), requirement);
+
+            // 送礼场景预算以结构化需求里的 budgetText 为准（前端统一只传文本，不传 parameters.budget）
+            if (requirement.gift() != null
+                    && requirement.gift().budgetText() != null
+                    && !requirement.gift().budgetText().isBlank()) {
+                budget = requirement.gift().budgetText();
+            }
 
             task.setErrorMessage(null);
             // 冲突检查点（Human-in-the-Loop）：检测到硬性冲突时不强行生成方案，
@@ -681,15 +702,26 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 return;
             }
 
+            // 送礼场景预算以结构化需求里的 budgetText 为准（前端已改为文本输入，不再传 parameters.budget）
+            String effectiveBudget = budget;
+            if (requirement.gift() != null
+                    && requirement.gift().budgetText() != null
+                    && !requirement.gift().budgetText().isBlank()) {
+                effectiveBudget = requirement.gift().budgetText();
+            }
+            String budgetLabelText = "未限定".equals(effectiveBudget) || effectiveBudget.isBlank()
+                    ? "未限定"
+                    : effectiveBudget + (effectiveBudget.contains("元") ? "" : " 元");
+
             PlanVersion draft =
                     planModel.saveDraft(
-                            task, proposal.goalType(), enriched, taskInput.budgetLabel(budget));
+                            task, proposal.goalType(), enriched, budgetLabelText);
             task.setPlanPreview(draft.getPreviewText());
             saveTask(task);
             taskSteps.complete(
                     task,
                     4,
-                    "已生成可确认的候选计划，预算上限：" + taskInput.budgetLabel(budget) + "。",
+                    "已生成可确认的候选计划，预算上限：" + budgetLabelText + "。",
                     emitter);
             trace(
                     task,
@@ -728,7 +760,46 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             fail(task, e, emitter);
         } finally {
             activeFutures.remove(task.getId());
+            stopLockRenewal(lockRenewal);
             lock.close();
+        }
+    }
+
+    /**
+     * 启动分布式锁续租守护：持锁执行期间每 60 秒续租一次。
+     * 锁租期是 5 分钟，真实任务（需求分析 + 外部检索 + 大模型生成）可能超过该时长，
+     * 若不续租，锁会提前过期，其他实例可能重新拿到同一任务并发执行。
+     * renew() 内部已吞掉 Redis 异常并返回 false：续租失败不阻断任务执行，
+     * 锁会在 TTL 到期后自动释放，由心跳/恢复扫描与状态机兜底。
+     *
+     * @return 续租调度句柄，任务结束时用 stopLockRenewal 停止；锁为空时返回 null
+     */
+    private ScheduledFuture<?> startLockRenewal(DistributedTaskLockService.LockHandle lock) {
+        if (lock == null) return null;
+        return lockRenewScheduler.scheduleWithFixedDelay(
+                () -> {
+                    try {
+                        lock.renew();
+                    } catch (RuntimeException ignored) {
+                        // 续租失败不抛异常：Redis 抖动时锁依赖 TTL 自动释放，执行继续
+                    }
+                },
+                60,
+                60,
+                TimeUnit.SECONDS);
+    }
+
+    /** 停止续租守护：任务持锁路径的 finally 中调用，cancel(false) 不打断正在执行的任务 */
+    private void stopLockRenewal(ScheduledFuture<?> lockRenewal) {
+        if (lockRenewal != null) lockRenewal.cancel(false);
+    }
+
+    /** 安静地结束 SSE 流：连接超时/客户端断开时调用，不抛异常、不影响后台任务 */
+    private void completeQuietly(SseEmitter emitter) {
+        try {
+            emitter.complete();
+        } catch (Exception ignored) {
+            // 流已结束，忽略
         }
     }
 
@@ -880,8 +951,19 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         parameters.put("revisions", revisions);
         // 礼物/消息/练习类任务的专属字段编辑后透传为背景补充，供下一轮 AI 分析
         if (updatedContextNotes != null) {
-            if (updatedContextNotes.isBlank()) parameters.remove("contextNotes");
-            else parameters.put("contextNotes", updatedContextNotes);
+            String oldNotes = taskInput.parameterText(parameters.get("contextNotes"), "");
+            if (updatedContextNotes.isBlank()) {
+                parameters.remove("contextNotes");
+            } else {
+                parameters.put("contextNotes", updatedContextNotes);
+            }
+            // contextNotes 有变化时自动记录差异，让下一轮 LLM 感知用户新增/修改/删除了哪些约束
+            String oldTrim = oldNotes == null ? "" : oldNotes.trim();
+            String newTrim = updatedContextNotes == null ? "" : updatedContextNotes.trim();
+            if (!oldTrim.isEmpty() && !oldTrim.equals(newTrim)) {
+                revisions.add("用户修改了计划参数：旧设置[" + oldTrim.replace("\n", "；")
+                        + "] → 新设置[" + newTrim.replace("\n", "；") + "]");
+            }
         }
         if (province != null || city != null) {
             Map<String, Object> requestedRegion = new LinkedHashMap<>();
@@ -930,6 +1012,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             List<String> incomingQuestions,
             SseEmitter emitter,
             DistributedTaskLockService.LockHandle lock) {
+        // 最终报告阶段同样可能超过锁租期（实时检索/报告生成耗时），持锁期间定期续租
+        ScheduledFuture<?> lockRenewal = startLockRenewal(lock);
         try {
             Map<String, Object> parameters = taskInput.readParameters(task);
             List<String> existingQuestions = taskInput.asStringList(parameters.get("questions"));
@@ -973,6 +1057,17 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                     finalReports.generate(task, allRequirements, questions, budget, note, journey));
             planModel.approveCurrentDraft(task, task.getFinalResult());
             // 用已确认版本的行动条目重新渲染预览，与正式计划保持一致
+            // 送礼场景预算以结构化需求里的 budgetText 为准
+            String finalBudget = budget;
+            RequirementStateService.RequirementSnapshot snap = requirementState.get(task.getId());
+            if (snap != null && snap.requirement() != null && snap.requirement().gift() != null
+                    && snap.requirement().gift().budgetText() != null
+                    && !snap.requirement().gift().budgetText().isBlank()) {
+                finalBudget = snap.requirement().gift().budgetText();
+            }
+            String finalBudgetLabel = "未限定".equals(finalBudget) || finalBudget.isBlank()
+                    ? "未限定"
+                    : finalBudget + (finalBudget.contains("元") ? "" : " 元");
             ActionPlan plan = planModel.findByTask(task);
             if (plan != null) {
                 List<PlanVersion> allVersions = planModel.versions(plan.getId());
@@ -980,7 +1075,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                     PlanVersion approved = allVersions.getFirst();
                     task.setPlanPreview(
                             planModel.renderPreview(
-                                    planModel.itemsOf(approved), taskInput.budgetLabel(budget)));
+                                    planModel.itemsOf(approved), finalBudgetLabel));
                 }
             }
             confirmation.setDetail(
@@ -1017,6 +1112,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             fail(task, e, emitter);
         } finally {
             activeFutures.remove(task.getId());
+            stopLockRenewal(lockRenewal);
             lock.close();
         }
     }

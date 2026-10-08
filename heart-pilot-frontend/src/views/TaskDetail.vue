@@ -134,7 +134,7 @@
           </div>
           <div>
             <dt>预算</dt>
-            <dd>{{ budgetText(parameters.budget) }}</dd>
+            <dd>{{ displayBudgetText }}</dd>
           </div>
           <div v-if="currentKind === 'PLACE_VISIT'">
             <dt>问题数量</dt>
@@ -331,14 +331,6 @@
                         @change="patchConstraint('gift.budgetMax', 'SET', requirementData.requirement.gift.budgetMax)"
                       />
                     </label>
-                    <label>对象年龄
-                      <input
-                        v-model.number="requirementData.requirement.gift.recipientAge"
-                        class="input"
-                        type="number"
-                        @change="patchConstraint('gift.recipientAge', 'SET', requirementData.requirement.gift.recipientAge)"
-                      />
-                    </label>
                     <label>场合
                       <input
                         v-model="requirementData.requirement.gift.occasion"
@@ -474,30 +466,14 @@
                   </select>
                 </div>
               </div>
-              <div class="grid-2">
-                <div class="field">
-                  <label>礼物形式</label>
-                  <select v-model="editor.giftForm" class="select">
-                    <option value="">不限</option>
-                    <option value="实物">实物</option>
-                    <option value="红包">红包</option>
-                    <option value="体验类活动">体验类活动</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label>预算（元）</label
-                  ><input
-                    v-model.number="editor.budget"
-                    class="input"
-                    type="number"
-                    min="0"
-                    placeholder="500"
-                  />
-                </div>
-              </div>
               <div class="field">
-                <label>对方年龄 <small>选填，便于缩小品类范围</small></label
-                ><input v-model="editor.recipientAge" class="input" placeholder="例如：22" />
+                <label>礼物形式</label>
+                <select v-model="editor.giftForm" class="select">
+                  <option value="">不限</option>
+                  <option value="实物">实物</option>
+                  <option value="红包">红包</option>
+                  <option value="体验类活动">体验类活动</option>
+                </select>
               </div>
               <div class="field">
                 <label>对方喜好或禁忌</label
@@ -540,6 +516,14 @@
                   placeholder="例如：希望对方愿意周末出来坐坐"
                 />
               </div>
+              <div class="field">
+                <label>明确边界 <small>选填，不希望消息里出现什么</small></label
+                ><textarea
+                  v-model="editor.boundary"
+                  class="textarea"
+                  placeholder="例如：不提上次吵架的事，不要施压，不要发长段小作文"
+                ></textarea>
+              </div>
             </template>
 
             <!-- 自我计划：内容 + 期望效果 + 频率 -->
@@ -570,17 +554,15 @@
                   </select>
                 </div>
               </div>
+              <div class="field">
+                <label>明确边界 <small>选填，不希望练习涉及什么</small></label
+                ><textarea
+                  v-model="editor.boundary"
+                  class="textarea"
+                  placeholder="例如：不节食、不熬夜、不与他人攀比进度"
+                ></textarea>
+              </div>
             </template>
-
-            <!-- 沟通背景：所有行动类型都可补充/修改，随重规划一起参与计算 -->
-            <div class="field">
-              <label>沟通背景 <small>选填，补充双方关系与最近发生了什么</small></label
-              ><textarea
-                v-model="editor.contextNotes"
-                class="textarea"
-                placeholder="例如：上次见面聊得不愉快，最近联系变少，想缓和一下"
-              ></textarea>
-            </div>
           </div>
           <div class="confirm-actions">
             <button class="btn" :disabled="submitting || !canRevise" @click="confirmTask(false)">
@@ -768,18 +750,26 @@
                 <li v-for="line in item.payload.steps" :key="line">{{ line }}</li>
               </ul>
               <div v-if="item.payload.giftIdeas?.length" class="gift-ideas">
-                <p><b>AI 分析后的礼物候选</b>（基于你的喜好与预算推荐，价格以实际为准）</p>
+                <p><b>AI 分析后的礼物候选</b></p>
+                <p class="muted search-tip">京东、拼多多可直接查看结果；淘宝首次打开需登录一次（浏览器会记住）。</p>
+                <p v-if="item.payload.searchSource" class="muted search-tip">
+                  <span v-if="item.payload.searchSource === 'duckduckgo'">价格与品牌已联网校准（DuckDuckGo 公开网页），价格为参考价</span>
+                  <span v-else-if="item.payload.searchSource === 'serpapi'">价格与品牌已联网校准（付费搜索），价格为参考价</span>
+                  <span v-else>搜索增强暂不可用，以上为 AI 基于喜好的推荐</span>
+                </p>
+                <p v-if="item.payload.searchQuotaTip" class="muted search-tip">{{ item.payload.searchQuotaTip }}</p>
                 <ul class="key-list">
                   <li v-for="idea in item.payload.giftIdeas" :key="idea.title">
-                    <a
-                      v-if="idea.url"
-                      :href="idea.url"
-                      target="_blank"
-                      rel="noreferrer"
-                      >{{ idea.title }} ↗</a
-                    ><b v-else>{{ idea.title }}</b>
-                    <span v-if="idea.priceHint" class="muted">（约 {{ idea.priceHint }}）</span>
+                    <b>{{ idea.title }}</b>
+                    <span v-if="idea.priceHint" class="muted">（参考价 {{ idea.priceHint }}）</span>
                     <div v-if="idea.reason" class="muted">{{ idea.reason }}</div>
+                    <div v-if="idea.urls?.length" class="idea-links">
+                      <a v-for="u in idea.urls" :key="u.platform" :href="u.url" target="_blank" rel="noopener" referrerpolicy="unsafe-url">{{ u.platform }}搜 ↗</a>
+                    </div>
+                    <div v-if="idea.sources?.length" class="idea-sources">
+                      <small>参考来源：</small>
+                      <a v-for="(s, i) in idea.sources" :key="i" :href="s.url" target="_blank" rel="noreferrer">{{ s.title }}</a>
+                    </div>
                   </li>
                 </ul>
               </div>
@@ -881,15 +871,14 @@ interface EditorState {
   city: string
   budget: number | null
   questionsText: string
-  contextNotes: string
   giftBudget: string
   occasionType: string
   giftForm: string
-  recipientAge: string
   recipientPreferences: string
   messageChannel: string
   toneStyle: string
   replyExpectation: string
+  boundary: string
   planContent: string
   expectedOutcome: string
   frequency: string
@@ -919,18 +908,16 @@ const editor = reactive<EditorState>({
   city: '',
   budget: null,
   questionsText: '',
-  // 沟通背景（选填，确认阶段可补充/修改，参与重规划）
-  contextNotes: '',
   // 礼物专属
   giftBudget: '',
   occasionType: '',
   giftForm: '',
-  recipientAge: '',
   recipientPreferences: '',
   // 发消息专属
   messageChannel: '',
   toneStyle: '',
   replyExpectation: '',
+  boundary: '',
   // 自我计划专属
   planContent: '',
   expectedOutcome: '',
@@ -1041,6 +1028,20 @@ const currentKind = computed<string>(() => {
   return 'PLACE_VISIT'
 })
 
+// 预算显示文本：送礼场景从结构化需求 gift.budgetText 取（前端不传 parameters.budget），
+// 地点场景仍用 parameters.budget 数字。统一供任务信息面板与顶部版本摘要使用。
+const displayBudgetText = computed<string>(() => {
+  if (currentKind.value === 'GIFT_RITUAL') {
+    const giftText = requirementData.value?.requirement?.gift?.budgetText
+    if (giftText && String(giftText).trim()) return String(giftText).trim()
+    // 结构化需求还没加载到时，兜底看 editor.giftBudget
+    if (editor.value?.giftBudget && String(editor.value.giftBudget).trim()) {
+      return String(editor.value.giftBudget).trim()
+    }
+  }
+  return budgetText(parameters.value.budget)
+})
+
 // 仅在地点类任务、且处于等待用户确认阶段时，才展示"换一批候选地点"按钮
 const canReshufflePlaces = computed(
   () =>
@@ -1143,6 +1144,11 @@ const eventBranches = computed<any[]>(() => {
       const isCurrent = version === currentVersion
       const city = analyzeMetadata.city ?? (isCurrent ? parameters.value.city : '') ?? ''
       const budget = analyzeMetadata.budget ?? (isCurrent ? parameters.value.budget : null)
+      // 送礼场景当前版本优先从结构化需求读预算文本，避免 parameters.budget 缺失导致"未限定"
+      const budgetLabel =
+        currentKind.value === 'GIFT_RITUAL' && isCurrent
+          ? displayBudgetText.value
+          : budgetText(budget)
       const questionCount =
         analyzeMetadata.questionCount ??
         analyzeMetadata.questions?.length ??
@@ -1155,7 +1161,7 @@ const eventBranches = computed<any[]>(() => {
         title: version === 0 ? '首次规划' : `第 ${version} 次修改重规划`,
         summary:
           `${city || (currentKind.value === 'PLACE_VISIT' ? '地点待确认' : '不限地点')} · ` +
-          `${budgetText(budget)}` +
+          `${budgetLabel}` +
           (currentKind.value === 'PLACE_VISIT' ? ` · ${questionCount} 个问题` : '') +
           ` · ${events.length} 条轨迹`,
         keywords,
@@ -1227,8 +1233,8 @@ const enteredQuestions = computed(() =>
 const editorHint = computed(() =>
   ({
     GIFT_RITUAL: '修改预算、场合与对方喜好后重新分析，AI 会重新推荐具体礼物候选。',
-    MESSAGE: '修改渠道、语气与回复期待后，AI 会重新生成消息草稿。',
-    SELF_PRACTICE: '修改练习内容、期望效果与频率后，AI 会重新生成练习计划。'
+    MESSAGE: '修改渠道、语气、回复期待与边界后，AI 会重新生成消息草稿。',
+    SELF_PRACTICE: '修改练习内容、期望效果、频率与边界后，AI 会重新生成练习计划。'
   })[currentKind.value] ||
   '这里的地点、预算和问题清单以最后一次提交为准；应用修改后会新增一个规划分支，并重新提取对应关键词。'
 )
@@ -1236,12 +1242,14 @@ const editorHint = computed(() =>
 // 确认编辑器可编辑的专属字段标签（按"标签：内容"行格式识别）
 const EDITABLE_KIND_KEYS = new Set([
   '礼物预算',
+  '预算（元）',
   '送礼场合',
   '礼物形式',
   '对方喜好',
   '发送渠道',
   '语气风格',
   '回复期待',
+  '明确边界',
   '计划内容',
   '期望效果',
   '频率'
@@ -1252,42 +1260,31 @@ const EDITABLE_KIND_KEYS = new Set([
 // 只替换编辑器可改的专属行与沟通背景，避免重规划时丢掉用户最初提交的描述。
 function buildContextNotes() {
   const lines = []
-  // 1. 保留原始说明中的非专属行；"沟通背景"行在原位置用编辑器最新值替换（为空则移除该行）
+  // 1. 保留原始说明中的非专属行（含历史"沟通背景""时间约束""明确边界"等行，原样透传不丢）
   const originalLines: string[] = (parameters.value?.contextNotes || '').split(/\n/)
-  const backgroundKey = '沟通背景'
-  let backgroundInserted = false
   originalLines.forEach((line) => {
     const idx = line.indexOf('：')
     const key = idx > 0 ? line.slice(0, idx).trim() : ''
     if (EDITABLE_KIND_KEYS.has(key)) return
-    if (key === backgroundKey) {
-      if (editor.contextNotes.trim()) {
-        lines.push(`${backgroundKey}：${editor.contextNotes.trim()}`)
-        backgroundInserted = true
-      }
-      return
-    }
     if (line.trim()) lines.push(line.trim())
   })
-  // 原始没有沟通背景行但用户填了新描述 → 追加到保留行末尾
-  if (editor.contextNotes.trim() && !backgroundInserted)
-    lines.push(`${backgroundKey}：${editor.contextNotes.trim()}`)
   // 2. 追加当前行动类型的专属字段行
   if (currentKind.value === 'GIFT_RITUAL') {
     if (editor.giftBudget.trim()) lines.push(`礼物预算：${editor.giftBudget.trim()}`)
     if (editor.occasionType) lines.push(`送礼场合：${editor.occasionType}`)
     if (editor.giftForm) lines.push(`礼物形式：${editor.giftForm}`)
-    if (editor.recipientAge.trim()) lines.push(`对方年龄：${editor.recipientAge.trim()}岁`)
     if (editor.recipientPreferences.trim())
       lines.push(`对方喜好：${editor.recipientPreferences.trim()}`)
   } else if (currentKind.value === 'MESSAGE') {
     if (editor.messageChannel) lines.push(`发送渠道：${editor.messageChannel}`)
     if (editor.toneStyle) lines.push(`语气风格：${editor.toneStyle}`)
     if (editor.replyExpectation.trim()) lines.push(`回复期待：${editor.replyExpectation.trim()}`)
+    if (editor.boundary.trim()) lines.push(`明确边界：${editor.boundary.trim()}`)
   } else if (currentKind.value === 'SELF_PRACTICE') {
     if (editor.planContent.trim()) lines.push(`计划内容：${editor.planContent.trim()}`)
     if (editor.expectedOutcome.trim()) lines.push(`期望效果：${editor.expectedOutcome.trim()}`)
     if (editor.frequency) lines.push(`频率：${editor.frequency}`)
+    if (editor.boundary.trim()) lines.push(`明确边界：${editor.boundary.trim()}`)
   }
   return lines.join('\n')
 }
@@ -1296,21 +1293,26 @@ function buildContextNotes() {
 function hydrateKindFields(notesText: string) {
   const map: Record<string, string> = {}
   ;(notesText || '').split(/\n/).forEach((line) => {
-    const idx = line.indexOf('：')
+    // 同时兼容中文冒号"："和英文冒号":"
+    const idx = line.indexOf('：') > 0 ? line.indexOf('：') : line.indexOf(':')
     if (idx > 0) map[line.slice(0, idx).trim()] = line.slice(idx + 1).trim()
   })
   editor.giftBudget = map['礼物预算'] || ''
+  // "预算（元）"行回显到预算数字框：仅当参数里没有预算时采用（避免覆盖后端主字段）
+  if (!editor.budget && map['预算（元）']) {
+    const amount = Number(map['预算（元）'])
+    editor.budget = Number.isFinite(amount) ? amount : map['预算（元）']
+  }
   editor.occasionType = map['送礼场合'] || ''
   editor.giftForm = map['礼物形式'] || ''
-  editor.recipientAge = (map['对方年龄'] || '').replace(/岁$/, '')
   editor.recipientPreferences = map['对方喜好'] || ''
   editor.messageChannel = map['发送渠道'] || ''
   editor.toneStyle = map['语气风格'] || ''
   editor.replyExpectation = map['回复期待'] || ''
+  editor.boundary = map['明确边界'] || map['边界'] || ''
   editor.planContent = map['计划内容'] || ''
   editor.expectedOutcome = map['期望效果'] || ''
   editor.frequency = map['频率'] || ''
-  editor.contextNotes = map['沟通背景'] || ''
 }
 
 // 当前 contextNotes（含本表单修改）与原始值是否一致
@@ -1330,11 +1332,8 @@ const canRevise = computed(() => {
         notesChanged.value)
     )
   }
-  // 非地点任务：只要专属字段或预算有修改即可重规划
-  return (
-    notesChanged.value ||
-    normalizeBudgetValue(editor.budget) !== normalizeBudgetValue(parameters.value.budget)
-  )
+  // 非地点任务：预算走 contextNotes 文本（礼物预算），由 notesChanged 统一覆盖，不再单独比较数字预算
+  return notesChanged.value
 })
 const runningTitle = computed(() =>
   detail.value?.task.currentStep >= 6 ? '正在补充检索并生成计划书' : '正在合并修改并重新规划'
@@ -1401,7 +1400,8 @@ function toggleBranch(version: number) {
 }
 function startPolling() {
   clearInterval(timer.value)
-  if (['RUNNING', 'WAITING'].includes(detail.value?.task.status))
+  if (!detail.value?.task) return
+  if (['RUNNING', 'WAITING'].includes(detail.value.task.status))
     timer.value = setInterval(load, 1200)
 }
 function hydrateEditor() {
@@ -1415,17 +1415,19 @@ function hydrateEditor() {
   hydratedKey.value = key
 }
 async function load() {
+  const taskId = Number(route.params.id)
+  if (!Number.isFinite(taskId) || taskId <= 0) return
   try {
-    const next = await api.get(`/agent-tasks/${route.params.id}`)
+    const next = await api.get(`/agent-tasks/${taskId}`)
     detail.value = next
     loadRouteMap()
     try {
-      plan.value = await api.get(`/agent-tasks/${route.params.id}/plan`)
+      plan.value = await api.get(`/agent-tasks/${taskId}/plan`)
     } catch {
       plan.value = null
     }
     if (next.task.status === 'AWAITING_CONFIRMATION') hydrateEditor()
-    if (next.task.status === 'AWAITING_REQUIREMENT') await loadRequirement()
+    if (next.task.status === 'AWAITING_REQUIREMENT' || next.task.status === 'AWAITING_CONFIRMATION') await loadRequirement()
     if (!['RUNNING', 'WAITING'].includes(next.task.status)) clearInterval(timer.value)
   } catch {
     showError('任务读取失败')
@@ -1527,6 +1529,7 @@ async function loadRouteMap() {
   }
 }
 function optimisticRun(approved: boolean) {
+  if (!detail.value?.task) return
   detail.value.task.status = 'RUNNING'
   detail.value.task.currentStep = approved ? 6 : 1
   detail.value.steps.forEach((step: any) => {
@@ -1550,6 +1553,8 @@ function optimisticRun(approved: boolean) {
 }
 async function confirmTask(approved: boolean) {
   if (submitting.value || (approved && canRevise.value) || (!approved && !canRevise.value)) return
+  const taskId = Number(route.params.id)
+  if (!Number.isFinite(taskId) || taskId <= 0) return
   submitting.value = true
   error.value = ''
   const isPlace = currentKind.value === 'PLACE_VISIT'
@@ -1558,14 +1563,14 @@ async function confirmTask(approved: boolean) {
     note: '',
     province: approved || !isPlace ? null : editor.province,
     city: approved || !isPlace ? null : editor.city.trim(),
-    budget: approved ? null : (editor.budget ?? '') === '' ? null : editor.budget,
+    budget: approved || !isPlace ? null : (editor.budget ?? '') === '' ? null : editor.budget,
     questions: approved || !isPlace ? null : enteredQuestions.value,
     contextNotes: approved ? null : buildContextNotes()
   }
   optimisticRun(approved)
   startPolling()
   try {
-    const stream = await streamSSE(`/agent-tasks/${route.params.id}/confirm`, payload, {
+    const stream = await streamSSE(`/agent-tasks/${taskId}/confirm`, payload, {
       step: load,
       revision: load,
       confirmation: load,
@@ -3009,6 +3014,41 @@ aside h3 {
   margin-top: 3px;
   color: var(--muted);
   font-size: 11px;
+}
+.search-tip {
+  font-size: 11px;
+  line-height: 1.6;
+}
+.idea-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.idea-links a {
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border, #e5e7eb);
+  color: var(--primary, #4f6ef7);
+  font-size: 11px;
+  text-decoration: none;
+}
+.idea-links a:hover {
+  background: rgba(79, 110, 247, 0.08);
+}
+.idea-sources {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.idea-sources small {
+  color: var(--muted);
+  margin-right: 4px;
+}
+.idea-sources a {
+  color: var(--muted);
+  margin-right: 10px;
+  word-break: break-all;
 }
 .result {
   margin-top: 20px;

@@ -110,10 +110,28 @@ public enum LocalPlaceIntentCatalog {
     /**
      * 把用户意图归类到某个 POI 类别。
      * 按枚举声明顺序，第一个 userAliases 命中意图文本的类别胜出；都不命中返回空。
+     *
+     * 游泳/游艇/海鲜等细分词（SpecificIntentRule 覆盖）不归入粗类别：
+     * 它们保持 CUSTOM 动态词语义，用户原词直接作为高德检索词，
+     * 匹配阶段再由 SpecificIntentRule 做精度过滤，避免"游艇"被替换成
+     * 娱乐类的预置检索词（如"休闲娱乐"）而丢失用户真实意图。
      */
     public static Optional<LocalPlaceIntentCatalog> classify(String userIntent) {
         if (userIntent == null || userIntent.isBlank()) return Optional.empty();
+        if (SpecificIntentRule.forIntent(userIntent).isPresent()) return Optional.empty();
         return Arrays.stream(values())
+                .filter(rule -> rule.userAliases.stream().anyMatch(userIntent::contains))
+                .findFirst();
+    }
+
+    /**
+     * 查询细分词强规则（游泳/游艇/海鲜）。
+     * 供同包的 PlaceSearchServiceImpl 在 CUSTOM 分支调用：
+     * 命中细分词时按强规则过滤，避免无关 POI（健身中心、照相馆等）混入。
+     */
+    static Optional<SpecificIntentRule> specificFor(String userIntent) {
+        if (userIntent == null) return Optional.empty();
+        return Arrays.stream(SpecificIntentRule.values())
                 .filter(rule -> rule.userAliases.stream().anyMatch(userIntent::contains))
                 .findFirst();
     }
@@ -139,7 +157,14 @@ public enum LocalPlaceIntentCatalog {
         return value == null ? "" : value;
     }
 
-    private enum SpecificIntentRule {
+    /**
+     * 细分词强规则：游泳/游艇/海鲜等口语词若归入粗类别（SPORTS/ENTERTAINMENT/FOOD），
+     * 会导致"游艇"被替换成"休闲娱乐"这类预置检索词、且匹配阶段过度泛化
+     * （例如"游泳"会匹配到所有体育场所）。因此这些词不参与粗类别归类，
+     * 检索用用户原词，匹配阶段只按下面的 resultKeywords 做精度过滤。
+     * 包内可见：PlaceSearchServiceImpl 的 CUSTOM 分支需要调用 matches 做过滤。
+     */
+    enum SpecificIntentRule {
         SWIMMING(List.of("游泳", "泳池"), List.of("游泳", "泳池", "游泳馆", "游泳场", "水上运动")),
         SAILING(List.of("游艇", "帆船"), List.of("游艇", "帆船", "游船", "码头", "船艇", "航海")),
         SEAFOOD(List.of("海鲜", "水产"), List.of("海鲜", "水产", "渔港", "鱼港", "海产"));

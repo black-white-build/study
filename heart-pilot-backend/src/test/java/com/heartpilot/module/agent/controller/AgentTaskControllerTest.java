@@ -8,6 +8,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.heartpilot.infrastructure.ai.tool.CapabilityStatusRecorder;
+import com.heartpilot.module.agent.requirement.RequirementStateService;
 import com.heartpilot.module.agent.service.AgentTaskService;
 import com.heartpilot.module.agent.service.RouteMapService;
 import com.heartpilot.module.file.entity.GeneratedFile;
@@ -23,7 +25,13 @@ class AgentTaskControllerTest {
         CurrentUser current = mock(CurrentUser.class);
         StorageService storage = mock(StorageService.class);
         AgentTaskController controller =
-                new AgentTaskController(service, current, storage, mock(RouteMapService.class));
+                new AgentTaskController(
+                        service,
+                        current,
+                        storage,
+                        mock(RouteMapService.class),
+                        mock(CapabilityStatusRecorder.class),
+                        mock(RequirementStateService.class));
         GeneratedFile file = new GeneratedFile();
         file.setId(11L);
         file.setFileName("report.pdf");

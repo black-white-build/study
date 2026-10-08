@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
  * - 消息/微信/短信 → MESSAGE
  * - 聊/谈/沟通/说开/道歉 → CONVERSATION
  * - 礼物/送 → GIFT_RITUAL
- * - 练习/复盘/自己/情绪/冷静 → SELF_PRACTICE
+ * - 练习/复盘/自己/情绪/冷静/运动/健身/减肥/学习等 → SELF_PRACTICE（一次生成多套候选方案）
  * - 观察/留意 → OBSERVATION
  * - 均未命中 → CONVERSATION（最通用、最安全的一步）
  */
@@ -36,6 +36,8 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
     private static final int MAX_INSTRUCTION_LENGTH = 500;
     /** 单份计划最多生成的草案条数 */
     private static final int MAX_DRAFTS = 8;
+    /** 自我练习型生成的候选方案套数（多候选，参考送礼多方案思路） */
+    private static final int SELF_PRACTICE_VARIANTS = 3;
 
     private static final String SYSTEM_PROMPT =
             """
@@ -118,8 +120,13 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
         List<ActionDraft> drafts = new ArrayList<>();
         for (ExecutionKind kind : kindHints) {
             if (drafts.size() >= MAX_DRAFTS) break;
-            ActionDraft template = draftTemplate(kind, goalType, context);
-            if (template != null) drafts.add(template);
+            if (kind == ExecutionKind.SELF_PRACTICE) {
+                // 自我练习：一次生成多套差异化候选方案，供用户在确认页挑选
+                drafts.addAll(selfPracticeDrafts(goalType, context));
+            } else {
+                ActionDraft template = draftTemplate(kind, goalType, context);
+                if (template != null) drafts.add(template);
+            }
         }
         if (drafts.isEmpty()) return fallbackPropose(context);
         return new ActionProposal(goalType, drafts, false);
@@ -143,7 +150,7 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
                     kind,
                     goalType,
                     "发送一条真诚的消息",
-                    "用“事实+感受+请求”写一条短消息，先表达在乎，再提出一个具体的小请求。",
+                    messageInstruction(context),
                     Map.of());
             case CONVERSATION -> new ActionDraft(
                     kind,
@@ -157,12 +164,11 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
                     giftTitle(context),
                     giftInstruction(context),
                     Map.of());
-            case SELF_PRACTICE -> new ActionDraft(
-                    kind,
-                    goalType,
-                    "做一次情绪复盘练习",
-                    "用“事实—感受—需求”三段式写下这次经历，梳理自己想表达的核心内容。",
-                    Map.of());
+            case SELF_PRACTICE -> {
+                // 单条场景（如模型路径个别生成）返回第一套候选方案；批量场景走 selfPracticeDrafts
+                List<ActionDraft> variants = selfPracticeDrafts(goalType, context);
+                yield variants.isEmpty() ? null : variants.getFirst();
+            }
             case OBSERVATION -> new ActionDraft(
                     kind,
                     goalType,
@@ -244,8 +250,8 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
         if (matchesAny(text, "礼物", "送", "纪念日", "生日", "表白")) {
             addIfNotNull(drafts, draftTemplate(ExecutionKind.GIFT_RITUAL, goalType, context));
         }
-        if (matchesAny(text, "练习", "复盘", "自己", "情绪", "冷静", "焦虑", "成长")) {
-            addIfNotNull(drafts, draftTemplate(ExecutionKind.SELF_PRACTICE, goalType, context));
+        if (matchesAny(text, "练习", "复盘", "自己", "情绪", "冷静", "焦虑", "成长", "减肥", "运动", "健身", "学习", "英语", "自律")) {
+            drafts.addAll(selfPracticeDrafts(goalType, context));
         }
         if (matchesAny(text, "观察", "留意", "记录")) {
             addIfNotNull(drafts, draftTemplate(ExecutionKind.OBSERVATION, goalType, context));
@@ -290,6 +296,60 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
 
     private void addIfNotNull(List<ActionDraft> drafts, ActionDraft draft) {
         if (draft != null) drafts.add(draft);
+    }
+
+    /**
+     * 自我练习型多候选草案：一次生成 SELF_PRACTICE_VARIANTS 套差异化候选方案
+     * （参考送礼多方案思路），每套方案带 variant 序号，供富化器向语言服务请求对应思路；
+     * 标题与指令引用用户填写的计划内容/期望效果关键词，禁止套用情绪复盘等无关固定措辞。
+     */
+    private List<ActionDraft> selfPracticeDrafts(GoalType goalType, PlanningContext context) {
+        List<ActionDraft> drafts = new ArrayList<>();
+        String keyword = practiceKeyword(context);
+        String suffix = keyword.isBlank() ? "" : "（围绕：" + keyword + "）";
+        for (int variant = 1; variant <= SELF_PRACTICE_VARIANTS && drafts.size() < MAX_DRAFTS; variant++) {
+            String cn = cnNum(variant);
+            drafts.add(
+                    new ActionDraft(
+                            ExecutionKind.SELF_PRACTICE,
+                            goalType,
+                            "候选方案" + cn + suffix,
+                            "围绕计划内容与期望效果（"
+                                    + (keyword.isBlank() ? "用户目标" : keyword)
+                                    + "）设计第" + cn + "套自我练习方案，内容必须紧扣关键词，"
+                                    + "不得套用情绪复盘等与输入无关的模板。",
+                            Map.of("variant", variant)));
+        }
+        return drafts;
+    }
+
+    /** 从计划内容/期望效果行或任务目标提取练习关键词（最多 8 字），用于草案标题与指令 */
+    private String practiceKeyword(PlanningContext context) {
+        String objective = context.task().getObjective() == null ? "" : context.task().getObjective();
+        Object rawNotes = context.parameters().get("contextNotes");
+        if (rawNotes != null) {
+            for (String line : String.valueOf(rawNotes).split("[\\r\\n]+")) {
+                String trimmed = line.trim();
+                if (trimmed.matches("^(计划内容|期望效果)[：:].*")) {
+                    String value = trimmed.replaceFirst("^(计划内容|期望效果)[：:]", "").trim();
+                    if (!value.isBlank()) {
+                        return value.length() > 8 ? value.substring(0, 8) : value;
+                    }
+                }
+            }
+        }
+        if (!objective.isBlank()) return objective.length() > 8 ? objective.substring(0, 8) : objective;
+        return "";
+    }
+
+    /** 1-3 转中文数字，其余原样返回 */
+    private String cnNum(int value) {
+        return switch (value) {
+            case 1 -> "一";
+            case 2 -> "二";
+            case 3 -> "三";
+            default -> String.valueOf(value);
+        };
     }
 
     /**
@@ -357,6 +417,21 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
             buf.append("送礼背景：").append(notes).append("。");
         }
         buf.append("先分析送礼对象、场合与对方喜好，再给出具体商品候选，不套用通用套话。");
+        return buf.toString();
+    }
+
+    /**
+     * 消息行动指令：引用用户填写的发送渠道/语气风格/回复期待与背景补充，
+     * 让草案标题与指令引用用户输入的关键词（满足"禁止套用与用户输入无关的固定措辞"）。
+     */
+    private String messageInstruction(PlanningContext context) {
+        StringBuilder buf =
+                new StringBuilder("用“事实+感受+请求”写一条短消息，先表达在乎，再提出一个具体的小请求。");
+        Object notes = context.parameters().get("contextNotes");
+        if (notes != null && !String.valueOf(notes).isBlank()) {
+            buf.append("用户补充：").append(String.valueOf(notes).trim()).append("。");
+        }
+        buf.append("消息须服务于用户目标，并朝用户期望的回复方向引导。");
         return buf.toString();
     }
 

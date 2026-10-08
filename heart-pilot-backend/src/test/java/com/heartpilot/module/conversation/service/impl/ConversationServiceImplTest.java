@@ -24,6 +24,7 @@ import com.heartpilot.infrastructure.ai.ConversationClassifier.Route;
 import com.heartpilot.infrastructure.ai.PromptRegistry;
 import com.heartpilot.infrastructure.ai.RelationshipAiClient;
 import com.heartpilot.infrastructure.ai.StructuredAnswerRenderer;
+import com.heartpilot.infrastructure.ai.tool.CapabilityStatusRecorder;
 import com.heartpilot.module.agent.service.RedisResultCacheService;
 import com.heartpilot.module.conversation.entity.AiConversation;
 import com.heartpilot.module.conversation.entity.AiMessage;
@@ -144,7 +145,8 @@ class ConversationServiceImplTest {
                         16_000,
                         2,
                         0.8,
-                        2.0);
+                        2.0,
+                        mock(CapabilityStatusRecorder.class));
     }
 
     /** 一条可复用的检索来源，证据等级 HIGH，用于命中场景 */

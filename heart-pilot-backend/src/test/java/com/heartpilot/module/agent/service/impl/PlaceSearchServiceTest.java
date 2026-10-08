@@ -2,7 +2,9 @@ package com.heartpilot.module.agent.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
+import com.heartpilot.infrastructure.ai.tool.CapabilityStatusRecorder;
 import com.heartpilot.infrastructure.ai.tool.WebSearchTool;
 import com.heartpilot.module.agent.service.PlaceSearchService;
 import java.util.List;
@@ -11,7 +13,7 @@ import org.junit.jupiter.api.Test;
 class PlaceSearchServiceTest {
     @Test
     void missingExternalKeysProducesExplicitDegradedEvidenceWithoutInventingPlaces() {
-        PlaceSearchServiceImpl service = new PlaceSearchServiceImpl("", new WebSearchTool(""));
+        PlaceSearchServiceImpl service = new PlaceSearchServiceImpl("", new WebSearchTool("", mock(CapabilityStatusRecorder.class)));
 
         PlaceSearchService.JourneyResearchResult result =
                 service.researchJourney("南宁", "看展览、吃晚餐并散步");
@@ -46,7 +48,7 @@ class PlaceSearchServiceTest {
 
     @Test
     void preservesCustomIntentInsteadOfMappingItToFixedCategories() {
-        PlaceSearchServiceImpl service = new PlaceSearchServiceImpl("", new WebSearchTool(""));
+        PlaceSearchServiceImpl service = new PlaceSearchServiceImpl("", new WebSearchTool("", mock(CapabilityStatusRecorder.class)));
 
         PlaceSearchService.SearchResult result = service.search("上海市", "去玩游艇");
 
@@ -57,7 +59,7 @@ class PlaceSearchServiceTest {
 
     @Test
     void extractsOnlyConcreteQuestionKeywords() {
-        PlaceSearchServiceImpl service = new PlaceSearchServiceImpl("", new WebSearchTool(""));
+        PlaceSearchServiceImpl service = new PlaceSearchServiceImpl("", new WebSearchTool("", mock(CapabilityStatusRecorder.class)));
 
         PlaceSearchService.SearchResult result = service.search("天津市", "有摩天轮，去酒吧\n喝啤酒");
 
@@ -98,7 +100,7 @@ class PlaceSearchServiceTest {
         assertTrue(PlaceSearchServiceImpl.matchesTopic("宠物摄影", "岛城宠物摄影馆", "生活服务", ""));
         assertEquals(false, PlaceSearchServiceImpl.matchesTopic("宠物摄影", "岛城照相馆", "生活服务", ""));
 
-        PlaceSearchServiceImpl service = new PlaceSearchServiceImpl("", new WebSearchTool(""));
+        PlaceSearchServiceImpl service = new PlaceSearchServiceImpl("", new WebSearchTool("", mock(CapabilityStatusRecorder.class)));
         PlaceSearchService.SearchGroup group = service.search("青岛市", "宠物摄影").groups().getFirst();
         assertEquals("CUSTOM", group.intentCategory());
         assertEquals(List.of("宠物摄影"), group.searchKeywords());

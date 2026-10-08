@@ -89,7 +89,8 @@ class AgentTaskExecutionIntegrationTest {
                                 "广西壮族自治区",
                                 "南宁市",
                                 new BigDecimal("-1"),
-                                List.of("只回答最后一次修改后的问题")));
+                                List.of("只回答最后一次修改后的问题"),
+                                null));
 
         tasks.confirm(
                 task.getId(),
@@ -99,7 +100,8 @@ class AgentTaskExecutionIntegrationTest {
                 "广西壮族自治区",
                 "南宁市",
                 new BigDecimal("7000.00"),
-                List.of("只回答最后一次修改后的问题"));
+                List.of("只回答最后一次修改后的问题"),
+                null);
         deadline = Instant.now().plus(Duration.ofSeconds(8));
         do {
             Thread.sleep(50);

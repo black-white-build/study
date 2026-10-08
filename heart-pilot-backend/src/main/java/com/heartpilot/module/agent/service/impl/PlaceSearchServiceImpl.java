@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -646,9 +647,21 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
             // 命中已知类别：用类别规则做精度过滤，避免搜出无关 POI
             return category.get().matches(topic, name, type, typeCode);
         }
-        // 动态词（CUSTOM）：用户提到的新词/长尾词（如"剧本杀""猫咖""穿越火线"），
-        // 高德已按 keywords + citylimit 搜过，这里放行所有城市范围内结果，不再用固定词表硬过滤。
-        return true;
+        // 动态词（CUSTOM）：先走细分词强规则（游泳/游艇/海鲜），
+        // 未命中细规则时要求 POI 名称/类型包含归一化后的用户关键词，不再无条件放行——
+        // 否则"睡觉"会匹配"天津市"、"宠物摄影"会匹配"照相馆"等与意图无关的 POI。
+        Optional<LocalPlaceIntentCatalog.SpecificIntentRule> specific =
+                LocalPlaceIntentCatalog.specificFor(topic);
+        if (specific.isPresent()) {
+            return specific.get().matches(safeText(name) + " " + safeText(type));
+        }
+        String keyword = normalizeIntent(topic);
+        if (keyword.isBlank()) return false;
+        return (safeText(name) + " " + safeText(type)).contains(keyword);
+    }
+
+    private static String safeText(String value) {
+        return value == null ? "" : value;
     }
 
     /**

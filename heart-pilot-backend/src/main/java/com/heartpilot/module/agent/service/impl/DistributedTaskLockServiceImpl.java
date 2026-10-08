@@ -23,8 +23,13 @@ import org.springframework.stereotype.Service;
  * - 释放（close）：用 Lua 脚本"先比对 token 再 del"，保证只删自己的锁；
  *   即使释放失败，TTL 也会在 lease 到期后自动释放，不会死锁
  *
- * 降级策略：Redis 未启用或不可用时，退化为 JVM 本地锁（ConcurrentHashMap.newKeySet），
- * 单实例下仍安全；Redis 异常被吞掉不阻断业务。
+ * 降级策略与语义边界（重要）：
+ * - Redis 正常时：支持多实例互斥，同一任务在多实例下只有一个执行器；
+ * - Redis 未启用或不可用时：退化为 JVM 本地锁（ConcurrentHashMap.newKeySet），
+ *   仅保证"单实例内互斥"，多实例部署下同一任务仍可能被不同实例并发执行。
+ * 因此整体能力只能表述为"Redis 正常时支持多实例互斥，Redis 不可用时保证单实例内互斥"，
+ * 不能笼统写成"Redis 故障也保证分布式任务一致性"。Redis 异常被吞掉不阻断业务，
+ * 多实例下的一致性缺口由心跳/恢复扫描 + 状态机 + 乐观锁共同兜底。
  */
 @Service
 public class DistributedTaskLockServiceImpl implements DistributedTaskLockService {
@@ -83,8 +88,10 @@ public class DistributedTaskLockServiceImpl implements DistributedTaskLockServic
                 // 锁已被占用
                 return null;
             } catch (RuntimeException ignored) {
-                // Redis unavailable: local locking keeps a single instance safe and availability
-                // intact.
+                // Redis unavailable: fall back to the JVM-local lock. This guarantees
+                // per-instance mutual exclusion ONLY — across instances, the same task
+                // may still be executed concurrently while Redis is down. Availability
+                // is kept intact at the cost of cross-instance consistency.
             }
         }
         // 降级到本地锁：add 成功表示抢到

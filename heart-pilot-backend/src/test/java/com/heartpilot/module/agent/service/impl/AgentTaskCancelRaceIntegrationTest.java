@@ -80,7 +80,8 @@ class AgentTaskCancelRaceIntegrationTest {
                                 "广西壮族自治区",
                                 "南宁市",
                                 null,
-                                List.of()));
+                                List.of(),
+                                null));
         AgentTaskStatus afterConfirm =
                 tasks.get(task.getId(), user.getId()).task().getStatus();
         assertEquals(AgentTaskStatus.CANCELLED, afterConfirm, "取消后确认不得把状态覆盖为成功");

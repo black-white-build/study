@@ -9,6 +9,7 @@ import com.heartpilot.infrastructure.ai.ConversationClassifier;
 import com.heartpilot.infrastructure.ai.PromptRegistry;
 import com.heartpilot.infrastructure.ai.RelationshipAiClient;
 import com.heartpilot.infrastructure.ai.StructuredAnswerRenderer;
+import com.heartpilot.infrastructure.ai.tool.CapabilityStatusRecorder;
 import com.heartpilot.module.agent.service.RedisResultCacheService;
 import com.heartpilot.module.conversation.entity.AiConversation;
 import com.heartpilot.module.conversation.entity.AiMessage;
@@ -78,6 +79,9 @@ public class ConversationServiceImpl implements ConversationService {
     private final ObjectMapper json;
     private final MeterRegistry metrics;
 
+    /** 外部能力状态记录器：普通对话成功/失败时更新 AI 对话状态，供任务页状态栏展示 */
+    private final CapabilityStatusRecorder statusRecorder;
+
     /** 携带到模型的最大历史消息条数，配置项 app.chat.max-context-messages */
     private final int maxMessages;
 
@@ -120,7 +124,8 @@ public class ConversationServiceImpl implements ConversationService {
             @Value("${app.chat.max-retries:2}") int maxRetries,
             @Value("${app.chat.input-cny-per-million-tokens:0.8}") double inputCnyPerMillionTokens,
             @Value("${app.chat.output-cny-per-million-tokens:2.0}")
-                    double outputCnyPerMillionTokens) {
+                    double outputCnyPerMillionTokens,
+            CapabilityStatusRecorder statusRecorder) {
         this.conversations = conversations;
         this.messages = messages;
         this.ai = ai;
@@ -140,6 +145,7 @@ public class ConversationServiceImpl implements ConversationService {
         this.maxRetries = maxRetries;
         this.inputCnyPerMillionTokens = inputCnyPerMillionTokens;
         this.outputCnyPerMillionTokens = outputCnyPerMillionTokens;
+        this.statusRecorder = statusRecorder;
         Gauge.builder("heartpilot.chat.active_generations", active, Map::size).register(metrics);
     }
 
@@ -525,6 +531,8 @@ public class ConversationServiceImpl implements ConversationService {
         }
         generation.emitter.complete();
         recordDuration(generation, "success");
+        // 普通对话成功：更新 AI 对话能力状态为正常（覆盖初始"未配置 key"误报）
+        statusRecorder.recordAiChat(CapabilityStatusRecorder.Status.OK, "AI 对话正常");
     }
 
     /** 流式失败收尾：保存已生成的部分内容并标记 FAILED，推送 error 事件，记录失败计数 */
@@ -543,6 +551,28 @@ public class ConversationServiceImpl implements ConversationService {
         generation.emitter.complete();
         metrics.counter("heartpilot.chat.failures").increment();
         recordDuration(generation, "failure");
+        // 普通对话失败：按是否额度问题分类记录 AI 对话能力状态
+        if (isQuotaError(error)) {
+            statusRecorder.recordAiChat(
+                    CapabilityStatusRecorder.Status.QUOTA_EXHAUSTED,
+                    "对话 key 额度不足或已欠费，请检查通义账户余额");
+        } else {
+            String detail = error.getMessage() == null ? "模型调用失败" : error.getMessage();
+            statusRecorder.recordAiChat(
+                    CapabilityStatusRecorder.Status.ERROR,
+                    detail.length() > 120 ? detail.substring(0, 120) : detail);
+        }
+    }
+
+    /** AI 调用异常是否属于额度/限流类（额度不足、QPS 超限、欠费） */
+    private boolean isQuotaError(Throwable error) {
+        String msg = error.getMessage() == null ? "" : error.getMessage().toLowerCase();
+        return msg.contains("429")
+                || msg.contains("quota")
+                || msg.contains("insufficient")
+                || msg.contains("billing")
+                || msg.contains("throttl")
+                || msg.contains("rate limit");
     }
 
     /** 把流式累积的最终内容持久化到 assistant 消息，并补全 token、成本、耗时统计。 命中缓存时输入/输出成本清零，改为计入"缓存节省成本"。 */

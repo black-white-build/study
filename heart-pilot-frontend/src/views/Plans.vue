@@ -241,20 +241,14 @@
             </select>
           </div>
         </div>
-        <div class="grid-2">
-          <div class="field">
-            <label>礼物形式</label>
-            <select v-model="form.giftForm" class="select">
-              <option value="">不限</option>
-              <option value="实物">实物</option>
-              <option value="红包">红包</option>
-              <option value="体验类活动">体验类活动</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>对方年龄 <small>选填，便于缩小品类范围</small></label
-            ><input v-model="form.recipientAge" class="input" placeholder="例如：22" />
-          </div>
+        <div class="field">
+          <label>礼物形式</label>
+          <select v-model="form.giftForm" class="select">
+            <option value="">不限</option>
+            <option value="实物">实物</option>
+            <option value="红包">红包</option>
+            <option value="体验类活动">体验类活动</option>
+          </select>
         </div>
         <div class="field">
           <label>对方喜好或禁忌</label
@@ -297,24 +291,6 @@
         </div>
       </div>
 
-      <div class="grid-2">
-        <div class="field">
-          <label>时间约束 <small>选填</small></label
-          ><input
-            v-model="form.timeConstraint"
-            class="input"
-            :placeholder="timePlaceholder"
-          />
-        </div>
-      </div>
-      <div v-if="form.actionKind !== 'SELF_PRACTICE'" class="field">
-        <label>沟通背景 <small>选填，补充双方关系与最近发生了什么</small></label
-        ><textarea
-          v-model="form.contextNotes"
-          class="textarea"
-          placeholder="例如：上次见面聊得不愉快，最近联系变少，想缓和一下"
-        ></textarea>
-      </div>
       <div class="field">
         <label>明确边界 <small>选填，不希望计划做什么</small></label
         ><textarea
@@ -353,8 +329,6 @@ interface TaskForm {
   objective: string
   goalType: string
   actionKind: string
-  timeConstraint: string
-  contextNotes: string
   boundary: string
   province: string
   city: string
@@ -370,7 +344,6 @@ interface TaskForm {
   occasionType: string
   recipientPreferences: string
   giftForm: string
-  recipientAge: string
   planContent: string
   expectedOutcome: string
   frequency: string
@@ -389,8 +362,6 @@ const router = useRouter(),
     objective: '',
     goalType: '',
     actionKind: '',
-    timeConstraint: '',
-    contextNotes: '',
     boundary: '',
     province: '',
     city: '',
@@ -406,7 +377,6 @@ const router = useRouter(),
     occasionType: '',
     recipientPreferences: '',
     giftForm: '',
-    recipientAge: '',
     planContent: '',
     expectedOutcome: '',
     frequency: ''
@@ -453,15 +423,6 @@ const filtered = computed(() =>
 const planningMode = computed(() => route.meta.planning === true)
 const placeSelected = computed(() => form.actionKind === 'PLACE_VISIT')
 const venueTypes: string[] = ['吃饭', '咖啡', '公园', '看展', '散步', '其他']
-const timePlaceholder = computed(() => {
-  switch (form.actionKind) {
-    case 'PLACE_VISIT': return '例如：这周六下午，对方晚上 8 点前要回家'
-    case 'MESSAGE': return '例如：今晚 9 点左右发比较合适'
-    case 'GIFT_RITUAL': return '例如：这周五前送到，赶上周日生日'
-    case 'SELF_PRACTICE': return '例如：每天晚上复盘 15 分钟'
-    default: return '例如：这周六下午，对方晚上 8 点前要回家'
-  }
-})
 const goalTypeOptions: Record<string, string> = {
   CONNECTION: '增进连接',
   REPAIR: '修复关系',
@@ -571,7 +532,6 @@ async function create() {
       if (form.giftBudget) extraLines.push(`礼物预算：${form.giftBudget}`)
       if (form.occasionType) extraLines.push(`送礼场合：${form.occasionType}`)
       if (form.giftForm) extraLines.push(`礼物形式：${form.giftForm}`)
-      if (form.recipientAge) extraLines.push(`对方年龄：${form.recipientAge}岁`)
       if (form.recipientPreferences) extraLines.push(`对方喜好：${form.recipientPreferences}`)
     }
     if (form.actionKind === 'SELF_PRACTICE') {
@@ -580,8 +540,6 @@ async function create() {
       if (form.frequency) extraLines.push(`频率：${form.frequency}`)
     }
     const background = [
-      form.timeConstraint ? `时间约束：${form.timeConstraint}` : '',
-      form.contextNotes ? `沟通背景：${form.contextNotes}` : '',
       form.boundary ? `明确边界：${form.boundary}` : '',
       ...extraLines
     ]
@@ -600,12 +558,18 @@ async function create() {
           questions: place ? questions : [],
           goalType: form.goalType || undefined,
           preferredActionKinds: [form.actionKind],
+          // 消息行动：渠道/语气/回复期待单独透传，供后端结构化读取；contextNotes 仍保留文本行用于展示
+          messageChannel: form.actionKind === 'MESSAGE' ? form.messageChannel || undefined : undefined,
+          toneStyle: form.actionKind === 'MESSAGE' ? form.toneStyle || undefined : undefined,
+          replyExpectation:
+            form.actionKind === 'MESSAGE' ? form.replyExpectation || undefined : undefined,
           contextNotes: background || undefined
         }
       },
       { headers: { 'Idempotency-Key': key } }
     )
     showCreate.value = false
+    if (!t?.id) throw new Error('任务创建成功但未返回 ID，请刷新列表查看')
     // 触发任务在后台运行，不等待完成，立刻跳转到详情页看生成进度
     streamSSE(`/agent-tasks/${t.id}/run`, null, {}).catch(() => {})
     router.push(`/plans/${t.id}`)
