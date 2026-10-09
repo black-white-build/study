@@ -7,9 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-/**
- * 消息（AiMessage）数据访问层。
- */
+/** 消息（AiMessage）数据访问层。 */
 public interface MessageRepository extends JpaRepository<AiMessage, Long> {
     /** 按时间正序取出某会话下某用户的全部消息，用于拼接上下文 */
     List<AiMessage> findByConversationIdAndUserIdOrderByCreatedAtAsc(

@@ -7,14 +7,11 @@ import com.heartpilot.module.agent.entity.enums.AgentExecutionPhase;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Agent 执行轨迹服务。
- * 负责记录与查询任务执行过程中的每一个事件（思考、工具调用、结果、错误等），
- * 用于前端时间线展示与执行溯源。每条轨迹绑定任务版本号，便于区分同一任务多次修订。
- */
+/** Agent 执行轨迹服务。 负责记录与查询任务执行过程中的每一个事件（思考、工具调用、结果、错误等）， 用于前端时间线展示与执行溯源。每条轨迹绑定任务版本号，便于区分同一任务多次修订。 */
 public interface AgentExecutionTraceService {
     /**
      * 查询某任务的全部执行轨迹事件（按时间顺序）。
+     *
      * @param taskId 任务 ID
      * @return 事件列表
      */
@@ -57,6 +54,7 @@ public interface AgentExecutionTraceService {
 
     /**
      * 删除某任务的全部轨迹（随任务删除级联清理）。
+     *
      * @param taskId 任务 ID
      */
     void deleteByTaskId(Long taskId);

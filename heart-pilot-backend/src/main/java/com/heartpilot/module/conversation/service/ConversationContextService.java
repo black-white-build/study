@@ -18,6 +18,7 @@ public class ConversationContextService {
     /** JSON 反序列化目标类型，避免每次读取都重复创建 TypeReference。 */
     private static final TypeReference<List<Map<String, Object>>> LIST_TYPE =
             new TypeReference<>() {};
+
     private final ConversationContextStateRepository states;
     private final ObjectMapper json;
 

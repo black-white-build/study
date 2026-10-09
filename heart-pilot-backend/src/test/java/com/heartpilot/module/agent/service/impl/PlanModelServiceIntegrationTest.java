@@ -25,10 +25,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 /**
- * 计划产物模型集成测试（P4）。
- * 验证三张新表在真实 JPA 映射下的完整生命周期：
- * 创建计划 → 保存草稿版本与条目 → 确认（APPROVED）→ 重规划新版本（历史保留）→
- * 驳回草稿 → 删除任务级联清理。
+ * 计划产物模型集成测试（P4）。 验证三张新表在真实 JPA 映射下的完整生命周期： 创建计划 → 保存草稿版本与条目 → 确认（APPROVED）→ 重规划新版本（历史保留）→ 驳回草稿 →
+ * 删除任务级联清理。
  */
 @SpringBootTest
 class PlanModelServiceIntegrationTest {
@@ -76,7 +74,8 @@ class PlanModelServiceIntegrationTest {
                 planModel.saveDraft(
                         task,
                         GoalType.REPAIR,
-                        List.of(new EnrichedAction(place, List.of("https://example.test/place")),
+                        List.of(
+                                new EnrichedAction(place, List.of("https://example.test/place")),
                                 new EnrichedAction(message, List.of())),
                         "7000 元");
 
@@ -107,7 +106,10 @@ class PlanModelServiceIntegrationTest {
         conversation.setPayloadJson("{\"opening\":\"最近有一件事想和你聊聊\"}");
         PlanVersion draftV1 =
                 planModel.saveDraft(
-                        task, GoalType.REPAIR, List.of(new EnrichedAction(conversation, List.of())), "未限定");
+                        task,
+                        GoalType.REPAIR,
+                        List.of(new EnrichedAction(conversation, List.of())),
+                        "未限定");
 
         assertEquals(1, draftV1.getVersionNo());
         List<PlanVersion> allVersions = planModel.versions(plan.getId());

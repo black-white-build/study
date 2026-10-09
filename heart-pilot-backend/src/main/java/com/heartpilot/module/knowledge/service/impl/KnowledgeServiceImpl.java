@@ -74,10 +74,13 @@ public class KnowledgeServiceImpl implements KnowledgeService {
 
     private final MeterRegistry metrics;
     private final RedisResultCacheService cache;
+
     /** 检索前的查询改写与分类/场景路由，用于缓存键组装与结果过滤 */
     private final KnowledgeQueryPlanner queryPlanner;
+
     /** Markdown 文档解析器，全量重建知识库时按标题切分章节与元数据 */
     private final KnowledgeMarkdownParser markdownParser;
+
     /** 向量相似度阈值，低于该值的弱相关结果被过滤 */
     private final double similarityThreshold;
 
@@ -115,8 +118,8 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     }
 
     /**
-     * 手动上传实现：先校验 MIME 白名单与文件非空，读取字节后以 manual- 前缀生成索引版本、计算内容 SHA-256，
-     * 再统一委托 ingest() 完成对象存储落库与解析切片；字节读取失败抛 422，解析失败由 ingest 统一转 422 并置 FAILED。
+     * 手动上传实现：先校验 MIME 白名单与文件非空，读取字节后以 manual- 前缀生成索引版本、计算内容 SHA-256， 再统一委托 ingest()
+     * 完成对象存储落库与解析切片；字节读取失败抛 422，解析失败由 ingest 统一转 422 并置 FAILED。
      */
     @Override
     public KnowledgeDocument upload(MultipartFile file, DocumentMetadata metadata, Long userId) {
@@ -140,10 +143,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         }
     }
 
-    /**
-     * 文档入库统一入口：写入元数据 → 存对象存储 → 触发解析切片。
-     * indexText 非空时用其作为索引/向量化文本（重建场景），否则用原始字节。
-     */
+    /** 文档入库统一入口：写入元数据 → 存对象存储 → 触发解析切片。 indexText 非空时用其作为索引/向量化文本（重建场景），否则用原始字节。 */
     private KnowledgeDocument ingest(
             String originalName,
             String contentType,
@@ -206,8 +206,8 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     }
 
     /**
-     * 全量重建实现：流式遍历目录下 .md 文件逐个用 markdownParser 解析，以全部文档内容哈希再摘要作为本次 indexVersion；
-     * 先逐个 delete 清空旧文档（级联清理向量与对象存储），再按目录顺序重新 ingest 入库，最后汇总文档数与切片数返回。
+     * 全量重建实现：流式遍历目录下 .md 文件逐个用 markdownParser 解析，以全部文档内容哈希再摘要作为本次 indexVersion； 先逐个 delete
+     * 清空旧文档（级联清理向量与对象存储），再按目录顺序重新 ingest 入库，最后汇总文档数与切片数返回。
      */
     @Override
     public RebuildResult rebuildRepository(Path sourceDirectory, Long userId) {
@@ -270,8 +270,8 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     }
 
     /**
-     * 实现：取最近更新的 READY 文档的 indexVersion 作为当前版本，无任何就绪文档时回退 "empty"；
-     * 该版本号会拼进检索 Redis 缓存键并写入消息审计快照，内容变化时缓存自然失效。
+     * 实现：取最近更新的 READY 文档的 indexVersion 作为当前版本，无任何就绪文档时回退 "empty"； 该版本号会拼进检索 Redis
+     * 缓存键并写入消息审计快照，内容变化时缓存自然失效。
      */
     @Override
     public String currentIndexVersion() {
@@ -333,8 +333,8 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     }
 
     /**
-     * 检索实现：先经 queryPlanner 生成改写查询/分类/场景/词表，组装含索引版本的 Redis 缓存键；
-     * 缓存命中直接返回，未命中委托 retrieveUncached（PGVector 语义优先、异常或不足时关键词兜底），结果再回填缓存。
+     * 检索实现：先经 queryPlanner 生成改写查询/分类/场景/词表，组装含索引版本的 Redis 缓存键； 缓存命中直接返回，未命中委托
+     * retrieveUncached（PGVector 语义优先、异常或不足时关键词兜底），结果再回填缓存。
      */
     @Override
     public List<Source> retrieve(String query, int limit) {
@@ -512,10 +512,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         return documents.findAll(pageable);
     }
 
-    /**
-     * 查看内容实现：只读取已经持久化的切片，并严格按 chunkIndex 升序拼接。
-     * 切片之间保留空行便于管理员核对边界，不触发 Tika 解析或重新向量化。
-     */
+    /** 查看内容实现：只读取已经持久化的切片，并严格按 chunkIndex 升序拼接。 切片之间保留空行便于管理员核对边界，不触发 Tika 解析或重新向量化。 */
     @Override
     public DocumentContent content(Long id) {
         KnowledgeDocument document =
@@ -530,10 +527,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
                 document.getId(), document.getOriginalName(), orderedChunks.size(), content);
     }
 
-    /**
-     * 审核通过实现：只允许 READY + IN_REVIEW 状态流转。
-     * 同时生成新的索引版本，使包含旧版本号的检索与回答缓存自然失效，保证通过后可立即被检索。
-     */
+    /** 审核通过实现：只允许 READY + IN_REVIEW 状态流转。 同时生成新的索引版本，使包含旧版本号的检索与回答缓存自然失效，保证通过后可立即被检索。 */
     @Transactional
     @Override
     public KnowledgeDocument approve(Long id) {

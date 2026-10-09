@@ -15,20 +15,21 @@ import org.springframework.stereotype.Service;
 /**
  * 送礼关键词池服务：候选池前置 + 黑名单过滤。
  *
- * <p>角色定义（轻量串行多 Agent 流水线的第 2 个角色）：商品检索 Agent。
- * 基于结构化约束生成多组差异化搜索词（3 套方案强制分属不同品类），
- * 随后由纯 Java 代码做两层把关：
+ * <p>角色定义（轻量串行多 Agent 流水线的第 2 个角色）：商品检索 Agent。 基于结构化约束生成多组差异化搜索词（3 套方案强制分属不同品类）， 随后由纯 Java 代码做两层把关：
+ *
  * <ol>
- *   <li>黑名单过滤：命中排除/禁止品类的关键词直接删除，并抽取排除词附加到搜索链接（减号过滤）</li>
- *   <li>平台 URL 生成：生成淘宝 / 京东 / 抖音的搜索跳转链接</li>
+ *   <li>黑名单过滤：命中排除/禁止品类的关键词直接删除，并抽取排除词附加到搜索链接（减号过滤）
+ *   <li>平台 URL 生成：生成淘宝 / 京东 / 抖音的搜索跳转链接
  * </ol>
  */
 @Service
 public class GiftKeywordService {
     /** 关键词组数（3 套方案强制不同品类） */
     private static final int GROUP_COUNT = 3;
+
     /** 每组关键词数量 */
     private static final int KEYWORDS_PER_GROUP = 2;
+
     /** 关键词结果非法时最大重试次数 */
     private static final int MAX_RETRIES = 2;
 
@@ -47,6 +48,7 @@ public class GiftKeywordService {
 
     private final ChatClient client;
     private final boolean enabled;
+
     /** 轻量领域提示（Tier3 RAG 简化版：礼品优缺点词库） */
     private final DomainTipsProvider tipsProvider;
 
@@ -74,6 +76,7 @@ public class GiftKeywordService {
 
     /**
      * 生成并过滤关键词池。
+     *
      * @param requirement 结构化需求（GIFT 类型）
      * @param fallbackSeed 降级用种子文本（目标/背景）
      * @return 关键词方案
@@ -141,7 +144,8 @@ public class GiftKeywordService {
     }
 
     /** 组装生成 Prompt */
-    private String userPrompt(StructuredRequirement requirement, String fallbackSeed, String feedback) {
+    private String userPrompt(
+            StructuredRequirement requirement, String fallbackSeed, String feedback) {
         StringBuilder prompt = new StringBuilder();
         if (requirement != null) {
             prompt.append("结构化需求（约束的唯一来源）：\n").append(requirement.summary()).append("\n");
@@ -213,8 +217,7 @@ public class GiftKeywordService {
     private List<KeywordGroup> fallbackGroups(String seed) {
         String text = seed == null ? "" : seed;
         List<KeywordGroup> groups = new ArrayList<>();
-        if (text.contains("茶"))
-            groups.add(new KeywordGroup("茶饮茶具", List.of("茶叶 礼盒", "茶具 套装")));
+        if (text.contains("茶")) groups.add(new KeywordGroup("茶饮茶具", List.of("茶叶 礼盒", "茶具 套装")));
         if (text.contains("游戏") || text.contains("外设") || text.contains("电脑"))
             groups.add(new KeywordGroup("游戏外设", List.of("机械键盘", "游戏耳机")));
         if (text.contains("香") || text.contains("香水"))
@@ -227,20 +230,25 @@ public class GiftKeywordService {
     }
 
     /**
-     * 生成淘宝/京东/拼多多搜索跳转链接。
-     * 平台选择说明：京东、拼多多网页版匿名即可查看搜索结果；
-     * 淘宝网页版首次打开需登录（登录一次后浏览器记住 Cookie 不再弹）；
+     * 生成淘宝/京东/拼多多搜索跳转链接。 平台选择说明：京东、拼多多网页版匿名即可查看搜索结果； 淘宝网页版首次打开需登录（登录一次后浏览器记住 Cookie 不再弹）；
      * 抖音网页版强制登录/验证码，已移除该入口。
      */
     private List<PlatformUrl> platformUrls(String keyword, List<String> excludedTerms) {
         // 电商搜索排除语法（减号过滤）：京东支持，其余平台尽力兼容
-        String jdQuery = excludedTerms.isEmpty()
-                ? keyword
-                : keyword + excludedTerms.stream().map(t -> " -" + t).reduce("", String::concat);
+        String jdQuery =
+                excludedTerms.isEmpty()
+                        ? keyword
+                        : keyword
+                                + excludedTerms.stream()
+                                        .map(t -> " -" + t)
+                                        .reduce("", String::concat);
         return List.of(
                 new PlatformUrl("淘宝", "https://s.taobao.com/search?q=" + encode(keyword)),
                 new PlatformUrl("京东", "https://search.jd.com/Search?keyword=" + encode(jdQuery)),
-                new PlatformUrl("拼多多", "https://mobile.yangkeduo.com/search_result.html?search_key=" + encode(keyword)));
+                new PlatformUrl(
+                        "拼多多",
+                        "https://mobile.yangkeduo.com/search_result.html?search_key="
+                                + encode(keyword)));
     }
 
     private String encode(String value) {

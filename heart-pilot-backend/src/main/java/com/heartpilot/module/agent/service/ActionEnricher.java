@@ -5,12 +5,9 @@ import com.heartpilot.module.agent.entity.enums.GoalType;
 import java.util.Map;
 
 /**
- * 行动条目富化器（P7）。
- * 每种执行方式对应一个策略实现：把"行动草案"（做什么）富化为
- * "可执行的结构化行动条目"（怎么做：地点、消息草稿、沟通脚本、练习、观察等）。
+ * 行动条目富化器（P7）。 每种执行方式对应一个策略实现：把"行动草案"（做什么）富化为 "可执行的结构化行动条目"（怎么做：地点、消息草稿、沟通脚本、练习、观察等）。
  *
- * 与 AgentToolExecutor 的关系：AgentToolExecutor 是通用工具调用基础设施
- * （幂等/超时/重试/审计），富化器是编排层，内部通过它调用外部工具。
+ * <p>与 AgentToolExecutor 的关系：AgentToolExecutor 是通用工具调用基础设施 （幂等/超时/重试/审计），富化器是编排层，内部通过它调用外部工具。
  */
 public interface ActionEnricher {
     /** 该富化器支持的行动草案类型 */
@@ -22,8 +19,9 @@ public interface ActionEnricher {
             Map<String, Object> hints) {}
 
     /** 富化结果：一条可持久化的行动条目 + 引用来源 */
-    record EnrichedAction(com.heartpilot.module.agent.entity.PlanActionItem item,
-                          java.util.List<String> sourceReferences) {}
+    record EnrichedAction(
+            com.heartpilot.module.agent.entity.PlanActionItem item,
+            java.util.List<String> sourceReferences) {}
 
     /** 是否支持某种执行方式 */
     boolean supports(ExecutionKind kind);

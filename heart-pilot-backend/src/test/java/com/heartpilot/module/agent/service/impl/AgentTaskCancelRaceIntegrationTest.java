@@ -18,10 +18,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 /**
- * 取消竞态集成测试（P12）。
- * 验证"用户取消后不能被覆盖成成功"：
- * 任务进入等待确认后取消 → 状态置为 CANCELLED；此后即使调用确认接口
- * 也会被状态守卫拒绝，最终状态保持 CANCELLED，不会被覆盖为 SUCCEEDED。
+ * 取消竞态集成测试（P12）。 验证"用户取消后不能被覆盖成成功"： 任务进入等待确认后取消 → 状态置为 CANCELLED；此后即使调用确认接口 也会被状态守卫拒绝，最终状态保持
+ * CANCELLED，不会被覆盖为 SUCCEEDED。
  */
 @SpringBootTest
 class AgentTaskCancelRaceIntegrationTest {
@@ -66,7 +64,9 @@ class AgentTaskCancelRaceIntegrationTest {
 
         // 用户取消
         tasks.cancel(task.getId(), user.getId());
-        assertEquals(AgentTaskStatus.CANCELLED, tasks.get(task.getId(), user.getId()).task().getStatus());
+        assertEquals(
+                AgentTaskStatus.CANCELLED,
+                tasks.get(task.getId(), user.getId()).task().getStatus());
 
         // 取消后再次确认：状态守卫拒绝，绝不能变成 SUCCEEDED
         assertThrows(
@@ -82,8 +82,7 @@ class AgentTaskCancelRaceIntegrationTest {
                                 null,
                                 List.of(),
                                 null));
-        AgentTaskStatus afterConfirm =
-                tasks.get(task.getId(), user.getId()).task().getStatus();
+        AgentTaskStatus afterConfirm = tasks.get(task.getId(), user.getId()).task().getStatus();
         assertEquals(AgentTaskStatus.CANCELLED, afterConfirm, "取消后确认不得把状态覆盖为成功");
     }
 }

@@ -6,10 +6,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 /**
- * 工具调用记录实体，对应数据库表 tool_call_record。
- * 记录 Agent 在执行过程中对外部工具/能力（检索、地图、天气等）的每一次调用，
- * 含入参、结果摘要、耗时、状态与幂等键，用于审计、排障与幂等控制。
- * idempotencyKey 唯一约束保证同一工具调用不会因重试而重复执行。
+ * 工具调用记录实体，对应数据库表 tool_call_record。 记录 Agent 在执行过程中对外部工具/能力（检索、地图、天气等）的每一次调用，
+ * 含入参、结果摘要、耗时、状态与幂等键，用于审计、排障与幂等控制。 idempotencyKey 唯一约束保证同一工具调用不会因重试而重复执行。
  */
 @Entity
 @Table(

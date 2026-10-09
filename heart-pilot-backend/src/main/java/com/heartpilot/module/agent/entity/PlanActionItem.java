@@ -18,13 +18,10 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * 计划行动条目实体，对应数据库表 plan_action_item。
- * 一个计划版本下包含多条行动条目，每条行动同时具备：
- * - executionKind（执行方式）：地点/消息/沟通/表达/自我练习/观察
- * - goalType（行动目标）：连接/修复/边界/庆祝/决定/自我成长
- * - payloadJson：该类型行动的结构化数据（地点信息、消息草稿、沟通脚本等），
- *   第一版用 JSON 存储，避免为每种行动建一张表
- * - status：逐条完成状态，支撑"我的计划"页面的完成情况展示
+ * 计划行动条目实体，对应数据库表 plan_action_item。 一个计划版本下包含多条行动条目，每条行动同时具备： -
+ * executionKind（执行方式）：地点/消息/沟通/表达/自我练习/观察 - goalType（行动目标）：连接/修复/边界/庆祝/决定/自我成长 -
+ * payloadJson：该类型行动的结构化数据（地点信息、消息草稿、沟通脚本等）， 第一版用 JSON 存储，避免为每种行动建一张表 -
+ * status：逐条完成状态，支撑"我的计划"页面的完成情况展示
  */
 @Entity
 @Table(

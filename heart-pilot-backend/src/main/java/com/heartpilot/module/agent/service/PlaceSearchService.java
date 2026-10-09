@@ -5,17 +5,14 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-/**
- * 地点检索服务。
- * 封装高德地图等外部地图/搜索能力：按城市与需求检索 POI 地点、地点间路线规划，
- * 并把检索结果组装为结构化证据（JourneyEvidence）供大模型与报告使用。
- */
+/** 地点检索服务。 封装高德地图等外部地图/搜索能力：按城市与需求检索 POI 地点、地点间路线规划， 并把检索结果组装为结构化证据（JourneyEvidence）供大模型与报告使用。 */
 public interface PlaceSearchService {
     /** 检索时间统一格式（Asia/Shanghai 时区），用于在输出文本中标注实时检索时刻 */
     DateTimeFormatter SEARCH_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /**
      * 按城市与需求检索地点（可分组、可附公开网页来源）。
+     *
      * @param city 目标城市
      * @param objective 检索需求
      * @return 检索结果
@@ -23,9 +20,9 @@ public interface PlaceSearchService {
     SearchResult search(String city, String objective);
 
     /**
-     * 拉取候选点位池（Tier2：候选池前置，参考 ITINERA）。
-     * 与 search 的区别：每个检索主题取更多 POI（扩大候选池），
-     * 后续由候选挑选 Agent 只从池内挑选排序，禁止凭空编造地点。
+     * 拉取候选点位池（Tier2：候选池前置，参考 ITINERA）。 与 search 的区别：每个检索主题取更多 POI（扩大候选池）， 后续由候选挑选 Agent
+     * 只从池内挑选排序，禁止凭空编造地点。
+     *
      * @param city 目标城市
      * @param objective 检索需求
      * @return 候选池检索结果（分组，每类候选数量更多）
@@ -33,8 +30,8 @@ public interface PlaceSearchService {
     SearchResult searchPool(String city, String objective);
 
     /**
-     * 基于已挑选的点位构建行程证据（候选挑选 Agent 输出 → 路线规划 → 证据）。
-     * 对挑选出的点位逐个规划相邻路线，并生成地图卡片。
+     * 基于已挑选的点位构建行程证据（候选挑选 Agent 输出 → 路线规划 → 证据）。 对挑选出的点位逐个规划相邻路线，并生成地图卡片。
+     *
      * @param city 目标城市
      * @param selectedPlaces 已挑选并按序排列的点位
      * @return 行程证据（路线 + 地图卡片 + 说明）
@@ -43,6 +40,7 @@ public interface PlaceSearchService {
 
     /**
      * 执行完整行程研究：地点检索 + 路线规划。
+     *
      * @param city 目标城市
      * @param objective 检索需求
      * @return 研究结果（检索文本 + 证据）
@@ -51,26 +49,26 @@ public interface PlaceSearchService {
 
     /**
      * 把单次地点检索结果组装为结构化行程证据（供报告与溯源）。
+     *
      * @param searchResult 地点检索结果
      * @return 行程证据
      */
     JourneyEvidence buildJourneyEvidence(SearchResult searchResult);
 
     /**
-     * 基于已持久化的候选池，重新随机抽取一批候选地点卡片（不调外部 API）。
-     * 行程主线（places）与路线（routes）保持不变，仅替换 mapCards：
-     * 主线卡片排最前并保留路线信息，其余位置按类别均衡随机抽样填充，
-     * 用 seed 控制随机性，多次调用传入不同 seed 可得到不同批次（允许与上一批部分重合）。
+     * 基于已持久化的候选池，重新随机抽取一批候选地点卡片（不调外部 API）。 行程主线（places）与路线（routes）保持不变，仅替换 mapCards：
+     * 主线卡片排最前并保留路线信息，其余位置按类别均衡随机抽样填充， 用 seed 控制随机性，多次调用传入不同 seed 可得到不同批次（允许与上一批部分重合）。
      *
      * @param current 当前行程证据（保留其 places/routes/notice 等不变字段）
-     * @param pool    首次检索时持久化的候选池（分组结果）
-     * @param seed    随机种子，每次"换一批"传入新值
+     * @param pool 首次检索时持久化的候选池（分组结果）
+     * @param seed 随机种子，每次"换一批"传入新值
      * @return 替换了 mapCards 的新证据
      */
     JourneyEvidence reshuffleCandidateCards(JourneyEvidence current, SearchResult pool, long seed);
 
     /**
      * 单个 POI 地点。
+     *
      * @param poiId 地点 ID
      * @param name 地点名称
      * @param address 地址
@@ -152,6 +150,7 @@ public interface PlaceSearchService {
 
     /**
      * 一组同类别检索结果（一个意图类别对应一组地点 + 网页来源）。
+     *
      * @param label 类别展示名
      * @param query 该类别实际使用的检索词
      * @param places 该类别下的地点列表
@@ -181,6 +180,7 @@ public interface PlaceSearchService {
 
     /**
      * 地点检索结果。
+     *
      * @param provider 数据提供方
      * @param city 检索城市
      * @param keywords 动态检索类别关键词
@@ -254,6 +254,7 @@ public interface PlaceSearchService {
 
     /**
      * 两地之间的路线规划。
+     *
      * @param originName 起点名称
      * @param destinationName 终点名称
      * @param distanceMeters 距离（米）
@@ -319,12 +320,15 @@ public interface PlaceSearchService {
                     + "，约 "
                     + durationMinutes
                     + " 分钟\n路线："
-                    + "[打开导航](" + navigationUrl + ")";
+                    + "[打开导航]("
+                    + navigationUrl
+                    + ")";
         }
     }
 
     /**
      * 地图卡片：用于前端地图上逐个展示的地点信息。
+     *
      * @param poiId 地点 ID
      * @param name 名称
      * @param address 地址
@@ -364,6 +368,7 @@ public interface PlaceSearchService {
 
     /**
      * 可核验的行程证据（地点 + 路线 + 地图卡片），是报告生成与前端溯源的结构化依据。
+     *
      * @param provider 数据提供方
      * @param city 城市
      * @param topics 检索主题
@@ -439,6 +444,7 @@ public interface PlaceSearchService {
 
     /**
      * 行程研究完整结果：检索文本 + 结构化证据。
+     *
      * @param searchResult 地点检索结果
      * @param evidence 行程证据
      */

@@ -5,10 +5,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 /**
- * 已生成文件实体，对应数据库表 generated_file。
- * 记录由系统生成的文件（如 Agent 任务 PDF）在对象存储中的元数据：
- * 实际文件内容存放在本地磁盘或 MinIO，本记录只保存定位信息与关联业务。
- * 继承 BaseEntity 获得 id、创建时间等公共字段。
+ * 已生成文件实体，对应数据库表 generated_file。 记录由系统生成的文件（如 Agent 任务 PDF）在对象存储中的元数据： 实际文件内容存放在本地磁盘或
+ * MinIO，本记录只保存定位信息与关联业务。 继承 BaseEntity 获得 id、创建时间等公共字段。
  */
 @Entity
 @Table(

@@ -14,11 +14,13 @@ public class KnowledgeQueryPlanner {
     /** 句首客套开场白正则（如"请问""我想问一下"），改写查询时统一剥除以提升召回。 */
     private static final Pattern FILLER =
             Pattern.compile("^(请问|我想问一下|想咨询一下|能不能告诉我|帮我看看)[，,：:\\s]*");
+
     /** 按非字母数字字符切词的正则，用于提取检索关键词。 */
     private static final Pattern TOKEN_SPLIT = Pattern.compile("[^\\p{L}\\p{N}]+");
 
     /**
      * 知识查询规划器入口：对用户原始问句做预处理、意图分类、场景识别，生成查询Plan，供给RAG检索使用
+     *
      * @param rawQuery 用户原始输入问句
      * @return Plan查询计划对象，包含清洗后的查询文本、分类、场景、提取关键词
      */
@@ -56,6 +58,7 @@ public class KnowledgeQueryPlanner {
 
     /**
      * 从清洗后的查询文本中提取检索关键词terms，用于RAG检索，生成关键词集合
+     *
      * @param text 经过预处理、去掉开场白后的用户问句
      * @return 关键词列表，最多返回30个
      */

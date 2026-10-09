@@ -11,20 +11,21 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * MinIO 对象存储实现。
- * 当配置 app.storage.provider=minio 时生效，文件存入 MinIO（S3 兼容对象存储）。
- * 启动时检查 bucket 是否存在，不存在则自动创建。
+ * MinIO 对象存储实现。 当配置 app.storage.provider=minio 时生效，文件存入 MinIO（S3 兼容对象存储）。 启动时检查 bucket
+ * 是否存在，不存在则自动创建。
  */
 @Service
 @ConditionalOnProperty(name = "app.storage.provider", havingValue = "minio")
 public class MinioStorageServiceImpl implements StorageService {
     /** MinIO 客户端 */
     private final MinioClient client;
+
     /** 存储桶名称，来自配置 app.storage.minio.bucket */
     private final String bucket;
 
     /**
      * 构造 MinIO 客户端并确保 bucket 存在。
+     *
      * @param endpoint MinIO 服务地址
      * @param access 访问密钥
      * @param secret 私有密钥
@@ -45,6 +46,7 @@ public class MinioStorageServiceImpl implements StorageService {
 
     /**
      * 上传表单文件：转字节后委托给字节上传方法。
+     *
      * @param f 上传的文件
      * @param prefix 存储前缀（业务目录）
      */
@@ -53,8 +55,8 @@ public class MinioStorageServiceImpl implements StorageService {
     }
 
     /**
-     * 上传字节数组到 MinIO。
-     * 存储键 = prefix/UUID-文件名，UUID 前缀避免重名；文件名中的 "/" 替换为下划线防止路径异常。
+     * 上传字节数组到 MinIO。 存储键 = prefix/UUID-文件名，UUID 前缀避免重名；文件名中的 "/" 替换为下划线防止路径异常。
+     *
      * @param data 文件字节内容
      * @param name 原始文件名
      * @param type 文件 MIME 类型
@@ -84,6 +86,7 @@ public class MinioStorageServiceImpl implements StorageService {
 
     /**
      * 按存储键从 MinIO 读取对象全部字节。
+     *
      * @param key 对象存储键
      */
     public byte[] read(String key) throws IOException {
@@ -98,6 +101,7 @@ public class MinioStorageServiceImpl implements StorageService {
 
     /**
      * 按存储键删除 MinIO 对象。
+     *
      * @param key 对象存储键
      */
     public void delete(String key) throws IOException {

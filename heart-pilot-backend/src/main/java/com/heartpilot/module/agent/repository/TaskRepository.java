@@ -11,9 +11,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-/**
- * Agent 任务 Repository，操作 agent_task 表。
- */
+/** Agent 任务 Repository，操作 agent_task 表。 */
 public interface TaskRepository extends JpaRepository<AgentTask, Long> {
     /** 分页查询某用户的任务列表 */
     Page<AgentTask> findByUserId(Long userId, Pageable pageable);
@@ -25,10 +23,7 @@ public interface TaskRepository extends JpaRepository<AgentTask, Long> {
     Optional<AgentTask> findByUserIdAndRequestIdempotencyKey(
             Long userId, String requestIdempotencyKey);
 
-    /**
-     * 扫描僵死任务：状态为指定状态且心跳为空或早于阈值。
-     * 服务宕机恢复后据此重新接管未完成的任务。
-     */
+    /** 扫描僵死任务：状态为指定状态且心跳为空或早于阈值。 服务宕机恢复后据此重新接管未完成的任务。 */
     @Query(
             "select task from AgentTask task where task.status = :status "
                     + "and (task.heartbeatAt is null or task.heartbeatAt < :heartbeatBefore)")

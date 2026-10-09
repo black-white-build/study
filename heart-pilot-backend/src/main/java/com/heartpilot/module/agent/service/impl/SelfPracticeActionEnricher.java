@@ -10,13 +10,10 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 /**
- * 自我练习型行动富化器。
- * 产出面向自己的练习内容、建议时长与完成标准；不要求改变对方，不诊断他人。
+ * 自我练习型行动富化器。 产出面向自己的练习内容、建议时长与完成标准；不要求改变对方，不诊断他人。
  *
- * <p>多候选方案设计（参考送礼多候选思路）：草案提议器为自我练习生成多套候选草案
- * （hints.variant = 1..N），本富化器按 variant 向语言服务请求差异化方案；
- * 用户填写的计划内容/期望效果/频率（contextNotes）与历史修改要求（revisions）
- * 会一并传入提示词，确保练习内容围绕用户关键词展开，不再套用固定的情绪复盘模板。
+ * <p>多候选方案设计（参考送礼多候选思路）：草案提议器为自我练习生成多套候选草案 （hints.variant = 1..N），本富化器按 variant 向语言服务请求差异化方案；
+ * 用户填写的计划内容/期望效果/频率（contextNotes）与历史修改要求（revisions） 会一并传入提示词，确保练习内容围绕用户关键词展开，不再套用固定的情绪复盘模板。
  */
 @Service
 public class SelfPracticeActionEnricher extends AbstractActionEnricher {
@@ -38,27 +35,33 @@ public class SelfPracticeActionEnricher extends AbstractActionEnricher {
         int variant = variantOf(draft);
         String notes = practiceNotes(context);
         ActionLanguageService.PracticePlan practice =
-                language.draftPractice(goalText(draft, context), context.task().getObjective(), notes, variant);
+                language.draftPractice(
+                        goalText(draft, context), context.task().getObjective(), notes, variant);
         // 用 AI/降级返回的方案名覆盖草案标题（草案标题只是"候选方案N"占位）
         String name = practice.name();
         if (name != null && !name.isBlank()) item.setTitle(name);
         item.setInstruction(
-                "练习内容：" + practice.practiceContent()
-                        + "\n建议时长：" + practice.durationMinutes() + " 分钟"
-                        + "\n完成标准：" + practice.completionCriteria());
+                "练习内容："
+                        + practice.practiceContent()
+                        + "\n建议时长："
+                        + practice.durationMinutes()
+                        + " 分钟"
+                        + "\n完成标准："
+                        + practice.completionCriteria());
         item.setEstimatedDurationMinutes(practice.durationMinutes());
         item.setPayloadJson(
-                payload(Map.of(
-                        "name",
-                        name == null ? "" : name,
-                        "variant",
-                        variant,
-                        "practiceContent",
-                        practice.practiceContent(),
-                        "durationMinutes",
-                        practice.durationMinutes(),
-                        "completionCriteria",
-                        practice.completionCriteria())));
+                payload(
+                        Map.of(
+                                "name",
+                                name == null ? "" : name,
+                                "variant",
+                                variant,
+                                "practiceContent",
+                                practice.practiceContent(),
+                                "durationMinutes",
+                                practice.durationMinutes(),
+                                "completionCriteria",
+                                practice.completionCriteria())));
         return new EnrichedAction(item, List.of());
     }
 
@@ -74,10 +77,7 @@ public class SelfPracticeActionEnricher extends AbstractActionEnricher {
         }
     }
 
-    /**
-     * 提取练习相关输入：只保留与练习有关的行（计划内容/期望效果/频率/明确边界），
-     * 并追加历史修改要求（重新规划时用户填的修改原因），一起作为关键词分析的依据。
-     */
+    /** 提取练习相关输入：只保留与练习有关的行（计划内容/期望效果/频率/明确边界）， 并追加历史修改要求（重新规划时用户填的修改原因），一起作为关键词分析的依据。 */
     private String practiceNotes(PlanningContext context) {
         StringBuilder out = new StringBuilder();
         Object raw = context.parameters().get("contextNotes");
@@ -98,6 +98,8 @@ public class SelfPracticeActionEnricher extends AbstractActionEnricher {
 
     private String goalText(ActionDraft draft, PlanningContext context) {
         String goal = draft.goalType() == null ? "" : draft.goalType().label();
-        return goal.isBlank() ? context.task().getObjective() : goal + "：" + context.task().getObjective();
+        return goal.isBlank()
+                ? context.task().getObjective()
+                : goal + "：" + context.task().getObjective();
     }
 }

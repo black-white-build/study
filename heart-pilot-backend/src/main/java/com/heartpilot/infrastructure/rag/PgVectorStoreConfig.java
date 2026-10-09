@@ -11,20 +11,18 @@ import org.springframework.context.annotation.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * 生产环境（prod）向量库配置：使用 PostgreSQL + pgvector 持久化向量。
- * 与 RelationshipVectorStoreConfig（非 prod 用内存版 SimpleVectorStore）互为 Profile 互补，
- * 保证生产环境的向量检索在重启后数据不丢失。
+ * 生产环境（prod）向量库配置：使用 PostgreSQL + pgvector 持久化向量。 与 RelationshipVectorStoreConfig（非 prod 用内存版
+ * SimpleVectorStore）互为 Profile 互补， 保证生产环境的向量检索在重启后数据不丢失。
  */
 @Configuration
 @Profile("prod")
 public class PgVectorStoreConfig {
 
     /**
-     * 注册关系领域的向量存储 Bean。
-     * 配置项来源：环境变量 AI_EMBEDDING_DIMENSIONS（默认 1024，需与 Embedding 模型输出维度一致）。
+     * 注册关系领域的向量存储 Bean。 配置项来源：环境变量 AI_EMBEDDING_DIMENSIONS（默认 1024，需与 Embedding 模型输出维度一致）。
      * 使用余弦距离（COSINE_DISTANCE）+ HNSW 近似最近邻索引，initializeSchema=true 自动建表。
      *
-     * @param jdbc      JdbcTemplate，用于连接 pgvector 扩展的 PostgreSQL
+     * @param jdbc JdbcTemplate，用于连接 pgvector 扩展的 PostgreSQL
      * @param embedding Embedding 模型，负责把文本转向量
      * @param dimensions 向量维度
      */

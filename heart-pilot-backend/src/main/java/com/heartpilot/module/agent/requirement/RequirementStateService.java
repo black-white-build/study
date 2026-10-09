@@ -12,12 +12,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 结构化需求状态服务：持久化 + 增量局部修改。
+ *
  * <p>设计要点（对应 ITINERA / Vaiage 的持久化方案）：
+ *
  * <ul>
- *   <li>结构化 JSON 落库（agent_requirement_state），与对话文本分离，是约束的唯一权威来源</li>
- *   <li>用户修改单条约束（改预算、删黑名单、加必去点位）通过 PATCH 直接更新 JSON 对应字段，
- *       无需整段重写 prompt、无需重新抽取全部需求</li>
- *   <li>每次修改后立即用纯 Java 校验器重新校验，冲突实时反馈</li>
+ *   <li>结构化 JSON 落库（agent_requirement_state），与对话文本分离，是约束的唯一权威来源
+ *   <li>用户修改单条约束（改预算、删黑名单、加必去点位）通过 PATCH 直接更新 JSON 对应字段， 无需整段重写 prompt、无需重新抽取全部需求
+ *   <li>每次修改后立即用纯 Java 校验器重新校验，冲突实时反馈
  * </ul>
  */
 @Service
@@ -72,9 +73,8 @@ public class RequirementStateService {
     }
 
     /**
-     * 增量局部修改约束：按字段路径更新 JSON 后重新校验。
-     * 路径支持：硬性/优先/可选/排除四类列表（add/remove）、实体字段（set），
-     * 例如 {@code "place.budgetMax"}、{@code "exclusions"}、{@code "gift.forbiddenCategories"}。
+     * 增量局部修改约束：按字段路径更新 JSON 后重新校验。 路径支持：硬性/优先/可选/排除四类列表（add/remove）、实体字段（set）， 例如 {@code
+     * "place.budgetMax"}、{@code "exclusions"}、{@code "gift.forbiddenCategories"}。
      *
      * @param taskId 任务 ID
      * @param path 字段路径
@@ -93,8 +93,7 @@ public class RequirementStateService {
             JsonNode target = resolvePath(root, path);
             if (target == null) throw ApiException.badRequest("字段路径不存在：" + path);
             applyOperation(root, path, target, operation, value);
-            StructuredRequirement requirement =
-                    json.treeToValue(root, StructuredRequirement.class);
+            StructuredRequirement requirement = json.treeToValue(root, StructuredRequirement.class);
             if (requirement == null || requirement.type() == null)
                 throw ApiException.badRequest("修改后结构化需求不完整，请检查提交内容");
             state.setStructuredJson(write(requirement));
@@ -112,8 +111,7 @@ public class RequirementStateService {
     @Transactional
     public RequirementSnapshot confirm(Long taskId) {
         AgentRequirementState state =
-                states.findByTaskId(taskId)
-                        .orElseThrow(() -> ApiException.notFound("任务的结构化需求不存在"));
+                states.findByTaskId(taskId).orElseThrow(() -> ApiException.notFound("任务的结构化需求不存在"));
         state.setStatus("CONFIRMED");
         states.save(state);
         return snapshot(state);
@@ -149,7 +147,9 @@ public class RequirementStateService {
             case SET -> {
                 JsonNode node = json.valueToTree(value);
                 // 空字符串/空值按删除处理，保持 JSON 干净
-                if (node == null || node.isNull() || (node.isTextual() && node.asText().isBlank())) {
+                if (node == null
+                        || node.isNull()
+                        || (node.isTextual() && node.asText().isBlank())) {
                     objectParent.remove(leaf);
                 } else {
                     objectParent.set(leaf, node);
@@ -191,10 +191,7 @@ public class RequirementStateService {
         ValidationResult validation =
                 readValidation(state.getValidationJson(), validator.validate(requirement));
         return new RequirementSnapshot(
-                requirement,
-                validation,
-                state.getStatus(),
-                state.getExtractionSource());
+                requirement, validation, state.getStatus(), state.getExtractionSource());
     }
 
     private StructuredRequirement read(String value) {
@@ -208,8 +205,7 @@ public class RequirementStateService {
     private ValidationResult readValidation(String value, ValidationResult fallback) {
         try {
             List<RequirementIssue> issues =
-                    json.readValue(
-                            value == null ? "[]" : value, new TypeReference<>() {});
+                    json.readValue(value == null ? "[]" : value, new TypeReference<>() {});
             return new ValidationResult(issues);
         } catch (Exception ignored) {
             return fallback;

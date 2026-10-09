@@ -5,15 +5,11 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 用户口语意图 → 高德 POI 分类的中央映射表。
- * Central mapping between user language and AMap POI categories.
+ * 用户口语意图 → 高德 POI 分类的中央映射表。 Central mapping between user language and AMap POI categories.
  *
- * 每个枚举值描述一类本地生活意图，携带四组数据：
- * - userAliases：用户可能说的口语词（用于把用户意图归类到本类别）
- * - amapTypeKeywords：高德 POI 名称/类型文本里应包含的关键词
- * - amapTypeCodePrefixes：高德 POI 类型码前缀（如 "05"=餐饮），请求时补成完整 types
- * - searchKeywords：用于网页搜索的补充关键词
- * 另有内部枚举 SpecificIntentRule 处理"游泳/游艇/海鲜"等更细的强匹配规则。
+ * <p>每个枚举值描述一类本地生活意图，携带四组数据： - userAliases：用户可能说的口语词（用于把用户意图归类到本类别） - amapTypeKeywords：高德 POI
+ * 名称/类型文本里应包含的关键词 - amapTypeCodePrefixes：高德 POI 类型码前缀（如 "05"=餐饮），请求时补成完整 types -
+ * searchKeywords：用于网页搜索的补充关键词 另有内部枚举 SpecificIntentRule 处理"游泳/游艇/海鲜"等更细的强匹配规则。
  */
 public enum LocalPlaceIntentCatalog {
     FOOD(
@@ -69,10 +65,13 @@ public enum LocalPlaceIntentCatalog {
 
     /** 用户口语别名，用于 classify 归类 */
     private final List<String> userAliases;
+
     /** 高德 POI 名称/类型文本中应出现的关键词 */
     private final List<String> amapTypeKeywords;
+
     /** 高德 POI 类型码前缀，拼上 "0000" 即为请求 types */
     private final List<String> amapTypeCodePrefixes;
+
     /** 网页搜索补充关键词 */
     private final List<String> searchKeywords;
 
@@ -108,13 +107,10 @@ public enum LocalPlaceIntentCatalog {
     }
 
     /**
-     * 把用户意图归类到某个 POI 类别。
-     * 按枚举声明顺序，第一个 userAliases 命中意图文本的类别胜出；都不命中返回空。
+     * 把用户意图归类到某个 POI 类别。 按枚举声明顺序，第一个 userAliases 命中意图文本的类别胜出；都不命中返回空。
      *
-     * 游泳/游艇/海鲜等细分词（SpecificIntentRule 覆盖）不归入粗类别：
-     * 它们保持 CUSTOM 动态词语义，用户原词直接作为高德检索词，
-     * 匹配阶段再由 SpecificIntentRule 做精度过滤，避免"游艇"被替换成
-     * 娱乐类的预置检索词（如"休闲娱乐"）而丢失用户真实意图。
+     * <p>游泳/游艇/海鲜等细分词（SpecificIntentRule 覆盖）不归入粗类别： 它们保持 CUSTOM 动态词语义，用户原词直接作为高德检索词， 匹配阶段再由
+     * SpecificIntentRule 做精度过滤，避免"游艇"被替换成 娱乐类的预置检索词（如"休闲娱乐"）而丢失用户真实意图。
      */
     public static Optional<LocalPlaceIntentCatalog> classify(String userIntent) {
         if (userIntent == null || userIntent.isBlank()) return Optional.empty();
@@ -125,9 +121,8 @@ public enum LocalPlaceIntentCatalog {
     }
 
     /**
-     * 查询细分词强规则（游泳/游艇/海鲜）。
-     * 供同包的 PlaceSearchServiceImpl 在 CUSTOM 分支调用：
-     * 命中细分词时按强规则过滤，避免无关 POI（健身中心、照相馆等）混入。
+     * 查询细分词强规则（游泳/游艇/海鲜）。 供同包的 PlaceSearchServiceImpl 在 CUSTOM 分支调用： 命中细分词时按强规则过滤，避免无关
+     * POI（健身中心、照相馆等）混入。
      */
     static Optional<SpecificIntentRule> specificFor(String userIntent) {
         if (userIntent == null) return Optional.empty();
@@ -137,8 +132,7 @@ public enum LocalPlaceIntentCatalog {
     }
 
     /**
-     * 判断某个高德 POI 是否属于本类别。
-     * 优先走 SpecificIntentRule 强规则（如"游泳"只匹配游泳馆，避免泛化到所有体育场所）；
+     * 判断某个高德 POI 是否属于本类别。 优先走 SpecificIntentRule 强规则（如"游泳"只匹配游泳馆，避免泛化到所有体育场所）；
      * 否则退化为"名称/类型文本包含关键词"或"类型码以前缀开头"，两者命中其一即可。
      */
     public boolean matches(String userIntent, String name, String type, String typeCode) {
@@ -158,10 +152,8 @@ public enum LocalPlaceIntentCatalog {
     }
 
     /**
-     * 细分词强规则：游泳/游艇/海鲜等口语词若归入粗类别（SPORTS/ENTERTAINMENT/FOOD），
-     * 会导致"游艇"被替换成"休闲娱乐"这类预置检索词、且匹配阶段过度泛化
-     * （例如"游泳"会匹配到所有体育场所）。因此这些词不参与粗类别归类，
-     * 检索用用户原词，匹配阶段只按下面的 resultKeywords 做精度过滤。
+     * 细分词强规则：游泳/游艇/海鲜等口语词若归入粗类别（SPORTS/ENTERTAINMENT/FOOD）， 会导致"游艇"被替换成"休闲娱乐"这类预置检索词、且匹配阶段过度泛化
+     * （例如"游泳"会匹配到所有体育场所）。因此这些词不参与粗类别归类， 检索用用户原词，匹配阶段只按下面的 resultKeywords 做精度过滤。
      * 包内可见：PlaceSearchServiceImpl 的 CUSTOM 分支需要调用 matches 做过滤。
      */
     enum SpecificIntentRule {

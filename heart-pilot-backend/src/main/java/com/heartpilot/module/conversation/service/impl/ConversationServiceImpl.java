@@ -22,7 +22,6 @@ import com.heartpilot.module.knowledge.service.KnowledgeService;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -64,18 +63,25 @@ public class ConversationServiceImpl implements ConversationService {
 
     /** 按路由类型组装最终 Prompt 区段（系统设定/检索/历史/当前输入彼此隔离） */
     private final AnswerPromptBuilder promptBuilder;
+
     /** 安全策略：评估用户输入，决定是否直接应答、拒绝或放行到模型 */
     private final AnswerSafetyPolicy safetyPolicy;
+
     /** 对话分类器：判断话题、路由、是否需要检索知识库及置信度 */
     private final ConversationClassifier classifier;
+
     /** 结构化渲染器：把模型输出规范为带引用编号的标准格式 */
     private final StructuredAnswerRenderer answerRenderer;
+
     /** 引用校验器：核对结构化回答中的引用编号是否与检索来源一致 */
     private final CitationValidator citationValidator;
+
     /** Prompt 版本注册表，记录所用模板版本用于消息审计 */
     private final PromptRegistry promptRegistry;
+
     /** 多轮上下文服务：维护并更新会话级上下文快照 */
     private final ConversationContextService contextService;
+
     private final ObjectMapper json;
     private final MeterRegistry metrics;
 
@@ -149,9 +155,7 @@ public class ConversationServiceImpl implements ConversationService {
         Gauge.builder("heartpilot.chat.active_generations", active, Map::size).register(metrics);
     }
 
-    /**
-     * 实现：按用户维度过滤掉已归档会话后分页返回，排序与每页大小由调用方通过 Pageable 传入，本层不再附加默认排序。
-     */
+    /** 实现：按用户维度过滤掉已归档会话后分页返回，排序与每页大小由调用方通过 Pageable 传入，本层不再附加默认排序。 */
     @Override
     public Page<AiConversation> list(Long userId, Pageable pageable) {
         // 分页返回当前用户未归档的会话，按最近消息时间排序由调用方通过 Pageable 指定
@@ -258,11 +262,12 @@ public class ConversationServiceImpl implements ConversationService {
         ConversationClassifier.Route route =
                 // 安全优先级高于分类。只要安全判断命中了高危（SAFETY/REFUSAL），无论分类器怎么判，都按安全结果走，防止高危内容被普通分类流程放行。
                 switch (safetyDecision.kind()) {
-                    // （真实即时危险，如自杀/暴力/威胁）：最终路由强制设为 SAFETY，走安全话术流程，不再让分类器决定。
+                        // （真实即时危险，如自杀/暴力/威胁）：最终路由强制设为 SAFETY，走安全话术流程，不再让分类器决定。
                     case SAFETY -> ConversationClassifier.Route.SAFETY;
-                    // （边界违规/心理诊断请求，如 PUA、纠缠、诊断人格）：最终路由强制设为 DISALLOWED，即禁止生成回答，直接返回固定拒绝话术。
+                        // （边界违规/心理诊断请求，如 PUA、纠缠、诊断人格）：最终路由强制设为 DISALLOWED，即禁止生成回答，直接返回固定拒绝话术。
                     case REFUSAL -> ConversationClassifier.Route.DISALLOWED;
-                    // （安全放行）：才采用第 1 步分类器得出的 route，即真正进入 DECISION / CLARIFY / KNOWLEDGE_QA / SUPPORT 等业务路由。
+                        // （安全放行）：才采用第 1 步分类器得出的 route，即真正进入 DECISION / CLARIFY / KNOWLEDGE_QA /
+                        // SUPPORT 等业务路由。
                     case CONTINUE -> classification.route();
                 };
         // 记录"最终路由"分布指标
@@ -438,8 +443,7 @@ public class ConversationServiceImpl implements ConversationService {
                                 // 随 done 事件一并下发，供前端覆盖流式期间的原始内容
                                 () -> {
                                     String output =
-                                            prepareOutput(
-                                                    generation, generation.text.toString());
+                                            prepareOutput(generation, generation.text.toString());
                                     generation.text.setLength(0);
                                     generation.text.append(output);
                                     finishSuccess(key, generation);
@@ -554,8 +558,7 @@ public class ConversationServiceImpl implements ConversationService {
         // 普通对话失败：按是否额度问题分类记录 AI 对话能力状态
         if (isQuotaError(error)) {
             statusRecorder.recordAiChat(
-                    CapabilityStatusRecorder.Status.QUOTA_EXHAUSTED,
-                    "对话 key 额度不足或已欠费，请检查通义账户余额");
+                    CapabilityStatusRecorder.Status.QUOTA_EXHAUSTED, "对话 key 额度不足或已欠费，请检查通义账户余额");
         } else {
             String detail = error.getMessage() == null ? "模型调用失败" : error.getMessage();
             statusRecorder.recordAiChat(
@@ -688,10 +691,7 @@ public class ConversationServiceImpl implements ConversationService {
         return citation;
     }
 
-    /**
-     * 输出后处理：非计费回答直接透传；计费回答先结构化渲染、做引用校验，
-     * 回写校验状态与实际引用来源，并上报引用相关指标，返回可下发给前端的最终文本。
-     */
+    /** 输出后处理：非计费回答直接透传；计费回答先结构化渲染、做引用校验， 回写校验状态与实际引用来源，并上报引用相关指标，返回可下发给前端的最终文本。 */
     private String prepareOutput(Generation generation, String raw) {
         if (!generation.billable) {
             // 非计费（安全直接应答等）：无引用可校验，标记为不适用
@@ -735,11 +735,9 @@ public class ConversationServiceImpl implements ConversationService {
     }
 
     /**
-     * 把会话记忆快照稳定化为只含 key/value 的 JSON，供 Prompt 构建与模型缓存键使用。
-     * 原始快照每条记忆带 sourceMessageId 与 updatedAt，二者每次消息写入都不同；
-     * 若原样拼入 Prompt，相同上下文的相同问题也会因字节差异永远无法命中 Redis 模型缓存。
-     * 剥离后 Prompt 对"相同上下文 + 相同首条问题"可跨会话复用，缓存得以生效。
-     * 数据库审计字段不受影响：assistant.conversationStateJson 仍写入完整快照。
+     * 把会话记忆快照稳定化为只含 key/value 的 JSON，供 Prompt 构建与模型缓存键使用。 原始快照每条记忆带 sourceMessageId 与
+     * updatedAt，二者每次消息写入都不同； 若原样拼入 Prompt，相同上下文的相同问题也会因字节差异永远无法命中 Redis 模型缓存。 剥离后 Prompt 对"相同上下文 +
+     * 相同首条问题"可跨会话复用，缓存得以生效。 数据库审计字段不受影响：assistant.conversationStateJson 仍写入完整快照。
      */
     private String stableContextJson(ConversationContextService.Snapshot snapshot) {
         Map<String, Object> stable = new LinkedHashMap<>();

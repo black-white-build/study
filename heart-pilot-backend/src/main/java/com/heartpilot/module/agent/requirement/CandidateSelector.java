@@ -14,15 +14,15 @@ import org.springframework.stereotype.Service;
 /**
  * 候选点位挑选 Agent（Tier2：候选池前置，参考 ITINERA）。
  *
- * <p>角色定义（轻量串行多 Agent 流水线的第 2 个角色）：工具检索与候选挑选 Agent。
- * 流程：先由高德 API 拉取周边 POI 候选池（带坐标、基础标签），本 Agent 只从候选池里
- * 挑选点位并编排顺序，禁止凭空编造地点——LLM 只做"挑选"，不做"创造"。
+ * <p>角色定义（轻量串行多 Agent 流水线的第 2 个角色）：工具检索与候选挑选 Agent。 流程：先由高德 API 拉取周边 POI 候选池（带坐标、基础标签），本 Agent
+ * 只从候选池里 挑选点位并编排顺序，禁止凭空编造地点——LLM 只做"挑选"，不做"创造"。
  *
  * <p>可靠性设计：
+ *
  * <ul>
- *   <li>候选池条目带全局索引，模型输出只能引用池内索引，代码校验索引合法性</li>
- *   <li>挑选结果非法（索引越界/重复/数量超限）→ 携带违规信息回传重试，最多 2 次（Tier3 重试闭环）</li>
- *   <li>模型不可用时规则降级：每个类别取第一个，保证旧行为兼容</li>
+ *   <li>候选池条目带全局索引，模型输出只能引用池内索引，代码校验索引合法性
+ *   <li>挑选结果非法（索引越界/重复/数量超限）→ 携带违规信息回传重试，最多 2 次（Tier3 重试闭环）
+ *   <li>模型不可用时规则降级：每个类别取第一个，保证旧行为兼容
  * </ul>
  */
 @Service
@@ -47,6 +47,7 @@ public class CandidateSelector {
 
     private final ChatClient client;
     private final boolean enabled;
+
     /** 轻量领域提示（Tier3 RAG 简化版：规则词库，原型不接 PGVector） */
     private final DomainTipsProvider tipsProvider;
 
@@ -61,9 +62,7 @@ public class CandidateSelector {
 
     /** 挑选结果：按序的点位 + 每点停留分钟 + 是否 AI 挑选 */
     public record SelectionResult(
-            List<PlaceSearchService.Place> places,
-            List<Integer> stayMinutes,
-            boolean aiGenerated) {
+            List<PlaceSearchService.Place> places, List<Integer> stayMinutes, boolean aiGenerated) {
         public SelectionResult {
             stayMinutes = stayMinutes == null ? List.of() : stayMinutes;
         }
@@ -71,13 +70,16 @@ public class CandidateSelector {
 
     /**
      * 从候选池挑选并排序点位。
+     *
      * @param requirement 结构化需求（硬性/优先/排除约束）
      * @param pool 高德候选池（分组检索结果）
      * @param maxPlaces 最大点位数量
      * @return 挑选结果
      */
     public SelectionResult select(
-            StructuredRequirement requirement, PlaceSearchService.SearchResult pool, int maxPlaces) {
+            StructuredRequirement requirement,
+            PlaceSearchService.SearchResult pool,
+            int maxPlaces) {
         // 展平候选池并建立全局索引
         List<PlaceSearchService.Place> poolPlaces = new ArrayList<>();
         List<String> poolLabels = new ArrayList<>();
@@ -98,7 +100,13 @@ public class CandidateSelector {
                 SelectionModel model =
                         client.prompt()
                                 .system(SYSTEM_PROMPT)
-                                .user(userPrompt(requirement, poolPlaces, poolLabels, maxPlaces, feedback))
+                                .user(
+                                        userPrompt(
+                                                requirement,
+                                                poolPlaces,
+                                                poolLabels,
+                                                maxPlaces,
+                                                feedback))
                                 .call()
                                 .entity(SelectionModel.class);
                 List<Choice> choices = model == null ? List.of() : model.choices();
@@ -113,7 +121,10 @@ public class CandidateSelector {
                     PlaceSearchService.Place place = poolPlaces.get(choice.index());
                     if (selected.stream().anyMatch(p -> samePlace(p, place))) continue;
                     selected.add(place);
-                    stays.add(choice.stayMinutes() == null || choice.stayMinutes() <= 0 ? 60 : choice.stayMinutes());
+                    stays.add(
+                            choice.stayMinutes() == null || choice.stayMinutes() <= 0
+                                    ? 60
+                                    : choice.stayMinutes());
                 }
                 if (!selected.isEmpty()) return new SelectionResult(selected, stays, true);
                 feedback = "上次挑选结果为空，请至少挑选 1 个点位。";
@@ -138,8 +149,7 @@ public class CandidateSelector {
             if (selected.size() >= maxPlaces) break;
         }
         List<PlaceSearchService.Place> places = new ArrayList<>(selected.values());
-        return new SelectionResult(
-                places, places.stream().map(p -> 60).toList(), false);
+        return new SelectionResult(places, places.stream().map(p -> 60).toList(), false);
     }
 
     /** 组装挑选 Prompt：结构化约束 + 候选池清单 */
@@ -190,7 +200,8 @@ public class CandidateSelector {
         for (Choice choice : choices) {
             if (choice == null || choice.index() == null) return "存在缺少 index 的选择项";
             int index = choice.index();
-            if (index < 0 || index >= poolSize) return "index " + index + " 超出候选池范围（0~" + (poolSize - 1) + "）";
+            if (index < 0 || index >= poolSize)
+                return "index " + index + " 超出候选池范围（0~" + (poolSize - 1) + "）";
             if (!seen.add(index)) return "index " + index + " 重复";
         }
         return null;

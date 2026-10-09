@@ -14,8 +14,10 @@ import org.springframework.stereotype.Component;
 public class KnowledgeReindexRunner implements ApplicationRunner {
     private final KnowledgeService knowledge;
     private final ConfigurableApplicationContext context;
+
     /** 知识库 Markdown 源文件目录，启动时规范化为绝对路径。 */
     private final Path sourceDirectory;
+
     /** 重建索引时归属的系统用户 ID。 */
     private final long userId;
 

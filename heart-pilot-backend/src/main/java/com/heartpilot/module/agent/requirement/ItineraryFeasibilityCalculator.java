@@ -6,9 +6,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * 行程时间资源校验器（纯 Java，不依赖大模型）。
- * <p>在候选点位选定、路线算出之后，用代码计算
- * 「通勤耗时 + 点位停留总时长」并对比最晚返程时间，判断行程是否可行。
- * 与 Tier1 需求校验器互补：需求校验器在生成前用估算值拦截明显冲突，
+ *
+ * <p>在候选点位选定、路线算出之后，用代码计算 「通勤耗时 + 点位停留总时长」并对比最晚返程时间，判断行程是否可行。 与 Tier1 需求校验器互补：需求校验器在生成前用估算值拦截明显冲突，
  * 本校验器在生成后用真实路线耗时复核，输出可量化结论。
  */
 @Service
@@ -20,6 +19,7 @@ public class ItineraryFeasibilityCalculator {
 
     /**
      * 计算行程可行性。
+     *
      * @param startTime 开始时间（HH:mm，可空）
      * @param latestReturnTime 最晚返程时间（HH:mm，可空）
      * @param commuteMinutes 各段通勤耗时（分钟）
@@ -43,16 +43,44 @@ public class ItineraryFeasibilityCalculator {
                     required,
                     -1,
                     true,
-                    "未提供完整时间窗口，行程耗时约 " + required + " 分钟（通勤 " + commute + " + 停留 " + stay + "），请按此核对");
+                    "未提供完整时间窗口，行程耗时约 "
+                            + required
+                            + " 分钟（通勤 "
+                            + commute
+                            + " + 停留 "
+                            + stay
+                            + "），请按此核对");
         }
         int window = minutesBetween(start, end);
         boolean feasible = required <= window;
-        String message = feasible
-                ? "时间可行：预计行程约 " + required + " 分钟（通勤 " + commute + " + 停留 " + stay + " + 缓冲 "
-                        + bufferMinutes + "），时间窗口 " + window + " 分钟，余量 " + (window - required) + " 分钟。"
-                : "时间紧张：预计行程约 " + required + " 分钟（通勤 " + commute + " + 停留 " + stay + " + 缓冲 "
-                        + bufferMinutes + "），但时间窗口只有 " + window + " 分钟，超出约 "
-                        + (required - window) + " 分钟；建议删减 1-2 个点位或放宽返程时间。";
+        String message =
+                feasible
+                        ? "时间可行：预计行程约 "
+                                + required
+                                + " 分钟（通勤 "
+                                + commute
+                                + " + 停留 "
+                                + stay
+                                + " + 缓冲 "
+                                + bufferMinutes
+                                + "），时间窗口 "
+                                + window
+                                + " 分钟，余量 "
+                                + (window - required)
+                                + " 分钟。"
+                        : "时间紧张：预计行程约 "
+                                + required
+                                + " 分钟（通勤 "
+                                + commute
+                                + " + 停留 "
+                                + stay
+                                + " + 缓冲 "
+                                + bufferMinutes
+                                + "），但时间窗口只有 "
+                                + window
+                                + " 分钟，超出约 "
+                                + (required - window)
+                                + " 分钟；建议删减 1-2 个点位或放宽返程时间。";
         return new Feasibility(required, window, feasible, message);
     }
 
@@ -66,7 +94,8 @@ public class ItineraryFeasibilityCalculator {
     }
 
     private int minutesBetween(LocalTime start, LocalTime end) {
-        int minutes = end.getHour() * 60 + end.getMinute() - (start.getHour() * 60 + start.getMinute());
+        int minutes =
+                end.getHour() * 60 + end.getMinute() - (start.getHour() * 60 + start.getMinute());
         return minutes < 0 ? minutes + 24 * 60 : minutes;
     }
 

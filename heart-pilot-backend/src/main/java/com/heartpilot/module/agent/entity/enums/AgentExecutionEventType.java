@@ -1,8 +1,6 @@
 package com.heartpilot.module.agent.entity.enums;
 
-/**
- * 执行事件类型枚举，对应 ReAct（推理-行动）范式中的各类事件。
- */
+/** 执行事件类型枚举，对应 ReAct（推理-行动）范式中的各类事件。 */
 public enum AgentExecutionEventType {
     /** 思考：Agent 的推理过程 */
     THOUGHT,

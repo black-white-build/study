@@ -5,10 +5,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 /**
- * 用户关系档案实体，对应数据库表 relationship_profile。
- * 每个用户一条（与 userId 唯一约束），记录感情状态、相处时长、沟通方式、
- * 关注事项、偏好与边界等信息，作为 AI 关系咨询与报告生成的上下文。
- * 继承 BaseEntity 获得 id、创建时间、更新时间等公共字段。
+ * 用户关系档案实体，对应数据库表 relationship_profile。 每个用户一条（与 userId 唯一约束），记录感情状态、相处时长、沟通方式、 关注事项、偏好与边界等信息，作为 AI
+ * 关系咨询与报告生成的上下文。 继承 BaseEntity 获得 id、创建时间、更新时间等公共字段。
  */
 @Entity
 @Table(

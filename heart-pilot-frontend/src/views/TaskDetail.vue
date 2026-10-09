@@ -12,8 +12,7 @@
         }}</span
         ><button v-if="canCancel" class="btn danger" @click="cancel">取消任务</button
         ><button v-else-if="isFailed" class="btn primary" :disabled="retrying" @click="retryTask">
-          {{ retrying ? '重试中…' : '重新执行' }}
-        </button
+          {{ retrying ? '重试中…' : '重新执行' }}</button
         ><button v-else class="btn danger" :disabled="deleting" @click="removeTask">
           {{ deleting ? '正在删除…' : '删除记录' }}
         </button>
@@ -24,17 +23,17 @@
         <div>
           <span class="eyebrow">Agent 可观测执行</span>
           <h2>{{ observerTitle }}</h2>
-          <p>页面每 1.2 秒同步任务轨迹；外部能力不可用时会明确显示降级，不会编造地点、商品和距离。</p>
+          <p>
+            页面每 1.2 秒同步任务轨迹；外部能力不可用时会明确显示降级，不会编造地点、商品和距离。
+          </p>
         </div>
         <div class="capability-badges">
           <span
             v-if="currentKind === 'PLACE_VISIT'"
             :class="['capability', evidence.sourceStatus === 'LIVE' ? 'online' : 'offline']"
             >地图 {{ evidence.sourceStatus === 'LIVE' ? '实时' : '暂无合格结果' }}</span
-          ><span :class="['capability', aiStatusClass]"
-            >AI 对话 {{ aiStatusText }}</span
-          ><span :class="['capability', webStatusClass]"
-            >网页搜索 {{ webStatusText }}</span
+          ><span :class="['capability', aiStatusClass]">AI 对话 {{ aiStatusText }}</span
+          ><span :class="['capability', webStatusClass]">网页搜索 {{ webStatusText }}</span
           ><span :class="['capability', reactState === '已参与' ? 'online' : 'offline']"
             >ReAct/MCP {{ reactState }}</span
           >
@@ -207,17 +206,18 @@
         >
           <span>需求检查点</span>
           <h3>系统已把你的需求解析为结构化约束，先核对再生成方案</h3>
-          <div
-            v-if="requirementBlockers.length"
-            class="requirement-conflicts"
-            role="alert"
-          >
-            <b>发现 {{ requirementBlockers.length }} 个冲突，需先调整约束（硬性冲突不会强行生成方案）：</b>
+          <div v-if="requirementBlockers.length" class="requirement-conflicts" role="alert">
+            <b
+              >发现
+              {{ requirementBlockers.length }} 个冲突，需先调整约束（硬性冲突不会强行生成方案）：</b
+            >
             <p
               v-for="(issue, index) in requirementBlockers"
               :key="'blocker-' + index"
               class="requirement-issue"
-            >⚠️ {{ issue.message }}</p>
+            >
+              ⚠️ {{ issue.message }}
+            </p>
             <small>可以下方逐条修改约束（改预算、删点位、放宽时间），修改后立即重新校验。</small>
           </div>
           <div
@@ -229,12 +229,18 @@
               v-for="(issue, index) in requirementWarnings"
               :key="'warning-' + index"
               class="requirement-issue"
-            >{{ issue.message }}</p>
+            >
+              {{ issue.message }}
+            </p>
           </div>
           <div v-if="requirementData?.requirement" class="requirement-panel">
             <div class="requirement-sections">
               <!-- 四类约束 -->
-              <section v-for="section in requirementSections" :key="section.path" class="req-section">
+              <section
+                v-for="section in requirementSections"
+                :key="section.path"
+                class="req-section"
+              >
                 <b>{{ section.label }}</b>
                 <ul>
                   <li v-for="item in requirementList(section.path)" :key="item">
@@ -243,7 +249,9 @@
                       class="req-remove"
                       title="移除该约束"
                       @click="removeListConstraint(section.path, item)"
-                    >✕</button>
+                    >
+                      ✕
+                    </button>
                   </li>
                 </ul>
                 <div class="req-add">
@@ -261,41 +269,73 @@
                 <section class="req-section">
                   <b>时间与出行</b>
                   <div class="req-grid">
-                    <label>开始时间
+                    <label
+                      >开始时间
                       <input
                         v-model="requirementData.requirement.place.startTime"
                         class="input"
                         placeholder="14:00"
-                        @change="patchConstraint('place.startTime', 'SET', requirementData.requirement.place.startTime)"
+                        @change="
+                          patchConstraint(
+                            'place.startTime',
+                            'SET',
+                            requirementData.requirement.place.startTime
+                          )
+                        "
                       />
                     </label>
-                    <label>最晚返程
+                    <label
+                      >最晚返程
                       <input
                         v-model="requirementData.requirement.place.latestReturnTime"
                         class="input"
                         placeholder="20:00"
-                        @change="patchConstraint('place.latestReturnTime', 'SET', requirementData.requirement.place.latestReturnTime)"
+                        @change="
+                          patchConstraint(
+                            'place.latestReturnTime',
+                            'SET',
+                            requirementData.requirement.place.latestReturnTime
+                          )
+                        "
                       />
                     </label>
-                    <label>每点停留（分钟）
+                    <label
+                      >每点停留（分钟）
                       <input
                         v-model.number="requirementData.requirement.place.stayMinutesPerPlace"
                         class="input"
                         type="number"
-                        @change="patchConstraint('place.stayMinutesPerPlace', 'SET', requirementData.requirement.place.stayMinutesPerPlace)"
+                        @change="
+                          patchConstraint(
+                            'place.stayMinutesPerPlace',
+                            'SET',
+                            requirementData.requirement.place.stayMinutesPerPlace
+                          )
+                        "
                       />
                     </label>
-                    <label>预算上限（元）
+                    <label
+                      >预算上限（元）
                       <input
                         v-model.number="requirementData.requirement.place.budgetMax"
                         class="input"
                         type="number"
-                        @change="patchConstraint('place.budgetMax', 'SET', requirementData.requirement.place.budgetMax)"
+                        @change="
+                          patchConstraint(
+                            'place.budgetMax',
+                            'SET',
+                            requirementData.requirement.place.budgetMax
+                          )
+                        "
                       />
                     </label>
                   </div>
                 </section>
-                <section v-for="section in placeListSections" :key="section.path" class="req-section">
+                <section
+                  v-for="section in placeListSections"
+                  :key="section.path"
+                  class="req-section"
+                >
                   <b>{{ section.label }}</b>
                   <ul>
                     <li v-for="item in requirementList(section.path)" :key="item">
@@ -304,7 +344,9 @@
                         class="req-remove"
                         title="移除"
                         @click="removeListConstraint(section.path, item)"
-                      >✕</button>
+                      >
+                        ✕
+                      </button>
                     </li>
                   </ul>
                   <div class="req-add">
@@ -323,24 +365,42 @@
                 <section class="req-section">
                   <b>预算与对象</b>
                   <div class="req-grid">
-                    <label>预算上限（元）
+                    <label
+                      >预算上限（元）
                       <input
                         v-model.number="requirementData.requirement.gift.budgetMax"
                         class="input"
                         type="number"
-                        @change="patchConstraint('gift.budgetMax', 'SET', requirementData.requirement.gift.budgetMax)"
+                        @change="
+                          patchConstraint(
+                            'gift.budgetMax',
+                            'SET',
+                            requirementData.requirement.gift.budgetMax
+                          )
+                        "
                       />
                     </label>
-                    <label>场合
+                    <label
+                      >场合
                       <input
                         v-model="requirementData.requirement.gift.occasion"
                         class="input"
-                        @change="patchConstraint('gift.occasion', 'SET', requirementData.requirement.gift.occasion)"
+                        @change="
+                          patchConstraint(
+                            'gift.occasion',
+                            'SET',
+                            requirementData.requirement.gift.occasion
+                          )
+                        "
                       />
                     </label>
                   </div>
                 </section>
-                <section v-for="section in giftListSections" :key="section.path" class="req-section">
+                <section
+                  v-for="section in giftListSections"
+                  :key="section.path"
+                  class="req-section"
+                >
                   <b>{{ section.label }}</b>
                   <ul>
                     <li v-for="item in requirementList(section.path)" :key="item">
@@ -349,7 +409,9 @@
                         class="req-remove"
                         title="移除"
                         @click="removeListConstraint(section.path, item)"
-                      >✕</button>
+                      >
+                        ✕
+                      </button>
                     </li>
                   </ul>
                   <div class="req-add">
@@ -371,7 +433,9 @@
               :disabled="requirementConfirming || !requirementData?.blocked"
               title="有冲突时重新运行会再次校验，仍冲突会回到本检查点"
               @click="retryTask"
-            >重新校验需求</button>
+            >
+              重新校验需求
+            </button>
             <button
               class="btn coral"
               :disabled="requirementConfirming || requirementData?.blocked"
@@ -396,8 +460,7 @@
           </p>
           <div class="plan-editor">
             <div class="editor-title">
-              <b>确认前修改当前参数</b
-              ><small>{{ editorHint }}</small>
+              <b>确认前修改当前参数</b><small>{{ editorHint }}</small>
             </div>
 
             <!-- 地点见面：省/市 + 预算 + 问题清单 -->
@@ -421,7 +484,9 @@
                     <option value="" disabled>
                       {{ citiesLoading ? '加载城市中…' : '请选择城市' }}
                     </option>
-                    <option v-for="city in cityOptions" :key="city" :value="city">{{ city }}</option>
+                    <option v-for="city in cityOptions" :key="city" :value="city">
+                      {{ city }}
+                    </option>
                   </select>
                 </div>
               </div>
@@ -452,7 +517,11 @@
               <div class="grid-2">
                 <div class="field">
                   <label>礼物预算</label
-                  ><input v-model="editor.giftBudget" class="input" placeholder="例如：200到500元" />
+                  ><input
+                    v-model="editor.giftBudget"
+                    class="input"
+                    placeholder="例如：200到500元"
+                  />
                 </div>
                 <div class="field">
                   <label>送礼场合</label>
@@ -635,7 +704,10 @@
         {{ evidence.notice || '没有取得符合当前地点范围的可核验地图地点。' }}
       </div>
       <div v-if="evidence.routes?.length" class="route-list">
-        <h3>地点间路线 <small class="route-hint">（距离与耗时仅供简单参考，实际出行请以地图实时路况为准）</small></h3>
+        <h3>
+          地点间路线
+          <small class="route-hint">（距离与耗时仅供简单参考，实际出行请以地图实时路况为准）</small>
+        </h3>
         <div class="route-map-overview">
           <div class="route-map-title">
             <div><b>路线总览</b><small>A → B → C → D 按行程顺序连接</small></div>
@@ -751,24 +823,47 @@
               </ul>
               <div v-if="item.payload.giftIdeas?.length" class="gift-ideas">
                 <p><b>AI 分析后的礼物候选</b></p>
-                <p class="muted search-tip">京东、拼多多可直接查看结果；淘宝首次打开需登录一次（浏览器会记住）。</p>
+                <p class="muted search-tip">
+                  京东、拼多多可直接查看结果；淘宝首次打开需登录一次（浏览器会记住）。
+                </p>
                 <p v-if="item.payload.searchSource" class="muted search-tip">
-                  <span v-if="item.payload.searchSource === 'duckduckgo'">价格与品牌已联网校准（DuckDuckGo 公开网页），价格为参考价</span>
-                  <span v-else-if="item.payload.searchSource === 'serpapi'">价格与品牌已联网校准（付费搜索），价格为参考价</span>
+                  <span v-if="item.payload.searchSource === 'duckduckgo'"
+                    >价格与品牌已联网校准（DuckDuckGo 公开网页），价格为参考价</span
+                  >
+                  <span v-else-if="item.payload.searchSource === 'serpapi'"
+                    >价格与品牌已联网校准（付费搜索），价格为参考价</span
+                  >
                   <span v-else>搜索增强暂不可用，以上为 AI 基于喜好的推荐</span>
                 </p>
-                <p v-if="item.payload.searchQuotaTip" class="muted search-tip">{{ item.payload.searchQuotaTip }}</p>
+                <p v-if="item.payload.searchQuotaTip" class="muted search-tip">
+                  {{ item.payload.searchQuotaTip }}
+                </p>
                 <ul class="key-list">
                   <li v-for="idea in item.payload.giftIdeas" :key="idea.title">
                     <b>{{ idea.title }}</b>
                     <span v-if="idea.priceHint" class="muted">（参考价 {{ idea.priceHint }}）</span>
                     <div v-if="idea.reason" class="muted">{{ idea.reason }}</div>
                     <div v-if="idea.urls?.length" class="idea-links">
-                      <a v-for="u in idea.urls" :key="u.platform" :href="u.url" target="_blank" rel="noopener" referrerpolicy="unsafe-url">{{ u.platform }}搜 ↗</a>
+                      <a
+                        v-for="u in idea.urls"
+                        :key="u.platform"
+                        :href="u.url"
+                        target="_blank"
+                        rel="noopener"
+                        referrerpolicy="unsafe-url"
+                        >{{ u.platform }}搜 ↗</a
+                      >
                     </div>
                     <div v-if="idea.sources?.length" class="idea-sources">
                       <small>参考来源：</small>
-                      <a v-for="(s, i) in idea.sources" :key="i" :href="s.url" target="_blank" rel="noreferrer">{{ s.title }}</a>
+                      <a
+                        v-for="(s, i) in idea.sources"
+                        :key="i"
+                        :href="s.url"
+                        target="_blank"
+                        rel="noreferrer"
+                        >{{ s.title }}</a
+                      >
                     </div>
                   </li>
                 </ul>
@@ -943,7 +1038,11 @@ const requirementWarnings = computed(() => {
 const requirementSections = computed(() => [
   { path: 'hardConstraints', label: '硬性约束（必须满足）', placeholder: '如：晚上8点前到家' },
   { path: 'priorityPreferences', label: '优先偏好（尽量满足）', placeholder: '如：喜欢广西菜' },
-  { path: 'optionalEnhancements', label: '可选加分项（有余力再做）', placeholder: '如：下雨的室内备选' },
+  {
+    path: 'optionalEnhancements',
+    label: '可选加分项（有余力再做）',
+    placeholder: '如：下雨的室内备选'
+  },
   { path: 'exclusions', label: '排除黑名单（坚决不做）', placeholder: '如：不去吵闹的商场' }
 ])
 const placeListSections = computed(() => [
@@ -1051,19 +1150,18 @@ const canReshufflePlaces = computed(
 )
 
 // 顶部副标题：不同行动类型走不同的能力链路，文案随之变化
-const observerTitle = computed(() =>
-  ({
-    GIFT_RITUAL: '从联网检索到礼物候选，每一步都有证据',
-    MESSAGE: '从沟通分析到消息草稿，每一步都有证据',
-    SELF_PRACTICE: '从练习设计到复盘标准，每一步都有证据'
-  })[currentKind.value] || '从检索到路线，每一步都有证据'
+const observerTitle = computed(
+  () =>
+    ({
+      GIFT_RITUAL: '从联网检索到礼物候选，每一步都有证据',
+      MESSAGE: '从沟通分析到消息草稿，每一步都有证据',
+      SELF_PRACTICE: '从练习设计到复盘标准，每一步都有证据'
+    })[currentKind.value] || '从检索到路线，每一步都有证据'
 )
 
 // 步骤条按行动类型切换：地点见面走地图检索流程，礼物走联网商品检索，消息/练习走文案生成
 const phaseDefinitions = computed(() => {
-  const base = [
-    { code: 'GENERATE', label: '生成最终计划' }
-  ]
+  const base = [{ code: 'GENERATE', label: '生成最终计划' }]
   switch (currentKind.value) {
     case 'GIFT_RITUAL':
       return [
@@ -1230,13 +1328,14 @@ const enteredQuestions = computed(() =>
 )
 
 // 确认表单副标题：按行动类型说明本轮改什么
-const editorHint = computed(() =>
-  ({
-    GIFT_RITUAL: '修改预算、场合与对方喜好后重新分析，AI 会重新推荐具体礼物候选。',
-    MESSAGE: '修改渠道、语气、回复期待与边界后，AI 会重新生成消息草稿。',
-    SELF_PRACTICE: '修改练习内容、期望效果、频率与边界后，AI 会重新生成练习计划。'
-  })[currentKind.value] ||
-  '这里的地点、预算和问题清单以最后一次提交为准；应用修改后会新增一个规划分支，并重新提取对应关键词。'
+const editorHint = computed(
+  () =>
+    ({
+      GIFT_RITUAL: '修改预算、场合与对方喜好后重新分析，AI 会重新推荐具体礼物候选。',
+      MESSAGE: '修改渠道、语气、回复期待与边界后，AI 会重新生成消息草稿。',
+      SELF_PRACTICE: '修改练习内容、期望效果、频率与边界后，AI 会重新生成练习计划。'
+    })[currentKind.value] ||
+    '这里的地点、预算和问题清单以最后一次提交为准；应用修改后会新增一个规划分支，并重新提取对应关键词。'
 )
 
 // 确认编辑器可编辑的专属字段标签（按"标签：内容"行格式识别）
@@ -1316,9 +1415,7 @@ function hydrateKindFields(notesText: string) {
 }
 
 // 当前 contextNotes（含本表单修改）与原始值是否一致
-const notesChanged = computed(
-  () => buildContextNotes() !== (parameters.value.contextNotes || '')
-)
+const notesChanged = computed(() => buildContextNotes() !== (parameters.value.contextNotes || ''))
 
 const canRevise = computed(() => {
   if (currentKind.value === 'PLACE_VISIT') {
@@ -1427,7 +1524,8 @@ async function load() {
       plan.value = null
     }
     if (next.task.status === 'AWAITING_CONFIRMATION') hydrateEditor()
-    if (next.task.status === 'AWAITING_REQUIREMENT' || next.task.status === 'AWAITING_CONFIRMATION') await loadRequirement()
+    if (next.task.status === 'AWAITING_REQUIREMENT' || next.task.status === 'AWAITING_CONFIRMATION')
+      await loadRequirement()
     if (!['RUNNING', 'WAITING'].includes(next.task.status)) clearInterval(timer.value)
   } catch {
     showError('任务读取失败')
@@ -1630,9 +1728,16 @@ function phaseHint(code: string) {
 function eventIcon(event: any) {
   const kind = String(event.eventType || '')
   return (
-    ({ THOUGHT: '想', ACTION: '行', OBSERVATION: '观', RESULT: '果', WARNING: '!', ERROR: '×' } as Record<string, string>)[
-      kind
-    ] || '·'
+    (
+      {
+        THOUGHT: '想',
+        ACTION: '行',
+        OBSERVATION: '观',
+        RESULT: '果',
+        WARNING: '!',
+        ERROR: '×'
+      } as Record<string, string>
+    )[kind] || '·'
   )
 }
 function formatDistance(meters: number) {

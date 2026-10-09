@@ -4,15 +4,13 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
-/**
- * 用量与成本统计相关 DTO 集合。
- * 所有金额均以 micros（百万分之一元）存储，前端展示时再换算，避免浮点误差。
- */
+/** 用量与成本统计相关 DTO 集合。 所有金额均以 micros（百万分之一元）存储，前端展示时再换算，避免浮点误差。 */
 public final class UsageDtos {
     private UsageDtos() {}
 
     /**
      * 成本看板汇总响应。
+     *
      * @param periodStart 统计区间起始时间
      * @param periodEnd 统计区间结束时间
      * @param currency 币种（CNY）
@@ -46,6 +44,7 @@ public final class UsageDtos {
 
     /**
      * 单日用量成本聚合。
+     *
      * @param date 日期（按东八区归属）
      * @param requests 当日请求次数
      * @param inputTokens 当日输入 Token
@@ -65,6 +64,7 @@ public final class UsageDtos {
 
     /**
      * 按模型分组的用量成本聚合。
+     *
      * @param model 模型名称
      * @param requests 该模型请求次数
      * @param inputTokens 输入 Token

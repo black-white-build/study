@@ -1,9 +1,8 @@
 package com.heartpilot.module.agent.entity.enums;
 
 /**
- * 计划版本（PlanVersion）状态。
- * 每次重新规划产生一个 DRAFT 版本；用户确认后置为 APPROVED（正式计划）；
- * 用户驳回时当前草稿置为 REJECTED，随后产生的版本保留历史。
+ * 计划版本（PlanVersion）状态。 每次重新规划产生一个 DRAFT 版本；用户确认后置为 APPROVED（正式计划）； 用户驳回时当前草稿置为
+ * REJECTED，随后产生的版本保留历史。
  */
 public enum PlanVersionStatus {
     /** 草稿：生成中或等待用户确认 */

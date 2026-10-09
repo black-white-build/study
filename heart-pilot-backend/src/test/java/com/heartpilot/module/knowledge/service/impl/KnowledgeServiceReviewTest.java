@@ -57,8 +57,7 @@ class KnowledgeServiceReviewTest {
     @Test
     void uploadShouldDefaultToInReviewAndFinishAsReady() throws Exception {
         MockMultipartFile file =
-                new MockMultipartFile(
-                        "file", "test.txt", "text/plain", "用于测试的知识正文".getBytes());
+                new MockMultipartFile("file", "test.txt", "text/plain", "用于测试的知识正文".getBytes());
         KnowledgeService.DocumentMetadata metadata =
                 new KnowledgeService.DocumentMetadata(
                         "沟通基础", "通用沟通", "通用", "测试来源", "", "1.0", null, "", null);
@@ -90,8 +89,7 @@ class KnowledgeServiceReviewTest {
         KnowledgeChunk first = chunk(7L, 0, "第一段内容");
         KnowledgeChunk second = chunk(7L, 1, "第二段内容");
         when(documents.findById(7L)).thenReturn(Optional.of(document));
-        when(chunks.findByDocumentIdOrderByChunkIndexAsc(7L))
-                .thenReturn(List.of(first, second));
+        when(chunks.findByDocumentIdOrderByChunkIndexAsc(7L)).thenReturn(List.of(first, second));
 
         KnowledgeService.DocumentContent result = service.content(7L);
 

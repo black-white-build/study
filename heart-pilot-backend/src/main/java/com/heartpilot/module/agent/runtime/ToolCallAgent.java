@@ -18,22 +18,24 @@ import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.tool.ToolCallback;
 
 /**
- * 基于 Spring AI Tool Calling 的 ReAct Agent 具体实现。
- * 与 ReActAgent 抽象基类配合：think 阶段让 DashScope 大模型在关闭内部自动执行的前提下输出工具调用请求；
- * act 阶段由本地 ToolCallingManager 显式执行工具，把结果回填对话历史，进入下一轮思考，
- * 直到模型不再发起工具调用即视为得出最终答案。
- * 关闭内部工具执行（internalToolExecutionEnabled=false）是关键：让工具调用完全由本类控制，
- * 以便记录每轮观察摘要并受 maxSteps 约束。
+ * 基于 Spring AI Tool Calling 的 ReAct Agent 具体实现。 与 ReActAgent 抽象基类配合：think 阶段让 DashScope
+ * 大模型在关闭内部自动执行的前提下输出工具调用请求； act 阶段由本地 ToolCallingManager 显式执行工具，把结果回填对话历史，进入下一轮思考，
+ * 直到模型不再发起工具调用即视为得出最终答案。 关闭内部工具执行（internalToolExecutionEnabled=false）是关键：让工具调用完全由本类控制， 以便记录每轮观察摘要并受
+ * maxSteps 约束。
  */
 public class ToolCallAgent extends ReActAgent {
     /** 聊天客户端：封装 DashScope 模型调用，think 阶段通过它发起对话 */
     private final ChatClient chatClient;
+
     /** 系统提示词：定义角色、工具边界与输出要求 */
     private final String systemPrompt;
+
     /** 允许本 Agent 调用的工具回调列表，过滤掉 null 元素 */
     private final List<ToolCallback> tools;
+
     /** 工具调用管理器：负责解析模型发起的工具调用并实际执行 */
     private final ToolCallingManager toolManager = ToolCallingManager.builder().build();
+
     /** 聊天选项：关闭 DashScope 内部自动工具执行，改由本类手动驱动 ReAct 循环 */
     private final ChatOptions chatOptions =
             DashScopeChatOptions.builder().withInternalToolExecutionEnabled(false).build();
@@ -53,17 +55,13 @@ public class ToolCallAgent extends ReActAgent {
         this.tools = Arrays.stream(tools).filter(Objects::nonNull).toList();
     }
 
-    /**
-     * 实现：初始历史仅包含一条 UserMessage，系统提示词在 think 阶段通过 .system(systemPrompt) 注入。
-     */
+    /** 实现：初始历史仅包含一条 UserMessage，系统提示词在 think 阶段通过 .system(systemPrompt) 注入。 */
     @Override
     protected List<Message> initialHistory(String userPrompt) {
         return List.of(new UserMessage(userPrompt));
     }
 
-    /**
-     * think：调用大模型。若响应中没有工具调用，说明模型已给出最终答案。
-     */
+    /** think：调用大模型。若响应中没有工具调用，说明模型已给出最终答案。 */
     @Override
     protected Thought think(List<Message> history) {
         Prompt prompt = new Prompt(history, chatOptions);
@@ -81,9 +79,7 @@ public class ToolCallAgent extends ReActAgent {
                 response, finished, assistant.getText() == null ? "" : assistant.getText());
     }
 
-    /**
-     * act：执行模型本轮请求的工具调用，汇总各工具返回作为观察摘要。
-     */
+    /** act：执行模型本轮请求的工具调用，汇总各工具返回作为观察摘要。 */
     @Override
     protected Observation act(List<Message> history, Thought thought) {
         ChatResponse response = (ChatResponse) thought.modelResponse();

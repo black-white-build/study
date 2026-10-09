@@ -1,10 +1,6 @@
 package com.heartpilot.module.agent.requirement;
 
-/**
- * 结构化需求类型。
- * 地点见面（PLACE_VISIT）与礼物表达（GIFT_RITUAL）共用同一套
- * 结构化抽取 / 代码校验 / 持久化底层，只是业务实体字段不同。
- */
+/** 结构化需求类型。 地点见面（PLACE_VISIT）与礼物表达（GIFT_RITUAL）共用同一套 结构化抽取 / 代码校验 / 持久化底层，只是业务实体字段不同。 */
 public enum RequirementType {
     /** 地点见面：抽取起点、时间窗口、出行方式、人数、点位约束 */
     PLACE,

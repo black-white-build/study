@@ -13,36 +13,30 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * 为方案检索氛围（mood）配图，但绝不把用户原始计划或地点传给 Pexels。
- * Retrieves mood images without sending the user's original plan or location to Pexels.
+ * 为方案检索氛围（mood）配图，但绝不把用户原始计划或地点传给 Pexels。 Retrieves mood images without sending the user's original
+ * plan or location to Pexels.
  *
- * 隐私与降级设计：
- * - 先把目标归一为一个通用英文氛围关键词（safeAtmosphereQuery），只用该关键词搜图，
- *   用户具体城市/店名不会外泄
- * - 未配置 Key → DISABLED；请求异常 → DEGRADED；无结果 → EMPTY；都返回空列表但不抛错，
- *   配图失败不影响主流程
+ * <p>隐私与降级设计： - 先把目标归一为一个通用英文氛围关键词（safeAtmosphereQuery），只用该关键词搜图， 用户具体城市/店名不会外泄 - 未配置 Key →
+ * DISABLED；请求异常 → DEGRADED；无结果 → EMPTY；都返回空列表但不抛错， 配图失败不影响主流程
  */
 @Service
 public class AmbienceImageServiceImpl implements AmbienceImageService {
     /** Pexels 图片搜索接口地址 */
     private static final String API_URL = "https://api.pexels.com/v1/search";
+
     /** Pexels 许可说明页地址，随图片结果返回供前端展示 */
     private static final String LICENSE_URL = "https://www.pexels.com/license/";
 
     /** Pexels API Key，来自配置 PEXELS_API_KEY，空串表示未启用 */
     private final String apiKey;
 
-    /**
-     * 构造器注入 Pexels Key，空值归一为空串。
-     */
+    /** 构造器注入 Pexels Key，空值归一为空串。 */
     public AmbienceImageServiceImpl(@Value("${PEXELS_API_KEY:}") String apiKey) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
     }
 
     /**
-     * 按目标关键词检索氛围图。
-     * 先把目标映射为通用英文氛围词再请求 Pexels（横构图、en-US），
-     * 单页数量夹在 1~12 之间；异常统一降级为 DEGRADED，不向上抛。
+     * 按目标关键词检索氛围图。 先把目标映射为通用英文氛围词再请求 Pexels（横构图、en-US）， 单页数量夹在 1~12 之间；异常统一降级为 DEGRADED，不向上抛。
      *
      * @param objective 用户目标
      * @param limit 期望图片数量
@@ -113,11 +107,7 @@ public class AmbienceImageServiceImpl implements AmbienceImageService {
         }
     }
 
-    /**
-     * 把中文目标关键词映射为通用英文氛围搜索词。
-     * 按餐/户外/展/电影/旅行等粗类别匹配，都不命中时用默认"温馨约会"氛围；
-     * 只输出泛化词，不包含任何具体地点信息。
-     */
+    /** 把中文目标关键词映射为通用英文氛围搜索词。 按餐/户外/展/电影/旅行等粗类别匹配，都不命中时用默认"温馨约会"氛围； 只输出泛化词，不包含任何具体地点信息。 */
     String safeAtmosphereQuery(String objective) {
         String text = objective == null ? "" : objective.toLowerCase();
         if (containsAny(text, "餐", "美食", "晚饭", "午饭", "咖啡")) return "romantic dinner ambience";

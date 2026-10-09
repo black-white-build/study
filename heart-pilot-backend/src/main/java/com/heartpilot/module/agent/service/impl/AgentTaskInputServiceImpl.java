@@ -185,10 +185,7 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         }
     }
 
-    /**
-     * 实现：null 返回空列表；单个非 List 对象包成单元素列表；逐项 trim 后丢弃空白与字面量 "null"，
-     * 并按出现顺序去重。
-     */
+    /** 实现：null 返回空列表；单个非 List 对象包成单元素列表；逐项 trim 后丢弃空白与字面量 "null"， 并按出现顺序去重。 */
     @Override
     public List<String> asStringList(Object raw) {
         if (raw == null) return new ArrayList<>();
@@ -203,9 +200,7 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         return result;
     }
 
-    /**
-     * 实现：先复制 existing，再逐项 trim incoming，空白项跳过，已存在的不重复追加，保留原有顺序。
-     */
+    /** 实现：先复制 existing，再逐项 trim incoming，空白项跳过，已存在的不重复追加，保留原有顺序。 */
     @Override
     public List<String> mergeQuestions(List<String> existing, List<String> incoming) {
         List<String> merged = new ArrayList<>(existing);
@@ -240,10 +235,7 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         return extracted;
     }
 
-    /**
-     * 实现：逐行扫描检索结果文本，找到以"动态检索类别："开头的行并截取冒号后内容；
-     * 未找到或文本为空时返回兜底文案"按问题动态提取"。
-     */
+    /** 实现：逐行扫描检索结果文本，找到以"动态检索类别："开头的行并截取冒号后内容； 未找到或文本为空时返回兜底文案"按问题动态提取"。 */
     @Override
     public String searchCategories(String searchResult) {
         if (searchResult == null || searchResult.isBlank()) return "按问题动态提取";
@@ -254,8 +246,7 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
     }
 
     /**
-     * 实现：null/空白/字面量 "null" 返回 fallback；若能解析为 BigDecimal 则经 normalizeBudget 去尾零后输出纯数字串，
-     * 否则原样返回字符串。
+     * 实现：null/空白/字面量 "null" 返回 fallback；若能解析为 BigDecimal 则经 normalizeBudget 去尾零后输出纯数字串， 否则原样返回字符串。
      */
     @Override
     public String parameterText(Object value, String fallback) {
@@ -269,18 +260,13 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         }
     }
 
-    /**
-     * 实现："未限定"或空串直接返回"未限定"，否则在数字后拼接" 元"。
-     */
+    /** 实现："未限定"或空串直接返回"未限定"，否则在数字后拼接" 元"。 */
     @Override
     public String budgetLabel(String budget) {
         return "未限定".equals(budget) || budget.isBlank() ? "未限定" : budget + " 元";
     }
 
-    /**
-     * 实现：直接修改入参 Map。budget 为空则移除该键；解析为负数抛 400；格式非法抛 400；
-     * 合法值经 normalizeBudget 去尾零后写回。
-     */
+    /** 实现：直接修改入参 Map。budget 为空则移除该键；解析为负数抛 400；格式非法抛 400； 合法值经 normalizeBudget 去尾零后写回。 */
     @Override
     public void normalizeStoredBudget(Map<String, Object> parameters) {
         Object raw = parameters.get("budget");
@@ -297,17 +283,13 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         }
     }
 
-    /**
-     * 实现：stripTrailingZeros 去除尾零后再用 toPlainString 输出，避免 200.00 与 200.0 不一致。
-     */
+    /** 实现：stripTrailingZeros 去除尾零后再用 toPlainString 输出，避免 200.00 与 200.0 不一致。 */
     @Override
     public BigDecimal normalizeBudget(BigDecimal budget) {
         return new BigDecimal(budget.stripTrailingZeros().toPlainString());
     }
 
-    /**
-     * 实现：反序列化为 LinkedHashMap 以保持插入顺序；JSON 为空或解析失败时静默返回空 Map，不抛错。
-     */
+    /** 实现：反序列化为 LinkedHashMap 以保持插入顺序；JSON 为空或解析失败时静默返回空 Map，不抛错。 */
     @Override
     public Map<String, Object> readParameters(AgentTask task) {
         try {
@@ -318,9 +300,7 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         }
     }
 
-    /**
-     * 实现：序列化为 JSON 字符串；任何序列化异常静默返回 "{}"，不阻断任务创建。
-     */
+    /** 实现：序列化为 JSON 字符串；任何序列化异常静默返回 "{}"，不阻断任务创建。 */
     @Override
     public String writeParameters(Map<String, Object> parameters) {
         try {
@@ -358,9 +338,7 @@ public class AgentTaskInputServiceImpl implements AgentTaskInputService {
         return province.equals(city) ? city : province + city;
     }
 
-    /**
-     * 实现：按 KNOWN_CITIES 列表顺序做子串匹配，返回第一个被文本包含的城市名；都不命中返回空串。
-     */
+    /** 实现：按 KNOWN_CITIES 列表顺序做子串匹配，返回第一个被文本包含的城市名；都不命中返回空串。 */
     @Override
     public String findKnownCity(String text) {
         if (text == null) return "";

@@ -1,8 +1,6 @@
 package com.heartpilot.module.agent.entity.enums;
 
-/**
- * 任务步骤状态枚举，标识单个执行步骤的生命周期状态。
- */
+/** 任务步骤状态枚举，标识单个执行步骤的生命周期状态。 */
 public enum AgentTaskStepStatus {
     /** 待执行 */
     PENDING,

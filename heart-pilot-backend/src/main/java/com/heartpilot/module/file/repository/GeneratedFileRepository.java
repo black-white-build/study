@@ -6,9 +6,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-/**
- * 已生成文件（GeneratedFile）数据访问层。
- */
+/** 已生成文件（GeneratedFile）数据访问层。 */
 public interface GeneratedFileRepository extends JpaRepository<GeneratedFile, Long> {
     /** 分页查询某用户指定业务类型的文件列表 */
     Page<GeneratedFile> findByUserIdAndBusinessType(

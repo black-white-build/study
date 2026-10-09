@@ -45,9 +45,7 @@ public class PromptRegistry {
         }
     }
 
-    /**
-     * 解析带 YAML Front Matter 的提示词文件：--- 之间为 name/version/output_schema 等元数据，其后为正文。
-     */
+    /** 解析带 YAML Front Matter 的提示词文件：--- 之间为 name/version/output_schema 等元数据，其后为正文。 */
     private PromptTemplate parse(String path, String raw) {
         if (!raw.startsWith("---")) throw new IllegalStateException("Prompt 缺少元数据: " + path);
         int end = raw.indexOf("\n---", 3);

@@ -16,14 +16,10 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * 行动计划实体，对应数据库表 action_plan。
- * 是"计划产物"的聚合根：一个任务（agent_task）对应一个行动计划（1:1），
- * 记录用户最终得到的计划的目标与整体状态；每次重新规划产生的具体内容
- * 存放在其下的 plan_version / plan_action_item 中。
+ * 行动计划实体，对应数据库表 action_plan。 是"计划产物"的聚合根：一个任务（agent_task）对应一个行动计划（1:1），
+ * 记录用户最终得到的计划的目标与整体状态；每次重新规划产生的具体内容 存放在其下的 plan_version / plan_action_item 中。
  *
- * 与 AgentTask 的职责边界：
- * - AgentTask：一次智能体执行过程（状态机、步骤、可靠性字段）
- * - ActionPlan：用户最终得到的计划（产物），可跨任务版本累积历史
+ * <p>与 AgentTask 的职责边界： - AgentTask：一次智能体执行过程（状态机、步骤、可靠性字段） - ActionPlan：用户最终得到的计划（产物），可跨任务版本累积历史
  */
 @Entity
 @Table(

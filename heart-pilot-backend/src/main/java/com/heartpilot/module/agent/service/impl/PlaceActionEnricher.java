@@ -15,15 +15,11 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 /**
- * 地点型行动富化器。
- * 复用现有行程检索链路（AgentJourneyResearchService），把草案富化为带
- * 真实地点、地址、营业时间、路线信息的可执行条目；检索证据继续持久化到
- * 任务的 journeyEvidenceJson，前端地点证据面板无需改动。
+ * 地点型行动富化器。 复用现有行程检索链路（AgentJourneyResearchService），把草案富化为带 真实地点、地址、营业时间、路线信息的可执行条目；检索证据继续持久化到 任务的
+ * journeyEvidenceJson，前端地点证据面板无需改动。
  *
- * <p>Tier2 改造：接入"候选池前置 + 候选挑选 Agent"流程——
- * 高德先拉候选点位池，LLM 只从池内挑选排序（禁止凭空编造地点），
- * 并用纯 Java 计算通勤+停留总时长对比最晚返程时间（时间资源校验）。
- * 未取得可核验地点时返回降级条目，不编造店名与地址。
+ * <p>Tier2 改造：接入"候选池前置 + 候选挑选 Agent"流程—— 高德先拉候选点位池，LLM 只从池内挑选排序（禁止凭空编造地点）， 并用纯 Java
+ * 计算通勤+停留总时长对比最晚返程时间（时间资源校验）。 未取得可核验地点时返回降级条目，不编造店名与地址。
  */
 @Service
 public class PlaceActionEnricher extends AbstractActionEnricher {
@@ -31,8 +27,10 @@ public class PlaceActionEnricher extends AbstractActionEnricher {
     private static final int DEFAULT_STAY_MINUTES = 60;
 
     private final AgentJourneyResearchService journeyResearch;
+
     /** Tier1 公共底层：结构化需求状态（约束唯一来源） */
     private final RequirementStateService requirementState;
+
     /** 时间资源校验器（纯 Java） */
     private final ItineraryFeasibilityCalculator feasibilityCalculator;
 
@@ -79,12 +77,15 @@ public class PlaceActionEnricher extends AbstractActionEnricher {
 
         // Tier2：优先走候选池前置链路（结构化需求已由步骤 1 持久化）
         StructuredRequirement requirement = null;
-        RequirementStateService.RequirementSnapshot snapshot = requirementState.get(context.task().getId());
+        RequirementStateService.RequirementSnapshot snapshot =
+                requirementState.get(context.task().getId());
         if (snapshot != null && snapshot.requirement() != null) {
             requirement = snapshot.requirement();
         }
         AgentJourneyResearchService.JourneyResearch journey;
-        if (requirement != null && requirement.type() == com.heartpilot.module.agent.requirement.RequirementType.PLACE) {
+        if (requirement != null
+                && requirement.type()
+                        == com.heartpilot.module.agent.requirement.RequirementType.PLACE) {
             journey =
                     journeyResearch.researchJourneyFromPool(
                             context.task(),
@@ -160,9 +161,7 @@ public class PlaceActionEnricher extends AbstractActionEnricher {
                             ? context.task().getObjective()
                             : draft.instruction();
             item.setInstruction(
-                    (intro == null ? "" : intro)
-                            + "\n\n已为你在不同类别下筛选到这些可核验地点：\n"
-                            + placesLine);
+                    (intro == null ? "" : intro) + "\n\n已为你在不同类别下筛选到这些可核验地点：\n" + placesLine);
         }
         // 路线信息：同一批证据里的第一条路线作为到达建议
         if (!evidence.routes().isEmpty()) {
@@ -181,7 +180,8 @@ public class PlaceActionEnricher extends AbstractActionEnricher {
         // 时间资源校验（纯 Java）：通勤耗时 + 停留总时长 vs 最晚返程时间
         if (!places.isEmpty()) {
             final int stayPerPlace;
-            if (requirement != null && requirement.place() != null
+            if (requirement != null
+                    && requirement.place() != null
                     && requirement.place().stayMinutesPerPlace() != null) {
                 stayPerPlace = requirement.place().stayMinutesPerPlace();
             } else {
@@ -219,7 +219,8 @@ public class PlaceActionEnricher extends AbstractActionEnricher {
     }
 
     /** 把一张地图卡片拼成 "- 名称（地址）· 评分 X · [高德地图](链接)" 一行 */
-    private void appendPlaceLine(StringBuilder buf, PlaceSearchService.MapCard c, List<String> refs) {
+    private void appendPlaceLine(
+            StringBuilder buf, PlaceSearchService.MapCard c, List<String> refs) {
         buf.append("- ")
                 .append(c.name())
                 .append("（")

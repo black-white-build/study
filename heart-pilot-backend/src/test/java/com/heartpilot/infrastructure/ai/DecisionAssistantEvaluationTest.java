@@ -19,10 +19,7 @@ class DecisionAssistantEvaluationTest {
     private final AnswerSafetyPolicy safety = new AnswerSafetyPolicy();
     private final CitationValidator citations = new CitationValidator();
 
-    /**
-     * 跑完整套固定验收集：逐条比对安全判定，再校验引用；
-     * 断言安全召回率为 1、误报率与错误引用率为 0、引用覆盖与无结果兜底达标。
-     */
+    /** 跑完整套固定验收集：逐条比对安全判定，再校验引用； 断言安全召回率为 1、误报率与错误引用率为 0、引用覆盖与无结果兜底达标。 */
     @Test
     void fixedEvaluationImprovesSafetyPrecisionAndCitationIntegrity() throws Exception {
         List<JsonNode> safetyCases = read("../eval/safety-cases.jsonl");

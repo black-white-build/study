@@ -14,26 +14,20 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Agent 执行轨迹服务实现。
- * 负责把任务执行过程中的思考、工具调用、观察、结果、错误等事件逐条持久化，
- * 供前端渲染完整的执行时间线（Trace），实现过程可观测、可审计。
+ * Agent 执行轨迹服务实现。 负责把任务执行过程中的思考、工具调用、观察、结果、错误等事件逐条持久化， 供前端渲染完整的执行时间线（Trace），实现过程可观测、可审计。
  *
- * 可靠性设计要点：
- * - record 使用 REQUIRES_NEW 独立事务，即使外层业务事务回滚，轨迹事件也尽量落库，
- *   保证失败现场可追溯
- * - 标题、来源 URL 等字段在写入前截断，避免超长内容撑爆数据库列
- * - metadata 序列化为 JSON 字符串，序列化失败降级为 null，不阻断主流程
+ * <p>可靠性设计要点： - record 使用 REQUIRES_NEW 独立事务，即使外层业务事务回滚，轨迹事件也尽量落库， 保证失败现场可追溯 - 标题、来源 URL
+ * 等字段在写入前截断，避免超长内容撑爆数据库列 - metadata 序列化为 JSON 字符串，序列化失败降级为 null，不阻断主流程
  */
 @Service
 public class AgentExecutionTraceServiceImpl implements AgentExecutionTraceService {
     /** 执行事件 Repository，按 taskId 倒序/正序查询 */
     private final AgentExecutionEventRepository events;
+
     /** 用于把 metadata Map 序列化为 JSON 字符串 */
     private final ObjectMapper json;
 
-    /**
-     * 构造器注入 Repository 与 ObjectMapper。
-     */
+    /** 构造器注入 Repository 与 ObjectMapper。 */
     public AgentExecutionTraceServiceImpl(AgentExecutionEventRepository events, ObjectMapper json) {
         this.events = events;
         this.json = json;
@@ -41,6 +35,7 @@ public class AgentExecutionTraceServiceImpl implements AgentExecutionTraceServic
 
     /**
      * 按创建时间正序查询某个任务的全部执行轨迹事件。
+     *
      * @param taskId 任务 ID
      * @return 事件列表（时间线顺序）
      */
@@ -50,9 +45,7 @@ public class AgentExecutionTraceServiceImpl implements AgentExecutionTraceServic
     }
 
     /**
-     * 记录一条执行轨迹事件。
-     * 使用 REQUIRES_NEW 开启独立事务：轨迹记录属于审计信息，不应随外层业务回滚而丢失，
-     * 即使后续步骤失败，也要保留"执行到哪一步、为什么失败"的现场。
+     * 记录一条执行轨迹事件。 使用 REQUIRES_NEW 开启独立事务：轨迹记录属于审计信息，不应随外层业务回滚而丢失， 即使后续步骤失败，也要保留"执行到哪一步、为什么失败"的现场。
      *
      * @param taskId 任务 ID
      * @param taskVersion 任务版本号（驳回重规划后自增，用于区分不同轮次的轨迹）
@@ -108,6 +101,7 @@ public class AgentExecutionTraceServiceImpl implements AgentExecutionTraceServic
 
     /**
      * 删除某个任务的全部轨迹事件，随任务级联清理时调用。
+     *
      * @param taskId 任务 ID
      */
     @Transactional
@@ -116,10 +110,7 @@ public class AgentExecutionTraceServiceImpl implements AgentExecutionTraceServic
         events.deleteByTaskId(taskId);
     }
 
-    /**
-     * 把 metadata Map 序列化为 JSON 字符串。
-     * 空 Map 返回 null 节省存储；序列化失败静默返回 null，不影响主流程。
-     */
+    /** 把 metadata Map 序列化为 JSON 字符串。 空 Map 返回 null 节省存储；序列化失败静默返回 null，不影响主流程。 */
     private String writeMetadata(Map<String, ?> metadata) {
         if (metadata == null || metadata.isEmpty()) return null;
         try {
@@ -130,10 +121,7 @@ public class AgentExecutionTraceServiceImpl implements AgentExecutionTraceServic
         }
     }
 
-    /**
-     * 截断字符串到指定最大长度，null 原样返回。
-     * 用于控制短文本列（标题、来源等）的入库长度。
-     */
+    /** 截断字符串到指定最大长度，null 原样返回。 用于控制短文本列（标题、来源等）的入库长度。 */
     private String shorten(String value, int maxLength) {
         if (value == null) return null;
         return value.substring(0, Math.min(value.length(), maxLength));

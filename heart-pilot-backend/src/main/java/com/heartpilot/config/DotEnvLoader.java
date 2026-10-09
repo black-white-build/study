@@ -13,9 +13,7 @@ public final class DotEnvLoader {
     private DotEnvLoader() {}
 
     /**
-     * 加载 .env 配置到系统属性。
-     * 找不到 .env 时仅打印诊断信息并继续（生产环境通常通过真实环境变量注入），
-     * 读取失败则抛出 IllegalStateException 快速失败。
+     * 加载 .env 配置到系统属性。 找不到 .env 时仅打印诊断信息并继续（生产环境通常通过真实环境变量注入）， 读取失败则抛出 IllegalStateException 快速失败。
      */
     public static void load() {
         Path envFile = findEnvFile();
@@ -38,8 +36,7 @@ public final class DotEnvLoader {
     }
 
     /**
-     * 定位项目根目录下的 .env 文件。
-     * 先查当前工作目录，再从 classpath 位置（target/classes 或 JAR）向上最多 6 级目录查找。
+     * 定位项目根目录下的 .env 文件。 先查当前工作目录，再从 classpath 位置（target/classes 或 JAR）向上最多 6 级目录查找。
      *
      * @return .env 路径，找不到时返回 null
      */
@@ -88,9 +85,7 @@ public final class DotEnvLoader {
     }
 
     /**
-     * 解析单行 KEY=VALUE 并注入系统属性。
-     * 跳过空行与注释行，支持 "export KEY=VALUE" 前缀；
-     * 已存在的 JVM 参数或系统环境变量优先，不会被 .env 覆盖。
+     * 解析单行 KEY=VALUE 并注入系统属性。 跳过空行与注释行，支持 "export KEY=VALUE" 前缀； 已存在的 JVM 参数或系统环境变量优先，不会被 .env 覆盖。
      */
     private static void loadLine(String rawLine) {
         String line = rawLine.strip();
@@ -117,9 +112,7 @@ public final class DotEnvLoader {
         }
     }
 
-    /**
-     * 去掉值两端成对的双引号或单引号。
-     */
+    /** 去掉值两端成对的双引号或单引号。 */
     private static String stripQuotes(String value) {
         if (value.length() >= 2) {
             boolean doubleQuoted = value.startsWith("\"") && value.endsWith("\"");

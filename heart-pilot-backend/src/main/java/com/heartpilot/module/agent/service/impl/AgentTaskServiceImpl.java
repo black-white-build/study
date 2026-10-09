@@ -2,11 +2,11 @@ package com.heartpilot.module.agent.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heartpilot.common.exception.ApiException;
+import com.heartpilot.module.agent.entity.ActionPlan;
 import com.heartpilot.module.agent.entity.AgentTask;
 import com.heartpilot.module.agent.entity.AgentTaskStep;
 import com.heartpilot.module.agent.entity.PlanActionItem;
 import com.heartpilot.module.agent.entity.PlanVersion;
-import com.heartpilot.module.agent.entity.ActionPlan;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionEventStatus;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionEventType;
 import com.heartpilot.module.agent.entity.enums.AgentExecutionPhase;
@@ -15,9 +15,14 @@ import com.heartpilot.module.agent.entity.enums.AgentTaskStepStatus;
 import com.heartpilot.module.agent.repository.TaskRepository;
 import com.heartpilot.module.agent.repository.TaskStepRepository;
 import com.heartpilot.module.agent.repository.ToolCallRepository;
+import com.heartpilot.module.agent.requirement.RequirementExtractionService;
+import com.heartpilot.module.agent.requirement.RequirementStateService;
+import com.heartpilot.module.agent.requirement.RequirementValidator;
+import com.heartpilot.module.agent.requirement.StructuredRequirement;
+import com.heartpilot.module.agent.requirement.ValidationResult;
 import com.heartpilot.module.agent.service.ActionDraftProposer;
-import com.heartpilot.module.agent.service.ActionEnrichmentService;
 import com.heartpilot.module.agent.service.ActionEnricher;
+import com.heartpilot.module.agent.service.ActionEnrichmentService;
 import com.heartpilot.module.agent.service.AgentExecutionTraceService;
 import com.heartpilot.module.agent.service.AgentFinalReportService;
 import com.heartpilot.module.agent.service.AgentJourneyResearchService;
@@ -27,15 +32,10 @@ import com.heartpilot.module.agent.service.AgentTaskPdfService;
 import com.heartpilot.module.agent.service.AgentTaskService;
 import com.heartpilot.module.agent.service.AgentTaskStepService;
 import com.heartpilot.module.agent.service.DistributedTaskLockService;
+import com.heartpilot.module.agent.service.PlaceSearchService;
 import com.heartpilot.module.agent.service.PlanModelService;
 import com.heartpilot.module.agent.service.PlanSafetyChecker;
 import com.heartpilot.module.agent.service.PlanningContext;
-import com.heartpilot.module.agent.service.PlaceSearchService;
-import com.heartpilot.module.agent.requirement.RequirementExtractionService;
-import com.heartpilot.module.agent.requirement.RequirementStateService;
-import com.heartpilot.module.agent.requirement.RequirementValidator;
-import com.heartpilot.module.agent.requirement.StructuredRequirement;
-import com.heartpilot.module.agent.requirement.ValidationResult;
 import com.heartpilot.module.file.entity.GeneratedFile;
 import com.heartpilot.module.file.repository.GeneratedFileRepository;
 import com.heartpilot.module.file.service.StorageService;
@@ -69,16 +69,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * Agent 任务核心服务实现。
- * 负责任务的完整生命周期管理：创建、异步执行（SSE 流式推送）、用户确认/驳回、
- * 最终报告生成、取消、删除，以及服务重启后的中断恢复与自动重试。
+ * Agent 任务核心服务实现。 负责任务的完整生命周期管理：创建、异步执行（SSE 流式推送）、用户确认/驳回、 最终报告生成、取消、删除，以及服务重启后的中断恢复与自动重试。
  *
- * 可靠性设计要点：
- * - 分布式锁（DistributedTaskLockService）保证同一任务在多实例下只有一个执行器
- * - 状态机（AgentTaskStateMachine）统一管理状态流转，禁止直接 setStatus
- * - 心跳 + 定时恢复扫描检测僵死任务，指数退避自动重试
- * - 乐观锁（@Version）防止并发更新覆盖
- * - 幂等键防止重复投稿
+ * <p>可靠性设计要点： - 分布式锁（DistributedTaskLockService）保证同一任务在多实例下只有一个执行器 -
+ * 状态机（AgentTaskStateMachine）统一管理状态流转，禁止直接 setStatus - 心跳 + 定时恢复扫描检测僵死任务，指数退避自动重试 -
+ * 乐观锁（@Version）防止并发更新覆盖 - 幂等键防止重复投稿
  */
 @Service
 public class AgentTaskServiceImpl implements AgentTaskService {
@@ -92,6 +87,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                     "等待用户确认",
                     "正在生成正式计划版本",
                     "任务已完成");
+
     private final TaskRepository tasks;
     private final TaskStepRepository steps;
     private final ToolCallRepository calls;
@@ -103,14 +99,19 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     private final AgentTaskStepService taskSteps;
     private final AgentFinalReportService finalReports;
     private final AgentRequirementAnalysisService requirementAnalysis;
+
     /** 单任务最大执行步骤数，配置项 app.agent.max-steps，默认 10 */
     private final int maxSteps;
+
     /** 单任务最大重试次数，配置项 app.agent.max-task-retries，默认 2 */
     private final int maxTaskRetries;
+
     /** Agent 任务专用线程池，Bean 名称 agentTaskExecutor */
     private final ExecutorService executor;
+
     /** 分布式锁续租调度器：持锁执行期间定时 renew，防止锁租期（5 分钟）内任务未完成导致锁过期 */
     private final ScheduledExecutorService lockRenewScheduler;
+
     private final DistributedTaskLockService locks;
     private final AgentTaskStateMachine stateMachine;
     private final AgentTaskPdfService pdfService;
@@ -119,19 +120,20 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     private final ActionEnrichmentService enrichmentService;
     private final PlanSafetyChecker planSafetyChecker;
     private final PlanModelService planModel;
+
     /** Tier1 公共底层：结构化需求抽取 + 代码校验 + 持久化（地点/送礼共用） */
     private final RequirementExtractionService requirementExtraction;
+
     private final RequirementValidator requirementValidator;
     private final RequirementStateService requirementState;
+
     /** 地点检索服务：reshufflePlaces 时从持久化候选池重抽卡片，不调外部 API */
     private final PlaceSearchService placeSearch;
+
     /** 当前正在执行的任务 Future 映射（taskId -> Future），用于取消操作中断线程 */
     private final Map<Long, Future<?>> activeFutures = new ConcurrentHashMap<>();
 
-    /**
-     * 构造器注入所有依赖。
-     * maxSteps 和 maxTaskRetries 从配置项读取，executor 通过 @Qualifier 指定专用线程池。
-     */
+    /** 构造器注入所有依赖。 maxSteps 和 maxTaskRetries 从配置项读取，executor 通过 @Qualifier 指定专用线程池。 */
     public AgentTaskServiceImpl(
             TaskRepository tasks,
             TaskStepRepository steps,
@@ -191,7 +193,9 @@ public class AgentTaskServiceImpl implements AgentTaskService {
 
     @Override
     public PlanDetail plan(Long id, Long userId) {
-        AgentTask task = tasks.findByIdAndUserId(id, userId).orElseThrow(() -> ApiException.notFound("任务不存在"));
+        AgentTask task =
+                tasks.findByIdAndUserId(id, userId)
+                        .orElseThrow(() -> ApiException.notFound("任务不存在"));
         ActionPlan plan = planModel.findByTask(task);
         if (plan == null) return new PlanDetail(null, List.of(), List.of());
         List<PlanVersion> versions = planModel.versions(plan.getId());
@@ -200,11 +204,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         return new PlanDetail(plan, versions, currentItems);
     }
 
-    /**
-     * 应用启动完成后触发一次中断恢复。
-     * 扫描心跳超过 90 秒未更新的 RUNNING 任务，将其重置为待重试状态，
-     * 避免服务宕机或重启后任务永久卡在 RUNNING。
-     */
+    /** 应用启动完成后触发一次中断恢复。 扫描心跳超过 90 秒未更新的 RUNNING 任务，将其重置为待重试状态， 避免服务宕机或重启后任务永久卡在 RUNNING。 */
     @EventListener(ApplicationReadyEvent.class)
     @Override
     public void recoverInterruptedTasks() {
@@ -212,11 +212,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     }
 
     /**
-     * 定时任务恢复与重试扫描（默认每 30 秒执行一次）。
-     * 两步操作：
-     * 1. 恢复心跳超时的僵死任务为 RETRY_WAIT
-     * 2. 对已到重试时间的 RETRY_WAIT 任务，未超最大重试次数则重新提交执行，超过则标记 FAILED
-     * 捕获 RuntimeException 是因为多实例环境下其他节点可能已抢到分布式锁。
+     * 定时任务恢复与重试扫描（默认每 30 秒执行一次）。 两步操作： 1. 恢复心跳超时的僵死任务为 RETRY_WAIT 2. 对已到重试时间的 RETRY_WAIT
+     * 任务，未超最大重试次数则重新提交执行，超过则标记 FAILED 捕获 RuntimeException 是因为多实例环境下其他节点可能已抢到分布式锁。
      */
     @Scheduled(fixedDelayString = "${app.agent.recovery-scan-millis:30000}")
     @Override
@@ -239,9 +236,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     }
 
     /**
-     * 将心跳超时的 RUNNING 任务恢复为 RETRY_WAIT。
-     * 同时把处于 RUNNING 状态的步骤重置为 PENDING 并增加重试计数，
-     * 确保恢复后能从该步骤重新执行。
+     * 将心跳超时的 RUNNING 任务恢复为 RETRY_WAIT。 同时把处于 RUNNING 状态的步骤重置为 PENDING 并增加重试计数， 确保恢复后能从该步骤重新执行。
+     *
      * @param heartbeatBefore 心跳早于此时间的任务视为僵死
      */
     private void recoverStaleTasks(Instant heartbeatBefore) {
@@ -262,6 +258,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
 
     /**
      * 分页查询当前用户的任务列表，按创建时间倒序（由 Repository 默认排序保证）。
+     *
      * @param userId 用户 ID
      * @param pageable 分页参数
      * @return 任务分页结果
@@ -271,9 +268,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         return tasks.findByUserId(userId, pageable);
     }
 
-    /**
-     * 实现：直接委托 taskInput.cityOptions，地区校验与高德接口调用逻辑见 AgentTaskInputServiceImpl。
-     */
+    /** 实现：直接委托 taskInput.cityOptions，地区校验与高德接口调用逻辑见 AgentTaskInputServiceImpl。 */
     @Override
     public List<String> cityOptions(String province) {
         return taskInput.cityOptions(province);
@@ -281,6 +276,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
 
     /**
      * 获取任务详情，聚合任务主体、步骤列表、工具调用记录、执行轨迹和最新 PDF 文件。
+     *
      * @param id 任务 ID
      * @param userId 用户 ID（用于鉴权，确保只能查自己的任务）
      * @return 聚合后的任务详情
@@ -301,10 +297,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     }
 
     /**
-     * 创建 Agent 任务。
-     * 流程：幂等键去重 → 校验并解析地区 → 校验问题列表非空 → 持久化任务 → 初始化 7 个执行步骤 → 记录执行轨迹。
-     * 幂等设计：同一用户 + 同一幂等键的重复请求直接返回已有任务，不重复创建；
-     * 并发场景下靠唯一索引兜底，捕获 DataIntegrityViolationException 后回查已有记录。
+     * 创建 Agent 任务。 流程：幂等键去重 → 校验并解析地区 → 校验问题列表非空 → 持久化任务 → 初始化 7 个执行步骤 → 记录执行轨迹。 幂等设计：同一用户 +
+     * 同一幂等键的重复请求直接返回已有任务，不重复创建； 并发场景下靠唯一索引兜底，捕获 DataIntegrityViolationException 后回查已有记录。
      *
      * @param userId 用户 ID
      * @param title 任务标题，为空时默认"城市+行动计划"
@@ -395,8 +389,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     }
 
     /**
-     * 启动任务执行，返回 SseEmitter 供前端实时接收执行进度。
-     * 仅允许 WAITING 或 FAILED 状态的任务启动；通过分布式锁保证多实例下唯一执行。
+     * 启动任务执行，返回 SseEmitter 供前端实时接收执行进度。 仅允许 WAITING 或 FAILED 状态的任务启动；通过分布式锁保证多实例下唯一执行。
      * 执行在专用线程池中异步进行，SSE 连接超时（180秒）自动触发取消。
      *
      * @param id 任务 ID
@@ -432,10 +425,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     }
 
     /**
-     * 执行任务直到用户确认阶段（步骤 1-5）。
-     * 流程：需求分析 → 地点与路线检索 → 公开信息补充 → 生成候选计划预览 → 进入等待确认。
-     * 在发送 confirmation 事件后主动释放分布式锁并完成 SSE 流，
-     * 避免用户立即点击确认时与当前 worker 的 finally 块竞争锁导致 TASK_ALREADY_RUNNING。
+     * 执行任务直到用户确认阶段（步骤 1-5）。 流程：需求分析 → 地点与路线检索 → 公开信息补充 → 生成候选计划预览 → 进入等待确认。 在发送 confirmation
+     * 事件后主动释放分布式锁并完成 SSE 流， 避免用户立即点击确认时与当前 worker 的 finally 块竞争锁导致 TASK_ALREADY_RUNNING。
      *
      * @param task 任务实体
      * @param emitter SSE 发射器
@@ -494,8 +485,10 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                                 + String.join(
                                         "\n- ",
                                         validation.blockers().stream()
-                                                .map(com.heartpilot.module.agent.requirement
-                                                                .RequirementIssue::message)
+                                                .map(
+                                                        com.heartpilot.module.agent.requirement
+                                                                        .RequirementIssue
+                                                                ::message)
                                                 .toList()));
                 step1.setStartedAt(Instant.now());
                 step1.setCompletedAt(null);
@@ -512,18 +505,23 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                         String.join(
                                 "；",
                                 validation.blockers().stream()
-                                        .map(com.heartpilot.module.agent.requirement
-                                                        .RequirementIssue::message)
+                                        .map(
+                                                com.heartpilot.module.agent.requirement
+                                                                .RequirementIssue
+                                                        ::message)
                                         .toList()),
                         reqSnapshot.extractionSource().equals("AI") ? "DashScope" : "规则降级",
                         null,
                         validation.blockers().size(),
                         null,
                         null,
-                        Map.of("conflictCodes",
+                        Map.of(
+                                "conflictCodes",
                                 validation.blockers().stream()
-                                        .map(com.heartpilot.module.agent.requirement
-                                                        .RequirementIssue::code)
+                                        .map(
+                                                com.heartpilot.module.agent.requirement
+                                                                .RequirementIssue
+                                                        ::code)
                                         .toList()));
                 event(emitter, "requirement", requirementEvent(reqSnapshot));
                 event(emitter, "requirement-conflict", requirementEvent(reqSnapshot));
@@ -546,15 +544,17 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                                     ? ""
                                     : "\n需要逐项回答：\n- " + String.join("\n- ", questions))
                             + ("无".equals(revision) ? "" : "\n累计修改要求：" + revision)
-                            + "\n\n" + requirement.summary()
+                            + "\n\n"
+                            + requirement.summary()
                             + (validation.hasWarnings()
                                     ? "\n\n提醒（不影响生成）：\n- "
                                             + String.join(
                                                     "\n- ",
                                                     validation.warnings().stream()
-                                                            .map(com.heartpilot.module.agent
-                                                                            .requirement
-                                                                            .RequirementIssue
+                                                            .map(
+                                                                    com.heartpilot.module.agent
+                                                                                    .requirement
+                                                                                    .RequirementIssue
                                                                             ::message)
                                                             .toList())
                                     : ""),
@@ -637,8 +637,12 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                     enriched.stream()
                             .filter(
                                     action ->
-                                            action.item().getPayloadJson().contains("ENRICHMENT_FAILED")
-                                                    || action.item().getPayloadJson().contains("UNSUPPORTED"))
+                                            action.item()
+                                                            .getPayloadJson()
+                                                            .contains("ENRICHMENT_FAILED")
+                                                    || action.item()
+                                                            .getPayloadJson()
+                                                            .contains("UNSUPPORTED"))
                             .count();
             taskSteps.complete(
                     task,
@@ -655,9 +659,12 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                     AgentExecutionPhase.SEARCH,
                     AgentExecutionEventType.RESULT,
                     AgentExecutionEventStatus.SUCCEEDED,
-                    "已完成按行动类型的信息富化",
-                    "共 " + enriched.size() + " 条行动条目"
-                            + (degradedCount > 0 ? "，" + degradedCount + " 条降级" : "") + "。",
+                    "已完成行动信息检索与富化",
+                    "共 "
+                            + enriched.size()
+                            + " 条行动条目"
+                            + (degradedCount > 0 ? "，" + degradedCount + " 条降级" : "")
+                            + "。",
                     "ActionEnricher",
                     null,
                     enriched.size(),
@@ -709,20 +716,16 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                     && !requirement.gift().budgetText().isBlank()) {
                 effectiveBudget = requirement.gift().budgetText();
             }
-            String budgetLabelText = "未限定".equals(effectiveBudget) || effectiveBudget.isBlank()
-                    ? "未限定"
-                    : effectiveBudget + (effectiveBudget.contains("元") ? "" : " 元");
+            String budgetLabelText =
+                    "未限定".equals(effectiveBudget) || effectiveBudget.isBlank()
+                            ? "未限定"
+                            : effectiveBudget + (effectiveBudget.contains("元") ? "" : " 元");
 
             PlanVersion draft =
-                    planModel.saveDraft(
-                            task, proposal.goalType(), enriched, budgetLabelText);
+                    planModel.saveDraft(task, proposal.goalType(), enriched, budgetLabelText);
             task.setPlanPreview(draft.getPreviewText());
             saveTask(task);
-            taskSteps.complete(
-                    task,
-                    4,
-                    "已生成可确认的候选计划，预算上限：" + budgetLabelText + "。",
-                    emitter);
+            taskSteps.complete(task, 4, "已生成可确认的候选计划，预算上限：" + budgetLabelText + "。", emitter);
             trace(
                     task,
                     4,
@@ -750,7 +753,10 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             steps.save(confirmation);
             task.setCurrentStep(5);
             stateMachine.transition(task, AgentTaskStatus.AWAITING_CONFIRMATION);
-            event(emitter, "confirmation", Map.of("step", confirmation, "planPreview", draft.getPreviewText()));
+            event(
+                    emitter,
+                    "confirmation",
+                    Map.of("step", confirmation, "planPreview", draft.getPreviewText()));
             // The client may render the confirmation event immediately. Release execution
             // ownership before completing the stream so an immediate click cannot race this
             // worker's finally block and receive TASK_ALREADY_RUNNING.
@@ -766,11 +772,9 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     }
 
     /**
-     * 启动分布式锁续租守护：持锁执行期间每 60 秒续租一次。
-     * 锁租期是 5 分钟，真实任务（需求分析 + 外部检索 + 大模型生成）可能超过该时长，
-     * 若不续租，锁会提前过期，其他实例可能重新拿到同一任务并发执行。
-     * renew() 内部已吞掉 Redis 异常并返回 false：续租失败不阻断任务执行，
-     * 锁会在 TTL 到期后自动释放，由心跳/恢复扫描与状态机兜底。
+     * 启动分布式锁续租守护：持锁执行期间每 60 秒续租一次。 锁租期是 5 分钟，真实任务（需求分析 + 外部检索 + 大模型生成）可能超过该时长，
+     * 若不续租，锁会提前过期，其他实例可能重新拿到同一任务并发执行。 renew() 内部已吞掉 Redis 异常并返回 false：续租失败不阻断任务执行， 锁会在 TTL
+     * 到期后自动释放，由心跳/恢复扫描与状态机兜底。
      *
      * @return 续租调度句柄，任务结束时用 stopLockRenewal 停止；锁为空时返回 null
      */
@@ -807,17 +811,16 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     private Map<String, Object> parsePayload(String payloadJson) {
         if (payloadJson == null || payloadJson.isBlank()) return Map.of();
         try {
-            return json.readValue(payloadJson, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            return json.readValue(
+                    payloadJson, new com.fasterxml.jackson.core.type.TypeReference<>() {});
         } catch (Exception ignored) {
             return Map.of();
         }
     }
 
     /**
-     * 用户确认或驳回候选计划。
-     * - approved=true：直接进入最终报告生成阶段（finish）
-     * - approved=false：校验修改项（地点/预算/问题/说明至少改一项），合并修改后回到第一步重新规划（reviseAndRestart）
-     * 两种路径都通过 SSE 流式推送进度。
+     * 用户确认或驳回候选计划。 - approved=true：直接进入最终报告生成阶段（finish） -
+     * approved=false：校验修改项（地点/预算/问题/说明至少改一项），合并修改后回到第一步重新规划（reviseAndRestart） 两种路径都通过 SSE 流式推送进度。
      *
      * @param id 任务 ID
      * @param userId 用户 ID（鉴权）
@@ -865,7 +868,10 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 Map<String, Object> current = taskInput.readParameters(task);
                 // 是否通过编辑器提交了字段（省份/城市/问题/背景补充任一非空）
                 boolean editorSubmission =
-                        province != null || city != null || questions != null || contextNotes != null;
+                        province != null
+                                || city != null
+                                || questions != null
+                                || contextNotes != null;
                 String currentCity = taskInput.resolveCity(current, task.getObjective());
                 String requestedCity = currentCity;
                 if (province != null || city != null) {
@@ -878,9 +884,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 // 判断依据：原本 parameters 里就填了省/市，或明确指定了 PLACE_VISIT，
                 // 二者都不满足说明创建时就不是地点任务，不能强要城市。
                 String currentKind =
-                        taskInput
-                                .asStringList(current.get("preferredActionKinds"))
-                                .stream()
+                        taskInput.asStringList(current.get("preferredActionKinds")).stream()
                                 .findFirst()
                                 .orElse("");
                 boolean originallyHasRegion =
@@ -910,8 +914,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                         && !cityChanged
                         && !budgetChanged
                         && !questionsChanged
-                        && !notesChanged)
-                    throw ApiException.badRequest("请至少修改地点、预算、问题或补充说明中的一项");
+                        && !notesChanged) throw ApiException.badRequest("请至少修改地点、预算、问题或补充说明中的一项");
                 reviseAndRestart(
                         task,
                         note == null ? "" : note.trim(),
@@ -931,9 +934,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     }
 
     /**
-     * 合并用户修改要求并回到第一步重新规划。
-     * 将修改说明追加到 revisions，更新地区/预算/问题参数，版本号自增，
-     * 重置步骤进度和最终结果，使旧 PDF 失效，然后重新提交 executeUntilConfirmation。
+     * 合并用户修改要求并回到第一步重新规划。 将修改说明追加到 revisions，更新地区/预算/问题参数，版本号自增， 重置步骤进度和最终结果，使旧 PDF 失效，然后重新提交
+     * executeUntilConfirmation。
      */
     private void reviseAndRestart(
             AgentTask task,
@@ -961,8 +963,12 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             String oldTrim = oldNotes == null ? "" : oldNotes.trim();
             String newTrim = updatedContextNotes == null ? "" : updatedContextNotes.trim();
             if (!oldTrim.isEmpty() && !oldTrim.equals(newTrim)) {
-                revisions.add("用户修改了计划参数：旧设置[" + oldTrim.replace("\n", "；")
-                        + "] → 新设置[" + newTrim.replace("\n", "；") + "]");
+                revisions.add(
+                        "用户修改了计划参数：旧设置["
+                                + oldTrim.replace("\n", "；")
+                                + "] → 新设置["
+                                + newTrim.replace("\n", "；")
+                                + "]");
             }
         }
         if (province != null || city != null) {
@@ -1002,10 +1008,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         activeFutures.put(task.getId(), future);
     }
 
-    /**
-     * 用户确认后执行最终阶段（步骤 6-7）：重新实时检索 → 生成最终报告 → 标记完成。
-     * 确认阶段可能补充了新问题，需要合并后重新提取检索类别并刷新地点信息。
-     */
+    /** 用户确认后执行最终阶段（步骤 6-7）：重新实时检索 → 生成最终报告 → 标记完成。 确认阶段可能补充了新问题，需要合并后重新提取检索类别并刷新地点信息。 */
     private void finish(
             AgentTask task,
             String note,
@@ -1060,22 +1063,24 @@ public class AgentTaskServiceImpl implements AgentTaskService {
             // 送礼场景预算以结构化需求里的 budgetText 为准
             String finalBudget = budget;
             RequirementStateService.RequirementSnapshot snap = requirementState.get(task.getId());
-            if (snap != null && snap.requirement() != null && snap.requirement().gift() != null
+            if (snap != null
+                    && snap.requirement() != null
+                    && snap.requirement().gift() != null
                     && snap.requirement().gift().budgetText() != null
                     && !snap.requirement().gift().budgetText().isBlank()) {
                 finalBudget = snap.requirement().gift().budgetText();
             }
-            String finalBudgetLabel = "未限定".equals(finalBudget) || finalBudget.isBlank()
-                    ? "未限定"
-                    : finalBudget + (finalBudget.contains("元") ? "" : " 元");
+            String finalBudgetLabel =
+                    "未限定".equals(finalBudget) || finalBudget.isBlank()
+                            ? "未限定"
+                            : finalBudget + (finalBudget.contains("元") ? "" : " 元");
             ActionPlan plan = planModel.findByTask(task);
             if (plan != null) {
                 List<PlanVersion> allVersions = planModel.versions(plan.getId());
                 if (!allVersions.isEmpty()) {
                     PlanVersion approved = allVersions.getFirst();
                     task.setPlanPreview(
-                            planModel.renderPreview(
-                                    planModel.itemsOf(approved), finalBudgetLabel));
+                            planModel.renderPreview(planModel.itemsOf(approved), finalBudgetLabel));
                 }
             }
             confirmation.setDetail(
@@ -1131,10 +1136,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         return pdfService.get(userId, id);
     }
 
-    /**
-     * 取消任务。设置取消标志并中断执行线程，状态流转为 CANCELLED。
-     * 已处于终态（SUCCEEDED/FAILED/CANCELLED）的任务直接返回，不重复操作。
-     */
+    /** 取消任务。设置取消标志并中断执行线程，状态流转为 CANCELLED。 已处于终态（SUCCEEDED/FAILED/CANCELLED）的任务直接返回，不重复操作。 */
     @Override
     public AgentTask cancel(Long id, Long userId) {
         AgentTask task = owned(id, userId);
@@ -1147,10 +1149,9 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     }
 
     /**
-     * 换一批候选地点卡片：从任务上持久化的 placePoolJson 反序列化候选池，
-     * 用当前时间做新随机种子，按类别均衡重抽候选卡片。行程主线（places）与路线（routes）
-     * 保持不变，只替换 journeyEvidenceJson 里的 mapCards。
-     * 仅在等待用户确认（AWAITING_CONFIRMATION）阶段允许调用；候选池缺失时直接报 400。
+     * 换一批候选地点卡片：从任务上持久化的 placePoolJson 反序列化候选池， 用当前时间做新随机种子，按类别均衡重抽候选卡片。行程主线（places）与路线（routes）
+     * 保持不变，只替换 journeyEvidenceJson 里的 mapCards。 仅在等待用户确认（AWAITING_CONFIRMATION）阶段允许调用；候选池缺失时直接报
+     * 400。
      */
     @Transactional
     @Override
@@ -1161,8 +1162,10 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         }
         String poolJson = task.getPlacePoolJson();
         String evidenceJson = task.getJourneyEvidenceJson();
-        if (poolJson == null || poolJson.isBlank()
-                || evidenceJson == null || evidenceJson.isBlank()) {
+        if (poolJson == null
+                || poolJson.isBlank()
+                || evidenceJson == null
+                || evidenceJson.isBlank()) {
             throw ApiException.badRequest("尚未取得可换批的候选地点，请先重新规划一次");
         }
         try {
@@ -1182,9 +1185,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     }
 
     /**
-     * 删除任务及其全部关联数据（步骤、工具调用、执行轨迹、PDF 文件）。
-     * 运行中的任务不允许删除，需先取消。
-     * 存储文件删除失败不阻断数据库删除（catch 后继续），避免孤立文件阻塞清理。
+     * 删除任务及其全部关联数据（步骤、工具调用、执行轨迹、PDF 文件）。 运行中的任务不允许删除，需先取消。 存储文件删除失败不阻断数据库删除（catch 后继续），避免孤立文件阻塞清理。
      */
     @Transactional
     @Override
@@ -1215,9 +1216,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     }
 
     /**
-     * 确认结构化需求并继续生成（需求检查点交互）。
-     * 标记需求已确认后复用 run() 的执行路径：基于已确认的结构化需求
-     * 增量解析（prior 合并）+ 代码重新校验；仍有冲突则回到 AWAITING_REQUIREMENT。
+     * 确认结构化需求并继续生成（需求检查点交互）。 标记需求已确认后复用 run() 的执行路径：基于已确认的结构化需求 增量解析（prior 合并）+ 代码重新校验；仍有冲突则回到
+     * AWAITING_REQUIREMENT。
      */
     @Override
     public SseEmitter approveRequirement(Long id, Long userId) {
@@ -1230,7 +1230,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     }
 
     /** 把结构化需求快照转成 SSE requirement 事件的负载（约束清单 + 校验结果） */
-    private Map<String, Object> requirementEvent(RequirementStateService.RequirementSnapshot snapshot) {
+    private Map<String, Object> requirementEvent(
+            RequirementStateService.RequirementSnapshot snapshot) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("requirement", snapshot.requirement());
         data.put("issues", snapshot.validation().issues());
@@ -1243,12 +1244,8 @@ public class AgentTaskServiceImpl implements AgentTaskService {
     }
 
     /**
-     * 统一的任务失败处理。
-     * 根据异常类型和重试次数决定后续状态：
-     * - 取消/中断异常 → CANCELLED
-     * - 未超最大重试次数 → RETRY_WAIT（指数退避，下次重试时间 = 5 * 2^(retryCount-1) 秒，上限 60 秒）
-     * - 超过最大重试次数 → FAILED
-     * 同时记录执行轨迹和 SSE error 事件。
+     * 统一的任务失败处理。 根据异常类型和重试次数决定后续状态： - 取消/中断异常 → CANCELLED - 未超最大重试次数 → RETRY_WAIT（指数退避，下次重试时间 = 5 *
+     * 2^(retryCount-1) 秒，上限 60 秒） - 超过最大重试次数 → FAILED 同时记录执行轨迹和 SSE error 事件。
      */
     private void fail(AgentTask task, Exception error, SseEmitter emitter) {
         // 重新从数据库读取最新状态，避免使用过期的内存对象
@@ -1287,10 +1284,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         emitter.complete();
     }
 
-    /**
-     * 记录一条执行轨迹事件，委托给 AgentExecutionTraceService。
-     * 轨迹用于前端展示任务执行的完整时间线（思考、工具调用、结果、错误等）。
-     */
+    /** 记录一条执行轨迹事件，委托给 AgentExecutionTraceService。 轨迹用于前端展示任务执行的完整时间线（思考、工具调用、结果、错误等）。 */
     private void trace(
             AgentTask task,
             Integer stepNo,
@@ -1322,19 +1316,15 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 metadata);
     }
 
-    /**
-     * 按 ID + 用户 ID 查询任务，不存在则抛出 404。
-     * 所有需要鉴权的操作都通过此方法获取任务，确保用户只能操作自己的任务。
-     */
+    /** 按 ID + 用户 ID 查询任务，不存在则抛出 404。 所有需要鉴权的操作都通过此方法获取任务，确保用户只能操作自己的任务。 */
     private AgentTask owned(Long id, Long userId) {
         return tasks.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> ApiException.notFound("任务不存在"));
     }
 
     /**
-     * 保存任务并同步乐观锁版本号到内存对象。
-     * saveAndFlush 后数据库的 @Version 字段会自增，需要回写到 task 对象，
-     * 否则后续更新会因版本号不匹配抛出 OptimisticLockingFailureException。
+     * 保存任务并同步乐观锁版本号到内存对象。 saveAndFlush 后数据库的 @Version 字段会自增，需要回写到 task 对象， 否则后续更新会因版本号不匹配抛出
+     * OptimisticLockingFailureException。
      */
     private AgentTask saveTask(AgentTask task) {
         AgentTask saved = tasks.saveAndFlush(task);
@@ -1348,10 +1338,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         return value.substring(0, Math.min(length, value.length()));
     }
 
-    /**
-     * 向 SSE 流发送一个命名事件。
-     * 发送失败（客户端已断开）静默忽略，因为执行流程不应因前端断开而中断。
-     */
+    /** 向 SSE 流发送一个命名事件。 发送失败（客户端已断开）静默忽略，因为执行流程不应因前端断开而中断。 */
     private void event(SseEmitter emitter, String name, Object data) {
         try {
             emitter.send(SseEmitter.event().name(name).data(data));

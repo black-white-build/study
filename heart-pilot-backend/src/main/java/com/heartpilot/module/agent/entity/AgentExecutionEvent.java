@@ -15,10 +15,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * Agent 执行事件实体，对应数据库表 agent_execution_event。
- * 以事件流（Event Sourcing）方式记录任务执行过程中的每一步关键动作：
- * 思考、行动、观察、结果、告警、错误等，用于前端回放执行轨迹与问题排查。
- * 按 taskId + createdAt 建索引，便于按时间线拉取。
+ * Agent 执行事件实体，对应数据库表 agent_execution_event。 以事件流（Event Sourcing）方式记录任务执行过程中的每一步关键动作：
+ * 思考、行动、观察、结果、告警、错误等，用于前端回放执行轨迹与问题排查。 按 taskId + createdAt 建索引，便于按时间线拉取。
  */
 @Entity
 @Table(

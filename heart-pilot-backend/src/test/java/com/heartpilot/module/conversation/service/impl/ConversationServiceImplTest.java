@@ -41,13 +41,9 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
-/**
- * 对话服务核心链路测试：覆盖流式生成完成落库、检索命中状态审计、安全直答旁路、
- * 缓存命中旁路、同会话并发拦截与手动停止六条关键路径。
- */
+/** 对话服务核心链路测试：覆盖流式生成完成落库、检索命中状态审计、安全直答旁路、 缓存命中旁路、同会话并发拦截与手动停止六条关键路径。 */
 class ConversationServiceImplTest {
     private final ObjectMapper json = new ObjectMapper();
 
@@ -101,7 +97,8 @@ class ConversationServiceImplTest {
                         invocation -> {
                             AiMessage message = invocation.getArgument(0);
                             // 模拟数据库分配自增 ID，避免 Map.of("messageId", ...) 因 null 抛 NPE
-                            if (message.getId() == null) message.setId(messageIds.incrementAndGet());
+                            if (message.getId() == null)
+                                message.setId(messageIds.incrementAndGet());
                             if ("ASSISTANT".equals(message.getRole())) savedAssistants.add(message);
                             return message;
                         });
@@ -172,7 +169,9 @@ class ConversationServiceImplTest {
     /** 放行式安全决策：CONTINUE + REAL 语境 */
     private void continueSafety() {
         when(safetyPolicy.evaluate(anyString()))
-                .thenReturn(AnswerSafetyPolicy.Decision.continueWithModel(AnswerSafetyPolicy.Context.REAL));
+                .thenReturn(
+                        AnswerSafetyPolicy.Decision.continueWithModel(
+                                AnswerSafetyPolicy.Context.REAL));
     }
 
     /** 知识问答路由：需要检索知识库 */
@@ -311,9 +310,7 @@ class ConversationServiceImplTest {
         service.send(1L, 2L, "第一条消息", null);
 
         ApiException exception =
-                assertThrows(
-                        ApiException.class,
-                        () -> service.send(1L, 2L, "第二条消息", null));
+                assertThrows(ApiException.class, () -> service.send(1L, 2L, "第二条消息", null));
         assertEquals("GENERATION_ACTIVE", exception.code());
     }
 

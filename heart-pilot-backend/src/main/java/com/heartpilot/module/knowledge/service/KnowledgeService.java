@@ -34,8 +34,7 @@ public interface KnowledgeService {
     List<Source> retrieve(String query, int limit);
 
     /**
-     * 从指定目录全量重建知识库：扫描 Markdown 文件、清空旧文档后重新解析、切片、向量化。
-     * 用于以文件仓库为权威来源同步线上知识库。
+     * 从指定目录全量重建知识库：扫描 Markdown 文件、清空旧文档后重新解析、切片、向量化。 用于以文件仓库为权威来源同步线上知识库。
      *
      * @param sourceDirectory 知识源目录
      * @param userId 操作人 ID
@@ -49,16 +48,10 @@ public interface KnowledgeService {
     /** 管理员分页列出全部文档元数据 */
     Page<KnowledgeDocument> list(Pageable pageable);
 
-    /**
-     * 读取指定文档已经落库的切片正文，按 chunkIndex 顺序拼接。
-     * 该操作只读取 knowledge_chunk，不会重新解析或重新切片原始文件。
-     */
+    /** 读取指定文档已经落库的切片正文，按 chunkIndex 顺序拼接。 该操作只读取 knowledge_chunk，不会重新解析或重新切片原始文件。 */
     DocumentContent content(Long id);
 
-    /**
-     * 审核通过一份已处理完成的文档，使其进入 RAG 检索池。
-     * 仅允许 READY 且 IN_REVIEW 的文档执行该状态流转。
-     */
+    /** 审核通过一份已处理完成的文档，使其进入 RAG 检索池。 仅允许 READY 且 IN_REVIEW 的文档执行该状态流转。 */
     KnowledgeDocument approve(Long id);
 
     /** 删除文档：级联清理 PGVector 向量、切片记录、对象存储文件、文档元数据 */

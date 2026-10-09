@@ -17,10 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 用户信息与关系档案 Controller，路径前缀 /users/me。
- * 负责当前登录用户的基础信息查询/更新（昵称、情绪状态、头像），
- * 以及一对一关系档案（RelationshipProfile）的查询与保存。
- * 所有接口均通过 CurrentUser 取当前用户 ID，仅能操作自己的数据。
+ * 用户信息与关系档案 Controller，路径前缀 /users/me。 负责当前登录用户的基础信息查询/更新（昵称、情绪状态、头像），
+ * 以及一对一关系档案（RelationshipProfile）的查询与保存。 所有接口均通过 CurrentUser 取当前用户 ID，仅能操作自己的数据。
  */
 @RestController
 @RequestMapping("/users/me")
@@ -36,18 +34,13 @@ public class UserController {
         this.profiles = profiles;
     }
 
-    /**
-     * GET /users/me —— 获取当前登录用户的基础信息。
-     */
+    /** GET /users/me —— 获取当前登录用户的基础信息。 */
     @GetMapping
     public UserDtos.UserResponse me() {
         return UserDtos.UserResponse.from(currentUser());
     }
 
-    /**
-     * PATCH /users/me —— 局部更新用户基础信息。
-     * 仅更新传入的非空字段（昵称会 trim），未传字段保持不变。
-     */
+    /** PATCH /users/me —— 局部更新用户基础信息。 仅更新传入的非空字段（昵称会 trim），未传字段保持不变。 */
     @PatchMapping
     @Transactional
     public UserDtos.UserResponse update(@Valid @RequestBody UserDtos.UpdateUserRequest request) {
@@ -59,10 +52,7 @@ public class UserController {
         return UserDtos.UserResponse.from(user);
     }
 
-    /**
-     * GET /users/me/relationship-profile —— 获取当前用户的关系档案。
-     * 不存在时自动创建一条空白档案返回，保证前端总能拿到一个可编辑对象。
-     */
+    /** GET /users/me/relationship-profile —— 获取当前用户的关系档案。 不存在时自动创建一条空白档案返回，保证前端总能拿到一个可编辑对象。 */
     @GetMapping("/relationship-profile")
     public UserDtos.ProfileResponse profile() {
         RelationshipProfile profile =
@@ -76,10 +66,7 @@ public class UserController {
         return UserDtos.ProfileResponse.from(profile);
     }
 
-    /**
-     * PUT /users/me/relationship-profile —— 全量保存关系档案。
-     * 档案与用户一对一，存在则覆盖更新，不存在则新建。
-     */
+    /** PUT /users/me/relationship-profile —— 全量保存关系档案。 档案与用户一对一，存在则覆盖更新，不存在则新建。 */
     @PutMapping("/relationship-profile")
     @Transactional
     public UserDtos.ProfileResponse profile(@Valid @RequestBody UserDtos.ProfileRequest request) {

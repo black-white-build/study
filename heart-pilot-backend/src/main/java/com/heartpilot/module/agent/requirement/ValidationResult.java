@@ -2,11 +2,7 @@ package com.heartpilot.module.agent.requirement;
 
 import java.util.List;
 
-/**
- * 需求校验结果。
- * 存在 BLOCKER 级问题时 blocked() 为 true，流程停止并交由用户调整约束，
- * 不会让大模型强行生成不可行方案。
- */
+/** 需求校验结果。 存在 BLOCKER 级问题时 blocked() 为 true，流程停止并交由用户调整约束， 不会让大模型强行生成不可行方案。 */
 public record ValidationResult(List<RequirementIssue> issues) {
 
     public ValidationResult {

@@ -17,27 +17,32 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * 网页搜索工具，供 Agent 调用以获取公开网页资料。
- * 基于 searchapi.io（百度引擎）实现，结果会过滤掉与心理健康/医学论文无关的噪音来源，
+ * 网页搜索工具，供 Agent 调用以获取公开网页资料。 基于 searchapi.io（百度引擎）实现，结果会过滤掉与心理健康/医学论文无关的噪音来源，
  * 并按"目标城市"做地域相关性过滤，避免返回其他城市的地点信息。
  */
 @Component
 public class WebSearchTool {
     private static final Logger log = LoggerFactory.getLogger(WebSearchTool.class);
+
     /** searchapi.io 搜索接口地址 */
     private static final String URL = "https://www.searchapi.io/api/v1/search";
+
     /** 与本地生活场景无关的噪音关键词，命中则丢弃该条结果（医学/学术类网页对找地点无帮助） */
     private static final Set<String> IRRELEVANT = Set.of("世界卫生组织", "心理健康", "精神卫生", "医学论文", "学术文档");
+
     /** searchapi.io API Key，来自配置项 search-api.api-key；为空时搜索降级为返回空结果 */
     private final String apiKey;
+
     private final CapabilityStatusRecorder statusRecorder;
 
     public WebSearchTool(
-            @Value("${search-api.api-key:}") String apiKey, CapabilityStatusRecorder statusRecorder) {
+            @Value("${search-api.api-key:}") String apiKey,
+            CapabilityStatusRecorder statusRecorder) {
         this.apiKey = apiKey;
         this.statusRecorder = statusRecorder;
         if (apiKey == null || apiKey.isBlank()) {
-            statusRecorder.recordWebSearch(CapabilityStatusRecorder.Status.NO_KEY, "未配置 SEARCH_API_KEY");
+            statusRecorder.recordWebSearch(
+                    CapabilityStatusRecorder.Status.NO_KEY, "未配置 SEARCH_API_KEY");
         }
     }
 
@@ -55,10 +60,10 @@ public class WebSearchTool {
     /**
      * 搜索本地地点并要求结果同时命中指定关键词。
      *
-     * @param city           目标城市
-     * @param keywords       地点关键词
+     * @param city 目标城市
+     * @param keywords 地点关键词
      * @param requiredKeyword 结果标题或摘要中必须包含的词（用于二次筛选）
-     * @param limit          最大返回条数
+     * @param limit 最大返回条数
      * @return 格式化结果；无命中时返回明确提示文案
      */
     public String searchLocalPlaces(
@@ -82,12 +87,11 @@ public class WebSearchTool {
     }
 
     /**
-     * 调用 searchapi.io 并清洗结果。
-     * 无 API Key 或请求异常时静默返回空列表（搜索是增强能力，不应阻断主流程）。
+     * 调用 searchapi.io 并清洗结果。 无 API Key 或请求异常时静默返回空列表（搜索是增强能力，不应阻断主流程）。
      *
-     * @param query        搜索词
+     * @param query 搜索词
      * @param requiredCity 需要过滤的目标城市，null 表示不做地域过滤
-     * @param limit        最多保留条数
+     * @param limit 最多保留条数
      */
     private List<WebResult> searchResults(String query, String requiredCity, int limit) {
         if (apiKey == null || apiKey.isBlank()) {
@@ -110,7 +114,8 @@ public class WebSearchTool {
                             CapabilityStatusRecorder.Status.AUTH_FAILED, "搜索 key 无效或已过期");
                 } else {
                     statusRecorder.recordWebSearch(
-                            CapabilityStatusRecorder.Status.ERROR, error.length() > 120 ? error.substring(0, 120) : error);
+                            CapabilityStatusRecorder.Status.ERROR,
+                            error.length() > 120 ? error.substring(0, 120) : error);
                 }
                 return List.of();
             }
@@ -142,17 +147,13 @@ public class WebSearchTool {
         }
     }
 
-    /**
-     * 判断文本中是否确实提到了目标地点（归一化后做包含匹配）。
-     */
+    /** 判断文本中是否确实提到了目标地点（归一化后做包含匹配）。 */
     static boolean containsRequestedLocation(String text, String requestedLocation) {
         String keyword = mostSpecificLocationName(requestedLocation);
         return !keyword.isBlank() && normalizeLocationText(text).contains(keyword);
     }
 
-    /**
-     * 从"XX省XX市"这类全称中提取最具体的地名（去掉省/自治区等前缀）。
-     */
+    /** 从"XX省XX市"这类全称中提取最具体的地名（去掉省/自治区等前缀）。 */
     static String mostSpecificLocationName(String value) {
         if (value == null) return "";
         String location = value.replaceAll("[\\s,，、/\\-|]+", "").trim();
@@ -160,9 +161,7 @@ public class WebSearchTool {
         return normalizeLocationText(location);
     }
 
-    /**
-     * 归一化地名文本：去除空白、标点与"省/市/区/县"等行政后缀，便于做模糊包含判断。
-     */
+    /** 归一化地名文本：去除空白、标点与"省/市/区/县"等行政后缀，便于做模糊包含判断。 */
     private static String normalizeLocationText(String value) {
         if (value == null) return "";
         return value.replaceAll("[\\s,，、/\\-|]+", "")
@@ -170,9 +169,7 @@ public class WebSearchTool {
                 .trim();
     }
 
-    /**
-     * 把搜索结果拼接为给 AI/用户阅读的 Markdown 列表文本；空结果返回友好提示。
-     */
+    /** 把搜索结果拼接为给 AI/用户阅读的 Markdown 列表文本；空结果返回友好提示。 */
     private String format(List<WebResult> results, String requiredCity) {
         if (results.isEmpty()) {
             return requiredCity == null || requiredCity.isBlank()

@@ -57,9 +57,17 @@
                 >{{ m.content }}</template
               ><span v-if="m.status === 'STREAMING'" class="cursor"></span>
             </div>
-            <div v-if="m.role === 'ASSISTANT' && retrieval(m)" class="retrieval" :class="retrieval(m).status.toLowerCase()">
-              <template v-if="retrieval(m).status === 'HIT'">知识库命中 {{ retrieval(m).count }} 条</template>
-              <template v-else-if="retrieval(m).status === 'MISS'">知识库未命中，本次为模型知识回答</template>
+            <div
+              v-if="m.role === 'ASSISTANT' && retrieval(m)"
+              class="retrieval"
+              :class="retrieval(m).status.toLowerCase()"
+            >
+              <template v-if="retrieval(m).status === 'HIT'"
+                >知识库命中 {{ retrieval(m).count }} 条</template
+              >
+              <template v-else-if="retrieval(m).status === 'MISS'"
+                >知识库未命中，本次为模型知识回答</template
+              >
               <template v-else>本次未检索知识库</template>
             </div>
             <div v-if="sources(m).length" class="sources">

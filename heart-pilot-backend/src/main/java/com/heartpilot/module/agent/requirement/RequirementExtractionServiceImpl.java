@@ -15,17 +15,16 @@ import org.springframework.stereotype.Service;
 /**
  * 结构化需求抽取服务实现。
  *
- * <p>角色定义（轻量串行多 Agent 流水线的第 1 个角色）：需求解析 Agent。
- * 只负责"理解自然语言 → 结构化约束"，不检索、不生成方案；
- * 硬性可行性判断交给 {@link RequirementValidator}（代码），
- * 检索挑选交给候选挑选 Agent，方案编排交给富化器（审计 Agent）。
+ * <p>角色定义（轻量串行多 Agent 流水线的第 1 个角色）：需求解析 Agent。 只负责"理解自然语言 → 结构化约束"，不检索、不生成方案； 硬性可行性判断交给 {@link
+ * RequirementValidator}（代码）， 检索挑选交给候选挑选 Agent，方案编排交给富化器（审计 Agent）。
  *
  * <p>抽取 Prompt 要点：
+ *
  * <ul>
- *   <li>固定 JSON Schema 输出（结构化输出），不做自然语言解释</li>
- *   <li>四类约束严格分类：硬性 / 优先 / 可选 / 排除，禁止把排除项塞进偏好</li>
- *   <li>从"目标 + 结构化参数 + 背景"合并理解，但参数优先级高于目标文本</li>
- *   <li>不编造具体店名/商品名，只提取概念与约束</li>
+ *   <li>固定 JSON Schema 输出（结构化输出），不做自然语言解释
+ *   <li>四类约束严格分类：硬性 / 优先 / 可选 / 排除，禁止把排除项塞进偏好
+ *   <li>从"目标 + 结构化参数 + 背景"合并理解，但参数优先级高于目标文本
+ *   <li>不编造具体店名/商品名，只提取概念与约束
  * </ul>
  */
 @Service
@@ -104,12 +103,20 @@ public class RequirementExtractionServiceImpl implements RequirementExtractionSe
 
     /** 组装用户 Prompt：目标 + 结构化参数 + 已确认 prior + 重试反馈 */
     private String userPrompt(
-            AgentTask task, Map<String, Object> parameters, StructuredRequirement prior, String feedback) {
+            AgentTask task,
+            Map<String, Object> parameters,
+            StructuredRequirement prior,
+            String feedback) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("计划目标：").append(task.getObjective() == null ? "" : task.getObjective()).append("\n");
+        prompt.append("计划目标：")
+                .append(task.getObjective() == null ? "" : task.getObjective())
+                .append("\n");
         appendParam(prompt, "地点范围", String.valueOf(parameters.getOrDefault("city", "")));
         appendParam(prompt, "预算", String.valueOf(parameters.getOrDefault("budget", "")));
-        appendParam(prompt, "行动类型", String.valueOf(parameters.getOrDefault("preferredActionKinds", "")));
+        appendParam(
+                prompt,
+                "行动类型",
+                String.valueOf(parameters.getOrDefault("preferredActionKinds", "")));
         List<?> questions = asList(parameters.get("questions"));
         if (!questions.isEmpty()) {
             prompt.append("需要逐项回答的问题：\n");
@@ -120,9 +127,14 @@ public class RequirementExtractionServiceImpl implements RequirementExtractionSe
         }
         List<?> revisions = asList(parameters.get("revisions"));
         if (!revisions.isEmpty()) {
-            prompt.append("历次修改要求：").append(String.join("；", revisions.stream().map(String::valueOf).toList())).append("\n");
+            prompt.append("历次修改要求：")
+                    .append(String.join("；", revisions.stream().map(String::valueOf).toList()))
+                    .append("\n");
         }
-        appendParam(prompt, "背景补充（含时间/边界/礼物细节）", String.valueOf(parameters.getOrDefault("contextNotes", "")));
+        appendParam(
+                prompt,
+                "背景补充（含时间/边界/礼物细节）",
+                String.valueOf(parameters.getOrDefault("contextNotes", "")));
         if (prior != null) {
             prompt.append("此前已确认的结构化需求（在此基础上有改动才更新，未改动的字段原样保留）：\n")
                     .append(priorSummary(prior))
@@ -161,32 +173,34 @@ public class RequirementExtractionServiceImpl implements RequirementExtractionSe
         GiftRequirement gift = null;
         if (model.place() != null) {
             PlaceModel p = model.place();
-            place = new PlaceRequirement(
-                    blankTo(p.city()),
-                    blankTo(p.startPoint()),
-                    blankTo(p.startTime()),
-                    blankTo(p.latestReturnTime()),
-                    blankTo(p.transportMode()),
-                    p.partySize(),
-                    strings(p.mustVisit()),
-                    strings(p.recommendedVisit()),
-                    strings(p.forbiddenPlaces()),
-                    p.stayMinutesPerPlace(),
-                    decimal(p.budgetMin()),
-                    decimal(p.budgetMax()),
-                    blankTo(p.budgetText()));
+            place =
+                    new PlaceRequirement(
+                            blankTo(p.city()),
+                            blankTo(p.startPoint()),
+                            blankTo(p.startTime()),
+                            blankTo(p.latestReturnTime()),
+                            blankTo(p.transportMode()),
+                            p.partySize(),
+                            strings(p.mustVisit()),
+                            strings(p.recommendedVisit()),
+                            strings(p.forbiddenPlaces()),
+                            p.stayMinutesPerPlace(),
+                            decimal(p.budgetMin()),
+                            decimal(p.budgetMax()),
+                            blankTo(p.budgetText()));
         }
         if (model.gift() != null) {
             GiftModel g = model.gift();
-            gift = new GiftRequirement(
-                    blankTo(g.recipient()),
-                    g.recipientAge(),
-                    blankTo(g.occasion()),
-                    decimal(g.budgetMin()),
-                    decimal(g.budgetMax()),
-                    blankTo(g.budgetText()),
-                    strings(g.stylePreferences()),
-                    strings(g.forbiddenCategories()));
+            gift =
+                    new GiftRequirement(
+                            blankTo(g.recipient()),
+                            g.recipientAge(),
+                            blankTo(g.occasion()),
+                            decimal(g.budgetMin()),
+                            decimal(g.budgetMax()),
+                            blankTo(g.budgetText()),
+                            strings(g.stylePreferences()),
+                            strings(g.forbiddenCategories()));
         }
         return new StructuredRequirement(
                 type,
@@ -222,15 +236,15 @@ public class RequirementExtractionServiceImpl implements RequirementExtractionSe
     }
 
     /**
-     * 参数预算兜底：模型输出里预算缺失（budgetMax 为 null）时补数字上限。
-     * PLACE 分支用 parameters.budget 数字补；GIFT 分支从 gift.budgetText（如"200到500元"）解析，
-     * 不再依赖 parameters.budget（前端送礼场景统一只传文本）。
+     * 参数预算兜底：模型输出里预算缺失（budgetMax 为 null）时补数字上限。 PLACE 分支用 parameters.budget 数字补；GIFT 分支从
+     * gift.budgetText（如"200到500元"）解析， 不再依赖 parameters.budget（前端送礼场景统一只传文本）。
      */
     private StructuredRequirement applyParameterBudget(
             StructuredRequirement requirement, Map<String, Object> parameters) {
         switch (requirement.type()) {
             case PLACE -> {
-                BigDecimal parameterBudget = decimal(String.valueOf(parameters.getOrDefault("budget", "")));
+                BigDecimal parameterBudget =
+                        decimal(String.valueOf(parameters.getOrDefault("budget", "")));
                 if (parameterBudget == null) return requirement;
                 PlaceRequirement p = requirement.place();
                 if (p != null && p.budgetMax() == null) {
@@ -299,8 +313,8 @@ public class RequirementExtractionServiceImpl implements RequirementExtractionSe
     }
 
     /**
-     * 规则降级抽取：不依赖大模型，从已填写的结构化参数拼装 StructuredRequirement。
-     * 保证无 Key / 模型故障时流程仍可运行（aiGenerated=false 标记降级）。
+     * 规则降级抽取：不依赖大模型，从已填写的结构化参数拼装 StructuredRequirement。 保证无 Key / 模型故障时流程仍可运行（aiGenerated=false
+     * 标记降级）。
      */
     private StructuredRequirement fallback(
             AgentTask task, Map<String, Object> parameters, StructuredRequirement prior) {
@@ -310,9 +324,13 @@ public class RequirementExtractionServiceImpl implements RequirementExtractionSe
         if (type == null) {
             // 无法判定类型时尝试从目标文本猜：含地点类词 → PLACE，含送/礼词 → GIFT
             String objective = task.getObjective() == null ? "" : task.getObjective();
-            type = objective.matches(".*(送|礼|礼物|生日|纪念日).*") ? RequirementType.GIFT : RequirementType.PLACE;
+            type =
+                    objective.matches(".*(送|礼|礼物|生日|纪念日).*")
+                            ? RequirementType.GIFT
+                            : RequirementType.PLACE;
         }
-        Map<String, String> notes = parseContextNotes(String.valueOf(parameters.getOrDefault("contextNotes", "")));
+        Map<String, String> notes =
+                parseContextNotes(String.valueOf(parameters.getOrDefault("contextNotes", "")));
         List<String> hard = new ArrayList<>();
         List<String> priority = new ArrayList<>();
         List<String> optional = new ArrayList<>();
@@ -328,26 +346,29 @@ public class RequirementExtractionServiceImpl implements RequirementExtractionSe
         }
         String time = notes.getOrDefault("时间约束", "");
         if (!time.isBlank()) hard.add(time);
-        if (task.getObjective() != null && !task.getObjective().isBlank()) priority.add(task.getObjective());
+        if (task.getObjective() != null && !task.getObjective().isBlank())
+            priority.add(task.getObjective());
         asList(parameters.get("questions")).forEach(q -> priority.add(String.valueOf(q)));
 
         if (type == RequirementType.PLACE) {
             BigDecimal max = decimal(String.valueOf(parameters.getOrDefault("budget", "")));
-            PlaceRequirement place = new PlaceRequirement(
-                    String.valueOf(parameters.getOrDefault("city", "")),
-                    "",
-                    "",
-                    "",
-                    "",
-                    intOrNull(notes.get("人数")),
-                    List.of(),
-                    List.of(),
-                    List.of(),
-                    null,
-                    null,
-                    max,
-                    max == null ? "" : max.toPlainString() + "元");
-            return new StructuredRequirement(type, hard, priority, optional, exclusions, place, null, contextNote, false);
+            PlaceRequirement place =
+                    new PlaceRequirement(
+                            String.valueOf(parameters.getOrDefault("city", "")),
+                            "",
+                            "",
+                            "",
+                            "",
+                            intOrNull(notes.get("人数")),
+                            List.of(),
+                            List.of(),
+                            List.of(),
+                            null,
+                            null,
+                            max,
+                            max == null ? "" : max.toPlainString() + "元");
+            return new StructuredRequirement(
+                    type, hard, priority, optional, exclusions, place, null, contextNote, false);
         }
         // 礼物预算：优先从"礼物预算：xxx元"文本解析上限（前端统一只传这一个字段）；
         // 兼容旧数据：文本为空时回退到 parameters.budget 数字参数
@@ -359,16 +380,18 @@ public class RequirementExtractionServiceImpl implements RequirementExtractionSe
                 giftBudgetText = giftBudgetMax.toPlainString() + "元";
             }
         }
-        GiftRequirement gift = new GiftRequirement(
-                extractRecipient(task.getObjective(), notes),
-                intOrNull(notes.get("对方年龄")),
-                notes.get("场合"),
-                null,
-                giftBudgetMax,
-                giftBudgetText,
-                extractPreferences(notes, task.getObjective()),
-                List.of());
-        return new StructuredRequirement(type, hard, priority, optional, exclusions, null, gift, contextNote, false);
+        GiftRequirement gift =
+                new GiftRequirement(
+                        extractRecipient(task.getObjective(), notes),
+                        intOrNull(notes.get("对方年龄")),
+                        notes.get("场合"),
+                        null,
+                        giftBudgetMax,
+                        giftBudgetText,
+                        extractPreferences(notes, task.getObjective()),
+                        List.of());
+        return new StructuredRequirement(
+                type, hard, priority, optional, exclusions, null, gift, contextNote, false);
     }
 
     /** 解析"标签：值"形式的背景补充文本（前端按行拼接） */
@@ -405,7 +428,8 @@ public class RequirementExtractionServiceImpl implements RequirementExtractionSe
             }
         }
         if (objective == null) return "";
-        for (String keyword : List.of("女朋友", "男朋友", "老婆", "老公", "妈妈", "爸爸", "家人", "朋友", "闺蜜", "兄弟", "对象")) {
+        for (String keyword :
+                List.of("女朋友", "男朋友", "老婆", "老公", "妈妈", "爸爸", "家人", "朋友", "闺蜜", "兄弟", "对象")) {
             if (objective.contains(keyword)) {
                 int index = objective.indexOf(keyword);
                 int end = Math.min(objective.length(), index + keyword.length());
@@ -492,14 +516,14 @@ public class RequirementExtractionServiceImpl implements RequirementExtractionSe
     }
 
     /**
-     * 从预算描述文本里提取预算上限。
-     * 支持常见写法："200到500元"、"500元"、"500-800"、"100以内"、"约300"、"300~500"。
+     * 从预算描述文本里提取预算上限。 支持常见写法："200到500元"、"500元"、"500-800"、"100以内"、"约300"、"300~500"。
      * 策略：抽出所有数字，取最大值作为上限；抽不到返回 null。
      */
     static BigDecimal parseBudgetMax(String text) {
         if (text == null || text.isBlank()) return null;
         java.util.regex.Matcher matcher =
-                java.util.regex.Pattern.compile("\\d+(?:\\.\\d+)?").matcher(text.replaceAll(",", ""));
+                java.util.regex.Pattern.compile("\\d+(?:\\.\\d+)?")
+                        .matcher(text.replaceAll(",", ""));
         BigDecimal max = null;
         while (matcher.find()) {
             try {

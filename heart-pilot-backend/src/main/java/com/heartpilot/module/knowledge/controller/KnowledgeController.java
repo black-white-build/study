@@ -12,8 +12,8 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -88,18 +88,13 @@ public class KnowledgeController {
                         current.id()));
     }
 
-    /**
-     * 查看文档已经切好的纯文本内容。内容直接读取 knowledge_chunk 并按 chunkIndex 拼接，
-     * 不重新解析 PDF/Word，也不提供富文本或下载能力。
-     */
+    /** 查看文档已经切好的纯文本内容。内容直接读取 knowledge_chunk 并按 chunkIndex 拼接， 不重新解析 PDF/Word，也不提供富文本或下载能力。 */
     @GetMapping("/documents/{id}/content")
     ResourceDtos.KnowledgeDocumentContentResponse content(@PathVariable Long id) {
         return ResourceDtos.KnowledgeDocumentContentResponse.from(service.content(id));
     }
 
-    /**
-     * 审核通过已完成处理的文档。通过后 reviewStatus 变为 APPROVED，文档随即进入 RAG 检索池。
-     */
+    /** 审核通过已完成处理的文档。通过后 reviewStatus 变为 APPROVED，文档随即进入 RAG 检索池。 */
     @PatchMapping("/documents/{id}/approve")
     ResourceDtos.KnowledgeDocumentResponse approve(@PathVariable Long id) {
         return ResourceDtos.KnowledgeDocumentResponse.from(service.approve(id));

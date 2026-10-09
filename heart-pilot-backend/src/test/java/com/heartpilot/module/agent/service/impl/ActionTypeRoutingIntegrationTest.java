@@ -21,10 +21,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 /**
- * 行动类型路由集成测试（P12）。
- * 验证按行动类型分派工具的真实性约束：
- * 1. 消息型计划不调用地点工具、不产生地点证据、轨迹中无 ROUTE 阶段
- * 2. 混合计划中地点型行动调用地图工具，且地点/消息/沟通/练习多种类型共存于同一版本
+ * 行动类型路由集成测试（P12）。 验证按行动类型分派工具的真实性约束： 1. 消息型计划不调用地点工具、不产生地点证据、轨迹中无 ROUTE 阶段 2.
+ * 混合计划中地点型行动调用地图工具，且地点/消息/沟通/练习多种类型共存于同一版本
  */
 @SpringBootTest
 class ActionTypeRoutingIntegrationTest {
@@ -81,7 +79,8 @@ class ActionTypeRoutingIntegrationTest {
         assertNull(detail.task().getJourneyEvidenceJson());
         // 轨迹中不得出现 ROUTE（路线计算）阶段
         assertTrue(
-                detail.executionEvents().stream().noneMatch(event -> event.getPhase().name().equals("ROUTE")),
+                detail.executionEvents().stream()
+                        .noneMatch(event -> event.getPhase().name().equals("ROUTE")),
                 "消息型计划不应出现路线计算阶段");
         // 预览只包含消息行动
         assertNotNull(detail.task().getPlanPreview());
@@ -123,7 +122,8 @@ class ActionTypeRoutingIntegrationTest {
                 detail.task().getErrorMessage());
         // 地点型行动必须调用地图检索工具（AMAP 未配置时记录 FAILED，但工具调用仍被审计）
         assertTrue(
-                detail.toolCalls().stream().anyMatch(call -> "plan-place-search".equals(call.getToolName())),
+                detail.toolCalls().stream()
+                        .anyMatch(call -> "plan-place-search".equals(call.getToolName())),
                 "地点型计划应调用地图检索工具");
 
         // 多种行动类型共存于同一计划版本

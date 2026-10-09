@@ -7,10 +7,8 @@ import java.time.Instant;
 import lombok.*;
 
 /**
- * Agent 任务实体，对应数据库表 agent_task。
- * 一条任务记录了用户从创建行动计划到最终生成报告的完整生命周期，
- * 包含任务状态机、步骤进度、参数快照、重试与心跳等可靠性字段。
- * 继承 BaseEntity 获得 id、创建时间、更新时间等公共字段。
+ * Agent 任务实体，对应数据库表 agent_task。 一条任务记录了用户从创建行动计划到最终生成报告的完整生命周期， 包含任务状态机、步骤进度、参数快照、重试与心跳等可靠性字段。 继承
+ * BaseEntity 获得 id、创建时间、更新时间等公共字段。
  */
 @Entity
 @Table(
@@ -36,10 +34,7 @@ public class AgentTask extends BaseEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String objective;
 
-    /**
-     * 任务当前状态，使用字符串存储便于可读与扩展。
-     * 状态流转由 AgentTaskStateMachine 统一管理，禁止直接 setStatus。
-     */
+    /** 任务当前状态，使用字符串存储便于可读与扩展。 状态流转由 AgentTaskStateMachine 统一管理，禁止直接 setStatus。 */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private AgentTaskStatus status = AgentTaskStatus.WAITING;
@@ -61,8 +56,7 @@ public class AgentTask extends BaseEntity {
     private String journeyEvidenceJson;
 
     /**
-     * 地点候选池的 JSON 快照（Tier2 searchPool 返回的分组结果）。
-     * 首次检索后持久化，用户点"换一批候选地点"时不再调高德 API，
+     * 地点候选池的 JSON 快照（Tier2 searchPool 返回的分组结果）。 首次检索后持久化，用户点"换一批候选地点"时不再调高德 API，
      * 直接从这个池子里按类别均衡随机抽样，保证每次换一批结果可部分重合且不消耗外部配额。
      */
     @Column(columnDefinition = "TEXT")
@@ -99,15 +93,14 @@ public class AgentTask extends BaseEntity {
 
     /** 心跳时间戳，恢复扫描据此判断任务是否因服务宕机而僵死 */
     private Instant heartbeatAt;
+
     /** 最近一次开始执行的时间 */
     private Instant lastStartedAt;
+
     /** 下次允许重试的时间，实现指数退避 */
     private Instant nextRetryAt;
 
-    /**
-     * 幂等键，同一用户 + 同一幂等键的重复请求只会创建一条任务。
-     * 与 userId 组成唯一索引，防止网络重试导致重复投稿。
-     */
+    /** 幂等键，同一用户 + 同一幂等键的重复请求只会创建一条任务。 与 userId 组成唯一索引，防止网络重试导致重复投稿。 */
     @Column(length = 96)
     private String requestIdempotencyKey;
 
@@ -119,8 +112,7 @@ public class AgentTask extends BaseEntity {
     @Version private Long lockVersion;
 
     /**
-     * 实体持久化前和加载后统一兜底可靠性字段的默认值。
-     * 因为 retryCount / maxRetries 是 Integer 可为 null，
+     * 实体持久化前和加载后统一兜底可靠性字段的默认值。 因为 retryCount / maxRetries 是 Integer 可为 null，
      * 旧数据或手动构造的实例可能缺少值，在此统一初始化为 0 / 2。
      */
     @PrePersist

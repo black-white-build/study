@@ -5,9 +5,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-/**
- * 工具调用记录 Repository，操作 tool_call_record 表。
- */
+/** 工具调用记录 Repository，操作 tool_call_record 表。 */
 public interface ToolCallRepository extends JpaRepository<ToolCallRecord, Long> {
     /** 按任务查询工具调用记录，按创建时间正序 */
     List<ToolCallRecord> findByTaskIdOrderByCreatedAtAsc(Long taskId);

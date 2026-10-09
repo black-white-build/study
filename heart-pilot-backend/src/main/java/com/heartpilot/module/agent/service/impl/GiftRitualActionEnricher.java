@@ -17,18 +17,17 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 /**
- * 表达型行动富化器（礼物/仪式）。
- * 候选礼物以"AI 分析用户输入后生成的具体商品方向"为主（GiftPlan.ideas）。
+ * 表达型行动富化器（礼物/仪式）。 候选礼物以"AI 分析用户输入后生成的具体商品方向"为主（GiftPlan.ideas）。
  *
- * <p>流水线：基于结构化需求生成差异化关键词池（3 套方案强制不同品类）→ 纯 Java 黑名单过滤
- * （自动把排除项转为电商搜索排除语法）→ 按关键词调 WebSearchService 搜真实网页摘要
- * （DuckDuckGo 免费为主、SerpAPI 付费兜底，全失败降级纯 AI）→ LLM 基于摘要校准价格与品牌
- * → 每个候选附多平台电商跳转链接 + 1-2 条真实网页参考来源。
+ * <p>流水线：基于结构化需求生成差异化关键词池（3 套方案强制不同品类）→ 纯 Java 黑名单过滤 （自动把排除项转为电商搜索排除语法）→ 按关键词调 WebSearchService
+ * 搜真实网页摘要 （DuckDuckGo 免费为主、SerpAPI 付费兜底，全失败降级纯 AI）→ LLM 基于摘要校准价格与品牌 → 每个候选附多平台电商跳转链接 + 1-2
+ * 条真实网页参考来源。
  */
 @Service
 public class GiftRitualActionEnricher extends AbstractActionEnricher {
     /** 展示的最大候选条数 */
     private static final int MAX_IDEAS = 8;
+
     /** 每个礼物候选最多附带的参考来源条数 */
     private static final int MAX_SOURCES_PER_IDEA = 2;
 
@@ -60,7 +59,8 @@ public class GiftRitualActionEnricher extends AbstractActionEnricher {
         PlanActionItem item = baseItem(draft, context);
         // 结构化需求（步骤 1 已持久化，是黑名单过滤与关键词生成的约束来源）
         StructuredRequirement requirement = null;
-        RequirementStateService.RequirementSnapshot snapshot = requirementState.get(context.task().getId());
+        RequirementStateService.RequirementSnapshot snapshot =
+                requirementState.get(context.task().getId());
         if (snapshot != null && snapshot.requirement() != null) {
             requirement = snapshot.requirement();
         }
@@ -69,7 +69,9 @@ public class GiftRitualActionEnricher extends AbstractActionEnricher {
         GiftKeywordService.GiftKeywordPlan keywordPlan =
                 keywordService.build(
                         requirement,
-                        (context.task().getObjective() == null ? "" : context.task().getObjective()));
+                        (context.task().getObjective() == null
+                                ? ""
+                                : context.task().getObjective()));
         // 搜索增强：按每组第一个关键词搜真实网页摘要（DuckDuckGo 免费 → SerpAPI 付费兜底 → 纯 AI）
         Map<String, List<WebSearchService.SearchResult>> keywordSources = new LinkedHashMap<>();
         List<ActionLanguageService.GiftSearchEvidence> searchEvidence = new ArrayList<>();
@@ -83,11 +85,16 @@ public class GiftRitualActionEnricher extends AbstractActionEnricher {
         // LLM 基于真实搜索摘要校准价格区间与品牌名后生成礼物候选
         ActionLanguageService.GiftPlan gift =
                 language.draftGift(
-                        goalText(draft, context), context.task().getObjective(), context.budget(), searchEvidence);
+                        goalText(draft, context),
+                        context.task().getObjective(),
+                        context.budget(),
+                        searchEvidence);
 
         List<Map<String, Object>> giftIdeas =
                 attachKeywordUrls(gift.ideas(), keywordPlan, keywordSources);
-        boolean linked = giftIdeas.stream().anyMatch(i -> !((List<?>) i.getOrDefault("urls", List.of())).isEmpty());
+        boolean linked =
+                giftIdeas.stream()
+                        .anyMatch(i -> !((List<?>) i.getOrDefault("urls", List.of())).isEmpty());
 
         // instruction 只写引导性内容：准备思路 + AI 候选方向；
         // 准备事项/预算安排/执行步骤由 payload 结构化渲染，不再重复拼进正文
@@ -98,9 +105,10 @@ public class GiftRitualActionEnricher extends AbstractActionEnricher {
             for (Map<String, Object> idea : giftIdeas) {
                 instruction.append("\n- ").append(idea.get("title"));
             }
-            instruction.append(linked
-                    ? "\n已为你生成多平台搜索链接（淘宝 / 京东 / 抖音），点击直达搜索结果页。"
-                    : "\n（搜索链接暂不可用，以上为 AI 基于你输入的喜好与预算推荐）");
+            instruction.append(
+                    linked
+                            ? "\n已为你生成多平台搜索链接（淘宝 / 京东 / 抖音），点击直达搜索结果页。"
+                            : "\n（搜索链接暂不可用，以上为 AI 基于你输入的喜好与预算推荐）");
         }
         item.setInstruction(instruction.toString());
         item.setTimingSuggestion("选一个对方没有压力、值得被记得的日子");
@@ -146,8 +154,7 @@ public class GiftRitualActionEnricher extends AbstractActionEnricher {
     }
 
     /**
-     * 把 AI 候选与关键词池分组配对：每个候选附品类、搜索关键词、多平台跳转链接与搜索参考来源。
-     * 候选数超过分组数时循环复用第一组关键词，保证每个候选都有可点击的搜索入口。
+     * 把 AI 候选与关键词池分组配对：每个候选附品类、搜索关键词、多平台跳转链接与搜索参考来源。 候选数超过分组数时循环复用第一组关键词，保证每个候选都有可点击的搜索入口。
      *
      * @param keywordSources 关键词 → 搜回的网页摘要（WebSearchService 产出；空列表表示未搜到）
      */
@@ -174,7 +181,8 @@ public class GiftRitualActionEnricher extends AbstractActionEnricher {
                         keywordPlan.urlsByKeyword().getOrDefault(head, List.of());
                 row.put("urls", urls);
                 // 参考来源：搜回的网页链接（最多 2 条），用户点进去自己看详情
-                List<WebSearchService.SearchResult> sources = keywordSources.getOrDefault(head, List.of());
+                List<WebSearchService.SearchResult> sources =
+                        keywordSources.getOrDefault(head, List.of());
                 if (sources.isEmpty()) {
                     row.put("sources", List.of());
                 } else {
@@ -186,7 +194,8 @@ public class GiftRitualActionEnricher extends AbstractActionEnricher {
                                             s ->
                                                     Map.of(
                                                             "title",
-                                                            (s.title() == null || s.title().isBlank())
+                                                            (s.title() == null
+                                                                            || s.title().isBlank())
                                                                     ? s.url()
                                                                     : s.title(),
                                                             "url",
@@ -206,6 +215,8 @@ public class GiftRitualActionEnricher extends AbstractActionEnricher {
 
     private String goalText(ActionDraft draft, PlanningContext context) {
         String goal = draft.goalType() == null ? "" : draft.goalType().label();
-        return goal.isBlank() ? context.task().getObjective() : goal + "：" + context.task().getObjective();
+        return goal.isBlank()
+                ? context.task().getObjective()
+                : goal + "：" + context.task().getObjective();
     }
 }

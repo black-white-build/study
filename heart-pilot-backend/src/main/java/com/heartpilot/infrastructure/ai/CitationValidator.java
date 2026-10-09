@@ -16,9 +16,7 @@ public class CitationValidator {
     /** 匹配答案中的句内引用标记，如 [来源 1]，捕获来源编号。 */
     private static final Pattern CITATION = Pattern.compile("\\[来源\\s*(\\d+)]");
 
-    /**
-     * 校验答案全文的引用：替换掉无效或证据不足的引用，统计引用与知识主张数量，并给出整体通过/修复/降级状态。
-     */
+    /** 校验答案全文的引用：替换掉无效或证据不足的引用，统计引用与知识主张数量，并给出整体通过/修复/降级状态。 */
     public Result validate(String answer, List<KnowledgeService.Source> sources) {
         String value = answer == null ? "" : answer;
         Matcher matcher = CITATION.matcher(value);

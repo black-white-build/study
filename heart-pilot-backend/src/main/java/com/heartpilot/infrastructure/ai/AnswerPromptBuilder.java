@@ -24,14 +24,13 @@ public class AnswerPromptBuilder {
     }
 
     /**
-     * 构建本轮用户消息提示词：按"路由/检索上下文/会话状态/对话上下文/用户输入"分节组织，
-     * 并对检索为空、无历史上下文等边界情况给出兜底文案，避免模型凭空引用知识。
+     * 构建本轮用户消息提示词：按"路由/检索上下文/会话状态/对话上下文/用户输入"分节组织， 并对检索为空、无历史上下文等边界情况给出兜底文案，避免模型凭空引用知识。
      *
-     * @param route             本轮路由决策结果，为空时占位为 DECISION
-     * @param retrievalContext  检索到的知识上下文，为空时告知模型不得生成知识引用
+     * @param route 本轮路由决策结果，为空时占位为 DECISION
+     * @param retrievalContext 检索到的知识上下文，为空时告知模型不得生成知识引用
      * @param conversationState 当前会话的结构化状态，为空时占位为"暂无"
      * @param conversationContext 对话历史上下文，为空时说明这是本轮首条消息
-     * @param userInput         用户原始输入，为空时按空串处理
+     * @param userInput 用户原始输入，为空时按空串处理
      * @return 拼接后的本轮用户提示词文本
      */
     public String build(
@@ -62,9 +61,9 @@ public class AnswerPromptBuilder {
     /**
      * 简化版构建方法：使用默认路由 DECISION、空会话状态，仅传入检索上下文、历史与用户输入。
      *
-     * @param retrievalContext  检索到的知识上下文
+     * @param retrievalContext 检索到的知识上下文
      * @param conversationContext 对话历史上下文
-     * @param userInput         用户原始输入
+     * @param userInput 用户原始输入
      * @return 拼接后的本轮用户提示词文本
      */
     public String build(String retrievalContext, String conversationContext, String userInput) {
@@ -74,7 +73,7 @@ public class AnswerPromptBuilder {
     /**
      * 把一节内容渲染为 Markdown 小节标题块，去除首尾空白并以空行收尾，保证各分节边界清晰。
      *
-     * @param title   小节标题
+     * @param title 小节标题
      * @param content 小节正文
      * @return 形如 "## 标题\n正文\n\n" 的文本块
      */

@@ -18,37 +18,29 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
- * 全局异常处理器。
- * 通过 @RestControllerAdvice 统一拦截 Controller 层抛出的各类异常，
- * 转换为结构一致的 ApiError JSON 响应（含 traceId 便于日志排查），
- * 避免堆栈信息直接暴露给前端。
+ * 全局异常处理器。 通过 @RestControllerAdvice 统一拦截 Controller 层抛出的各类异常， 转换为结构一致的 ApiError JSON 响应（含 traceId
+ * 便于日志排查）， 避免堆栈信息直接暴露给前端。
  */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /**
-     * 处理业务异常 ApiException。
-     * 直接使用异常自带的 HTTP 状态码与业务码，返回对应的错误描述。
-     */
+    /** 处理业务异常 ApiException。 直接使用异常自带的 HTTP 状态码与业务码，返回对应的错误描述。 */
     @ExceptionHandler(ApiException.class)
     ResponseEntity<ApiError> api(ApiException exception, HttpServletRequest request) {
         return response(
                 exception.status(), exception.code(), exception.getMessage(), Map.of(), request);
     }
 
-    /**
-     * 处理 Spring Security 权限不足异常 AccessDeniedException。
-     * 返回 403 FORBIDDEN，文案统一为"无权执行此操作"。
-     */
+    /** 处理 Spring Security 权限不足异常 AccessDeniedException。 返回 403 FORBIDDEN，文案统一为"无权执行此操作"。 */
     @ExceptionHandler(AccessDeniedException.class)
     ResponseEntity<ApiError> denied(AccessDeniedException exception, HttpServletRequest request) {
         return response(HttpStatus.FORBIDDEN, "FORBIDDEN", "无权执行此操作", Map.of(), request);
     }
 
     /**
-     * 处理 @RequestBody 参数校验失败异常 MethodArgumentNotValidException。
-     * 返回 400 VALIDATION_ERROR，并汇总每个字段的第一条错误信息（putIfAbsent 去重）。
+     * 处理 @RequestBody 参数校验失败异常 MethodArgumentNotValidException。 返回 400
+     * VALIDATION_ERROR，并汇总每个字段的第一条错误信息（putIfAbsent 去重）。
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ApiError> validation(
@@ -62,8 +54,8 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 处理方法参数/路径变量校验失败异常 ConstraintViolationException。
-     * 与上一个方法类似，返回 400 VALIDATION_ERROR，字段名为约束违反的属性路径。
+     * 处理方法参数/路径变量校验失败异常 ConstraintViolationException。 与上一个方法类似，返回 400
+     * VALIDATION_ERROR，字段名为约束违反的属性路径。
      */
     @ExceptionHandler(ConstraintViolationException.class)
     ResponseEntity<ApiError> constraint(
@@ -80,8 +72,8 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 处理 JPA 乐观锁并发冲突异常 ObjectOptimisticLockingFailureException。
-     * 返回 409 CONCURRENT_MODIFICATION，提示用户刷新后重试（@Version 版本号冲突）。
+     * 处理 JPA 乐观锁并发冲突异常 ObjectOptimisticLockingFailureException。 返回 409
+     * CONCURRENT_MODIFICATION，提示用户刷新后重试（@Version 版本号冲突）。
      */
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     ResponseEntity<ApiError> optimisticLock(
@@ -95,8 +87,8 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 处理数据库完整性约束异常 DataIntegrityViolationException（唯一键/外键等违反）。
-     * 返回 409 DATA_CONFLICT，避免把数据库底层错误细节暴露给前端。
+     * 处理数据库完整性约束异常 DataIntegrityViolationException（唯一键/外键等违反）。 返回 409
+     * DATA_CONFLICT，避免把数据库底层错误细节暴露给前端。
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     ResponseEntity<ApiError> conflict(
@@ -104,10 +96,7 @@ public class GlobalExceptionHandler {
         return response(HttpStatus.CONFLICT, "DATA_CONFLICT", "请求与现有数据冲突", Map.of(), request);
     }
 
-    /**
-     * 兜底处理所有未被前面方法捕获的异常。
-     * 记录完整堆栈日志（含 traceId），返回 500 INTERNAL_ERROR，对前端只给友好提示。
-     */
+    /** 兜底处理所有未被前面方法捕获的异常。 记录完整堆栈日志（含 traceId），返回 500 INTERNAL_ERROR，对前端只给友好提示。 */
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiError> unknown(Exception exception, HttpServletRequest request) {
         String traceId = traceId();
@@ -123,9 +112,7 @@ public class GlobalExceptionHandler {
                                 Map.of()));
     }
 
-    /**
-     * 统一构造错误响应体的私有方法。
-     */
+    /** 统一构造错误响应体的私有方法。 */
     private ResponseEntity<ApiError> response(
             HttpStatus status,
             String code,
@@ -143,9 +130,7 @@ public class GlobalExceptionHandler {
                                 fields));
     }
 
-    /**
-     * 获取当前请求的 traceId：优先取 MDC 中的链路 ID，缺失时临时生成一个短 UUID 兜底。
-     */
+    /** 获取当前请求的 traceId：优先取 MDC 中的链路 ID，缺失时临时生成一个短 UUID 兜底。 */
     private String traceId() {
         String value = MDC.get("traceId");
         return value == null || value.isBlank()
@@ -153,9 +138,7 @@ public class GlobalExceptionHandler {
                 : value;
     }
 
-    /**
-     * 统一错误响应体结构 record。
-     */
+    /** 统一错误响应体结构 record。 */
     public record ApiError(
             /** 业务错误码 */
             String code,

@@ -5,14 +5,14 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 /**
- * 当前登录用户上下文工具。
- * 从 SecurityContextHolder 中读取 JWT 过滤器写入的认证信息，
- * 供 Controller/Service 获取当前用户 ID 与管理员角色，实现"只能访问自己数据"的数据隔离。
+ * 当前登录用户上下文工具。 从 SecurityContextHolder 中读取 JWT 过滤器写入的认证信息， 供 Controller/Service 获取当前用户 ID
+ * 与管理员角色，实现"只能访问自己数据"的数据隔离。
  */
 @Component
 public class CurrentUser {
     /**
      * 获取当前登录用户 ID。
+     *
      * @return 认证主体中保存的用户 ID（JWT 的 subject）
      * @throws org.springframework.security.access.AccessDeniedException 未登录或为匿名用户时抛出
      */
@@ -26,6 +26,7 @@ public class CurrentUser {
 
     /**
      * 判断当前用户是否为管理员（是否拥有 ROLE_ADMIN 权限）。
+     *
      * @return 是管理员返回 true，否则 false
      */
     public boolean isAdmin() {

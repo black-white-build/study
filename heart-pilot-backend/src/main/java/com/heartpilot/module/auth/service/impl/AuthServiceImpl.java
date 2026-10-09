@@ -13,19 +13,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 认证服务实现。
- * 负责完整的用户认证流程：
- * - 注册：用户名规范化（去空格、转小写）→ 唯一性校验 → BCrypt 加密密码 → 落库 → 签发 JWT
- * - 登录：按用户名查询 → 校验账号是否启用 → BCrypt 比对密码 → 签发 JWT
- * 密码使用 BCryptPasswordEncoder 加密存储，服务端不保存明文；
- * JWT 令牌由 JwtService 统一签发，载荷中携带用户 ID、角色与昵称，后续请求无状态校验。
+ * 认证服务实现。 负责完整的用户认证流程： - 注册：用户名规范化（去空格、转小写）→ 唯一性校验 → BCrypt 加密密码 → 落库 → 签发 JWT - 登录：按用户名查询 →
+ * 校验账号是否启用 → BCrypt 比对密码 → 签发 JWT 密码使用 BCryptPasswordEncoder 加密存储，服务端不保存明文； JWT 令牌由 JwtService
+ * 统一签发，载荷中携带用户 ID、角色与昵称，后续请求无状态校验。
  */
 @Service
 public class AuthServiceImpl implements AuthService {
     /** 用户仓库，按用户名查询与唯一性判断 */
     private final AppUserRepository users;
+
     /** 密码编码器（BCrypt），注册时加密、登录时比对 */
     private final PasswordEncoder encoder;
+
     /** JWT 服务，负责生成访问令牌并告知有效期 */
     private final JwtService jwt;
 
@@ -35,10 +34,7 @@ public class AuthServiceImpl implements AuthService {
         this.jwt = jwt;
     }
 
-    /**
-     * 注册新用户并直接登录（注册成功即签发令牌）。
-     * 用户名统一转小写存储，保证登录时大小写不敏感。
-     */
+    /** 注册新用户并直接登录（注册成功即签发令牌）。 用户名统一转小写存储，保证登录时大小写不敏感。 */
     @Transactional
     @Override
     public AuthDtos.SessionResponse register(String username, String password, String nickname) {
@@ -58,11 +54,7 @@ public class AuthServiceImpl implements AuthService {
         return session(users.save(user));
     }
 
-    /**
-     * 登录校验。
-     * 出于安全考虑，用户名不存在、账号被禁用、密码错误三种情况统一返回相同的 401 提示，
-     * 避免攻击者通过差异化响应探测哪些用户名已注册。
-     */
+    /** 登录校验。 出于安全考虑，用户名不存在、账号被禁用、密码错误三种情况统一返回相同的 401 提示， 避免攻击者通过差异化响应探测哪些用户名已注册。 */
     @Override
     public AuthDtos.SessionResponse login(String username, String password) {
         // 用户名大小写不敏感查询，查不到直接按凭证错误处理
@@ -75,10 +67,7 @@ public class AuthServiceImpl implements AuthService {
         return session(user);
     }
 
-    /**
-     * 构造会话响应：根据用户信息签发 JWT 访问令牌。
-     * 令牌载荷包含用户 ID、角色、昵称，过期时间由 JwtService 统一配置。
-     */
+    /** 构造会话响应：根据用户信息签发 JWT 访问令牌。 令牌载荷包含用户 ID、角色、昵称，过期时间由 JwtService 统一配置。 */
     private AuthDtos.SessionResponse session(AppUser user) {
         return new AuthDtos.SessionResponse(
                 jwt.create(user.getId(), user.getRole(), user.getNickname()),

@@ -34,7 +34,9 @@
                 >{{ isUrlExpanded(part.url) ? part.text : truncateUrl(part.text) }}</a
               >
               <button
-                v-if="part.text.length > 30 && !isUrlExpanded(part.url) && !part.url.startsWith('#')"
+                v-if="
+                  part.text.length > 30 && !isUrlExpanded(part.url) && !part.url.startsWith('#')
+                "
                 type="button"
                 class="url-expand-btn"
                 @click.prevent="toggleUrl(part.url)"
@@ -58,7 +60,9 @@
                 >{{ isUrlExpanded(part.url) ? part.text : truncateUrl(part.text) }}</a
               >
               <button
-                v-if="part.text.length > 30 && !isUrlExpanded(part.url) && !part.url.startsWith('#')"
+                v-if="
+                  part.text.length > 30 && !isUrlExpanded(part.url) && !part.url.startsWith('#')
+                "
                 type="button"
                 class="url-expand-btn"
                 @click.prevent="toggleUrl(part.url)"

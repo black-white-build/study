@@ -23,78 +23,75 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * 地点检索与行程证据构建服务。
- * 负责：把用户目标拆成检索主题 → 调高德 POI 文本检索 + 网页搜索取真实地点 →
- * 严格按城市范围筛选 → 选出行程地点 → 按距离选出行方式算实时路线 → 产出可核验的 JourneyEvidence。
+ * 地点检索与行程证据构建服务。 负责：把用户目标拆成检索主题 → 调高德 POI 文本检索 + 网页搜索取真实地点 → 严格按城市范围筛选 → 选出行程地点 → 按距离选出行方式算实时路线 →
+ * 产出可核验的 JourneyEvidence。
  *
- * 可靠性设计要点：
- * - 严格城市范围过滤（matchesRequestedScope）：高德 citylimit 对复合地名可能失效，
- *   必须用返回的省/市/区/地址二次确认，绝不接受范围外 POI
- * - 路线方式按直线距离自适应：≤1.8km 步行、≤6km 骑行、更远驾车
- * - 高德未配 Key 或接口异常时降级（返回空/DEGRADED），不编造地点
- * - 营业状态由高德营业时间字段尽力推导（inferBusinessStatus），仅供参考
+ * <p>可靠性设计要点： - 严格城市范围过滤（matchesRequestedScope）：高德 citylimit 对复合地名可能失效， 必须用返回的省/市/区/地址二次确认，绝不接受范围外
+ * POI - 路线方式按直线距离自适应：≤1.8km 步行、≤6km 骑行、更远驾车 - 高德未配 Key 或接口异常时降级（返回空/DEGRADED），不编造地点 -
+ * 营业状态由高德营业时间字段尽力推导（inferBusinessStatus），仅供参考
  */
 @Service
 public class PlaceSearchServiceImpl implements PlaceSearchService {
     private static final Logger log = LoggerFactory.getLogger(PlaceSearchService.class);
+
     /** 高德 POI 文本检索接口 */
     private static final String AMAP_URL = "https://restapi.amap.com/v3/place/text";
+
     /** 高德步行路线规划接口 */
     private static final String AMAP_WALKING_URL = "https://restapi.amap.com/v3/direction/walking";
+
     /** 高德骑行路线规划接口（v4） */
     private static final String AMAP_BICYCLING_URL =
             "https://restapi.amap.com/v4/direction/bicycling";
+
     /** 高德驾车路线规划接口 */
     private static final String AMAP_DRIVING_URL = "https://restapi.amap.com/v3/direction/driving";
+
     /** 检索/核验时间戳格式（东八区） */
     private static final DateTimeFormatter SEARCH_TIME =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
     /** 一次任务最多拆出的检索主题数，控制外部调用量 */
     private static final int MAX_TOPICS = 5;
+
     /** 地图卡片总数硬上限：防止某个类别 POI 特别多时一次塞太多 */
     private static final int HARD_MAX_CARDS = 20;
+
     /** 每类最少补充的候选卡片数（主线卡片之外） */
     private static final int MIN_CANDIDATES_PER_CATEGORY = 2;
+
     /** 每类最多补充的候选卡片数（主线卡片之外），按该类实际 POI 数量动态取中间值 */
     private static final int MAX_CANDIDATES_PER_CATEGORY = 4;
+
     /** 高德 Web 服务 Key */
     private final String amapKey;
+
     /** 网页搜索工具，补充高德 POI 之外的公开信息 */
     private final WebSearchTool webSearch;
 
-    /**
-     * 构造器注入高德 Key 与网页搜索工具。
-     */
+    /** 构造器注入高德 Key 与网页搜索工具。 */
     public PlaceSearchServiceImpl(
             @Value("${AMAP_MAPS_API_KEY:}") String amapKey, WebSearchTool webSearch) {
         this.amapKey = amapKey;
         this.webSearch = webSearch;
     }
 
-    /**
-     * 按主题分组检索地点。
-     * 先从目标推断至多 5 个检索主题，每个主题分别查高德 POI + 网页搜索，
-     * 用 poiId（缺失时用 name|address）去重后合并。
-     */
+    /** 按主题分组检索地点。 先从目标推断至多 5 个检索主题，每个主题分别查高德 POI + 网页搜索， 用 poiId（缺失时用 name|address）去重后合并。 */
     @Override
     public SearchResult search(String city, String objective) {
         return searchWithPoolSize(city, objective, 10);
     }
 
     /**
-     * 拉取候选点位池（Tier2 候选池前置）。
-     * 与 search 唯一区别：每个主题取更多 POI（每类最多 18 个），
-     * 供候选挑选 Agent 从池内挑选排序，减少 LLM 凭空编造地点的空间。
+     * 拉取候选点位池（Tier2 候选池前置）。 与 search 唯一区别：每个主题取更多 POI（每类最多 18 个）， 供候选挑选 Agent 从池内挑选排序，减少 LLM
+     * 凭空编造地点的空间。
      */
     @Override
     public SearchResult searchPool(String city, String objective) {
         return searchWithPoolSize(city, objective, 18);
     }
 
-    /**
-     * 基于已挑选点位构建行程证据（候选挑选 Agent → 路线 + 地图卡片）。
-     * 相邻点位间逐条规划实时路线；至少两个点位才计算路线。
-     */
+    /** 基于已挑选点位构建行程证据（候选挑选 Agent → 路线 + 地图卡片）。 相邻点位间逐条规划实时路线；至少两个点位才计算路线。 */
     @Override
     public JourneyEvidence researchFromPool(String city, List<Place> selectedPlaces) {
         if (selectedPlaces == null) selectedPlaces = List.of();
@@ -122,24 +119,27 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
             RoutePlan routeFromPrevious = null;
             if (index > 0 && index - 1 < routes.size()) routeFromPrevious = routes.get(index - 1);
             String[] coordinates = place.location().split(",", 2);
-            cards.add(new MapCard(
-                    place.poiId(),
-                    place.name(),
-                    place.address(),
-                    place.type(),
-                    place.tel(),
-                    coordinates.length > 0 ? coordinates[0] : "",
-                    coordinates.length > 1 ? coordinates[1] : "",
-                    place.mapUrl(),
-                    place.photoUrl(),
-                    place.rating(),
-                    place.businessHours(),
-                    place.businessStatus(),
-                    place.statusCheckedAt(),
-                    place.businessHours().isBlank() ? "NO_OPENING_HOURS" : "DERIVED_FROM_AMAP_OPENING_HOURS",
-                    "高德地图",
-                    place.mapUrl(),
-                    routeFromPrevious));
+            cards.add(
+                    new MapCard(
+                            place.poiId(),
+                            place.name(),
+                            place.address(),
+                            place.type(),
+                            place.tel(),
+                            coordinates.length > 0 ? coordinates[0] : "",
+                            coordinates.length > 1 ? coordinates[1] : "",
+                            place.mapUrl(),
+                            place.photoUrl(),
+                            place.rating(),
+                            place.businessHours(),
+                            place.businessStatus(),
+                            place.statusCheckedAt(),
+                            place.businessHours().isBlank()
+                                    ? "NO_OPENING_HOURS"
+                                    : "DERIVED_FROM_AMAP_OPENING_HOURS",
+                            "高德地图",
+                            place.mapUrl(),
+                            routeFromPrevious));
         }
         return new JourneyEvidence(
                 "按类别独立检索",
@@ -160,7 +160,9 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
         Map<String, Place> allPlaces = new LinkedHashMap<>();
         for (SearchTopic topic : topics) {
             List<Place> places =
-                    amapKey == null || amapKey.isBlank() ? List.of() : searchAmap(city, topic, perTopicLimit);
+                    amapKey == null || amapKey.isBlank()
+                            ? List.of()
+                            : searchAmap(city, topic, perTopicLimit);
             places.forEach(
                     place ->
                             allPlaces.putIfAbsent(
@@ -184,20 +186,14 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
                 "按类别独立检索", city, keywords, new ArrayList<>(allPlaces.values()), "", groups);
     }
 
-    /**
-     * 检索地点并直接产出行程证据：先 search 拿分组结果，再 buildJourneyEvidence 选点+算路线。
-     */
+    /** 检索地点并直接产出行程证据：先 search 拿分组结果，再 buildJourneyEvidence 选点+算路线。 */
     @Override
     public JourneyResearchResult researchJourney(String city, String objective) {
         SearchResult searchResult = search(city, objective);
         return new JourneyResearchResult(searchResult, buildJourneyEvidence(searchResult));
     }
 
-    /**
-     * 从检索结果构建可核验的行程证据。
-     * 选最多 4 个行程地点，相邻地点间逐条算路线；根据选点/路线情况生成降级说明 notice，
-     * 无地点→DEGRADED，有地点→LIVE。
-     */
+    /** 从检索结果构建可核验的行程证据。 选最多 4 个行程地点，相邻地点间逐条算路线；根据选点/路线情况生成降级说明 notice， 无地点→DEGRADED，有地点→LIVE。 */
     @Override
     public JourneyEvidence buildJourneyEvidence(SearchResult searchResult) {
         // 选 6 个路线点（每个类别取第一个），用于路线规划与默认展示
@@ -237,11 +233,9 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
                 allCards);
     }
 
-    /**
-     * 为候选地点建地图卡片。默认展示前 6 个，其余通过前端"展开更多"查看；
-     * 路线信息（上一站驾车/步行）只附在 selectedPlaces 范围内的卡片上。
-     */
-    private List<MapCard> buildMapCards(List<Place> places, List<RoutePlan> routes, List<Place> selectedPlaces) {
+    /** 为候选地点建地图卡片。默认展示前 6 个，其余通过前端"展开更多"查看； 路线信息（上一站驾车/步行）只附在 selectedPlaces 范围内的卡片上。 */
+    private List<MapCard> buildMapCards(
+            List<Place> places, List<RoutePlan> routes, List<Place> selectedPlaces) {
         List<MapCard> cards = new ArrayList<>();
         int limit = Math.min(places.size(), 12);
         for (int index = 0; index < limit; index++) {
@@ -259,9 +253,8 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
     }
 
     /**
-     * 把单个 Place 组装成 MapCard（含经纬度拆分、营业时间兜底标记、高德来源标记）。
-     * categoryOverride 非空时覆盖 place.type()，用于把检索类别 label（如"过山车""美食"）
-     * 写进卡片，方便前端与等待确认文本按类别分组展示。
+     * 把单个 Place 组装成 MapCard（含经纬度拆分、营业时间兜底标记、高德来源标记）。 categoryOverride 非空时覆盖 place.type()，用于把检索类别
+     * label（如"过山车""美食"） 写进卡片，方便前端与等待确认文本按类别分组展示。
      */
     private MapCard toMapCard(Place place, RoutePlan routeFromPrevious) {
         return toMapCard(place, routeFromPrevious, null);
@@ -269,9 +262,10 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
 
     private MapCard toMapCard(Place place, RoutePlan routeFromPrevious, String categoryOverride) {
         String[] coordinates = place.location().split(",", 2);
-        String category = (categoryOverride != null && !categoryOverride.isBlank())
-                ? categoryOverride
-                : place.type();
+        String category =
+                (categoryOverride != null && !categoryOverride.isBlank())
+                        ? categoryOverride
+                        : place.type();
         return new MapCard(
                 place.poiId(),
                 place.name(),
@@ -295,15 +289,14 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
     }
 
     /**
-     * 基于已持久化的候选池，按类别均衡随机重抽一批候选卡片（不调外部 API）。
-     * 行程主线 selectedPlaces 与路线 routes 原样保留，主线卡片排最前并附路线；
-     * 其余位置从每个类别内部洗牌后抽取：每类最少补 {@link #MIN_CANDIDATES_PER_CATEGORY} 个、
-     * 最多补 {@link #MAX_CANDIDATES_PER_CATEGORY} 个，按该类实际 POI 数动态取中间值。
-     * 总卡片数根据候选池实际大小动态封顶（最少 10、最多 {@link #HARD_MAX_CARDS}），
-     * 前端默认展示前 6 个，"展开全部"按钮显示剩余。seed 不同 → 抽样顺序不同 → 每次换一批。
+     * 基于已持久化的候选池，按类别均衡随机重抽一批候选卡片（不调外部 API）。 行程主线 selectedPlaces 与路线 routes 原样保留，主线卡片排最前并附路线；
+     * 其余位置从每个类别内部洗牌后抽取：每类最少补 {@link #MIN_CANDIDATES_PER_CATEGORY} 个、 最多补 {@link
+     * #MAX_CANDIDATES_PER_CATEGORY} 个，按该类实际 POI 数动态取中间值。 总卡片数根据候选池实际大小动态封顶（最少 10、最多 {@link
+     * #HARD_MAX_CARDS}）， 前端默认展示前 6 个，"展开全部"按钮显示剩余。seed 不同 → 抽样顺序不同 → 每次换一批。
      */
     @Override
-    public JourneyEvidence reshuffleCandidateCards(JourneyEvidence current, SearchResult pool, long seed) {
+    public JourneyEvidence reshuffleCandidateCards(
+            JourneyEvidence current, SearchResult pool, long seed) {
         List<Place> selectedPlaces = current.places();
         List<RoutePlan> routes = current.routes();
 
@@ -331,9 +324,7 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
             int perCategory =
                     Math.max(
                             MIN_CANDIDATES_PER_CATEGORY,
-                            Math.min(
-                                    MAX_CANDIDATES_PER_CATEGORY,
-                                    shuffled.size()));
+                            Math.min(MAX_CANDIDATES_PER_CATEGORY, shuffled.size()));
             int picked = 0;
             for (Place p : shuffled) {
                 if (picked >= perCategory) break;
@@ -358,10 +349,7 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
                 cards);
     }
 
-    /**
-     * 从分组结果中挑选行程地点：优先每个分组取第一个（保证类别多样性），
-     * 不足 limit 时再从全部地点里补齐，按 placeKey 去重。
-     */
+    /** 从分组结果中挑选行程地点：优先每个分组取第一个（保证类别多样性）， 不足 limit 时再从全部地点里补齐，按 placeKey 去重。 */
     private List<Place> selectItineraryPlaces(SearchResult searchResult, int limit) {
         Map<String, Place> selected = new LinkedHashMap<>();
         for (SearchGroup group : searchResult.groups()) {
@@ -384,9 +372,8 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
     }
 
     /**
-     * 规划两地点间的实时路线。
-     * 先按直线距离选出行方式（步行/骑行/驾车），再调对应高德路线接口取首条路径，
-     * 提取距离、耗时、折线，并拼接高德 uri 导航链接。任何异常返回 null（路线降级）。
+     * 规划两地点间的实时路线。 先按直线距离选出行方式（步行/骑行/驾车），再调对应高德路线接口取首条路径， 提取距离、耗时、折线，并拼接高德 uri 导航链接。任何异常返回
+     * null（路线降级）。
      */
     private RoutePlan planRoute(Place origin, Place destination) {
         if (origin.location().isBlank() || destination.location().isBlank()) return null;
@@ -452,9 +439,7 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
         }
     }
 
-    /**
-     * 按直线距离选择出行方式：≤1.8km 步行，≤6km 骑行，更远驾车。
-     */
+    /** 按直线距离选择出行方式：≤1.8km 步行，≤6km 骑行，更远驾车。 */
     static String modeForDistance(double distanceMeters) {
         if (distanceMeters <= 1_800) return "WALKING";
         if (distanceMeters <= 6_000) return "BICYCLING";
@@ -469,10 +454,7 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
         };
     }
 
-    /**
-     * 用 Haversine 公式计算两经纬度坐标间的直线距离（米），仅用于选择出行方式。
-     * 坐标格式 "lng,lat"，解析失败返回 Double.MAX_VALUE 以走最远路线。
-     */
+    /** 用 Haversine 公式计算两经纬度坐标间的直线距离（米），仅用于选择出行方式。 坐标格式 "lng,lat"，解析失败返回 Double.MAX_VALUE 以走最远路线。 */
     private double directDistanceMeters(String origin, String destination) {
         String[] from = origin.split(",", 2);
         String[] to = destination.split(",", 2);
@@ -493,10 +475,9 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
     }
 
     /**
-     * 调用高德 POI 文本检索接口取一个主题下的地点。
-     * citylimit=true 限定城市，extensions=all 取详情；逐条 POI 先按主题过滤（matchesTopic），
-     * 再按行政范围过滤（matchesRequestedScope），最后组装 Place。接口失败记 warn 并返回空。
-     * perTopicLimit：普通检索 10，候选池前置检索 18（供候选挑选 Agent 使用）。
+     * 调用高德 POI 文本检索接口取一个主题下的地点。 citylimit=true 限定城市，extensions=all 取详情；逐条 POI 先按主题过滤（matchesTopic），
+     * 再按行政范围过滤（matchesRequestedScope），最后组装 Place。接口失败记 warn 并返回空。 perTopicLimit：普通检索 10，候选池前置检索
+     * 18（供候选挑选 Agent 使用）。
      */
     private List<Place> searchAmap(String city, SearchTopic topic, int perTopicLimit) {
         String keywords = topic.query();
@@ -542,10 +523,15 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
                     String provinceName = poi.getStr("pname", "");
                     String cityName = poi.getStr("cityname", "");
                     String districtName = poi.getStr("adname", "");
-                    if (!matchesRequestedScope(city, provinceName, cityName, districtName, address)) {
+                    if (!matchesRequestedScope(
+                            city, provinceName, cityName, districtName, address)) {
                         log.info(
                                 "AMap scope reject: requested='{}', pname='{}', cityname='{}', adname='{}', name='{}'",
-                                city, provinceName, cityName, districtName, name);
+                                city,
+                                provinceName,
+                                cityName,
+                                districtName,
+                                name);
                         continue;
                     }
                     JSONObject business = poi.getJSONObject("business");
@@ -611,9 +597,7 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
     }
 
     /**
-     * 严格校验 POI 是否落在请求范围内。
-     * 逐级匹配：区 → 市 → 省 → 地址文本；任一级命中即接受，否则丢弃。
-     * 这是防止高德 citylimit 失效后混入外市 POI 的最后防线。
+     * 严格校验 POI 是否落在请求范围内。 逐级匹配：区 → 市 → 省 → 地址文本；任一级命中即接受，否则丢弃。 这是防止高德 citylimit 失效后混入外市 POI 的最后防线。
      */
     static boolean matchesRequestedScope(
             String requestedScope,
@@ -665,8 +649,8 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
     }
 
     /**
-     * 归一化行政地名：去除空白与标点分隔符，并剥掉末尾的行政后缀（省/市/区/县/自治区/自治州等），
-     * 使"山东省"与"山东"、"南宁市"与"南宁"能互相匹配，用于 matchesRequestedScope 的宽松范围校验。
+     * 归一化行政地名：去除空白与标点分隔符，并剥掉末尾的行政后缀（省/市/区/县/自治区/自治州等）， 使"山东省"与"山东"、"南宁市"与"南宁"能互相匹配，用于
+     * matchesRequestedScope 的宽松范围校验。
      */
     private static String normalizeRegion(String value) {
         if (value == null) return "";
@@ -676,9 +660,8 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
     }
 
     /**
-     * 从用户目标文本推断检索主题列表（最多 MAX_TOPICS 个）。
-     * 按标点切句，过滤否定句（"不要/别…"）和纯预算句，归一化口语后归类到 LocalPlaceIntentCatalog，
-     * 同标签去重，每个主题附带高德类型码与网页搜索关键词。
+     * 从用户目标文本推断检索主题列表（最多 MAX_TOPICS 个）。 按标点切句，过滤否定句（"不要/别…"）和纯预算句，归一化口语后归类到
+     * LocalPlaceIntentCatalog， 同标签去重，每个主题附带高德类型码与网页搜索关键词。
      */
     private List<SearchTopic> inferTopics(String objective) {
         String safeObjective = objective == null ? "" : objective.trim();
@@ -700,8 +683,7 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
             // - CUSTOM 动态词（剧本杀/猫咖等新词）：用用户原词搜，不传 types，matchesTopic 放行
             final String searchWord = intent;
             String query =
-                    category
-                            .map(LocalPlaceIntentCatalog::searchKeywords)
+                    category.map(LocalPlaceIntentCatalog::searchKeywords)
                             .filter(ks -> !ks.isEmpty())
                             .map(ks -> ks.get(0))
                             .orElse(searchWord);
@@ -742,10 +724,7 @@ public class PlaceSearchServiceImpl implements PlaceSearchService {
         return "";
     }
 
-    /**
-     * 把路径各 step 的折线坐标拼接成一条完整 polyline 字符串。
-     * 相邻 step 的折线首尾坐标重复，拼时跳过上一段末尾坐标，避免折返点。
-     */
+    /** 把路径各 step 的折线坐标拼接成一条完整 polyline 字符串。 相邻 step 的折线首尾坐标重复，拼时跳过上一段末尾坐标，避免折返点。 */
     private String routePolyline(JSONObject path) {
         JSONArray steps = path.getJSONArray("steps");
         if (steps == null || steps.isEmpty()) return "";

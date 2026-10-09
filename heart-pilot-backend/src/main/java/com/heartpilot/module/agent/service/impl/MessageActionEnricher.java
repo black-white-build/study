@@ -12,12 +12,10 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 /**
- * 消息型行动富化器。
- * 调用文案生成服务产出消息草稿（文本/语气/发送时机/禁用表达），
- * 全程不调用地点或地图工具，满足"消息型计划不调用地点工具"的验收要求。
+ * 消息型行动富化器。 调用文案生成服务产出消息草稿（文本/语气/发送时机/禁用表达）， 全程不调用地点或地图工具，满足"消息型计划不调用地点工具"的验收要求。
  *
- * 消息生成必须融入用户在表单里输入的目标与约束（task.objective）、发送渠道、语气风格、
- * 对方回复期待（contextNotes 或结构化参数），生成的消息服务于计划目标并朝回复期待引导。
+ * <p>消息生成必须融入用户在表单里输入的目标与约束（task.objective）、发送渠道、语气风格、 对方回复期待（contextNotes
+ * 或结构化参数），生成的消息服务于计划目标并朝回复期待引导。
  */
 @Service
 public class MessageActionEnricher extends AbstractActionEnricher {
@@ -38,7 +36,8 @@ public class MessageActionEnricher extends AbstractActionEnricher {
         PlanActionItem item = baseItem(draft, context);
         ActionLanguageService.MessageOptions options = messageOptions(context);
         ActionLanguageService.MessageDraft message =
-                language.draftMessage(goalText(draft, context), context.task().getObjective(), options);
+                language.draftMessage(
+                        goalText(draft, context), context.task().getObjective(), options);
         StringBuilder instruction = new StringBuilder("发送这条消息：\n").append(message.text());
         instruction.append("\n\n语气：").append(message.tone());
         if (options.channel() != null && !options.channel().isBlank()) {
@@ -53,29 +52,30 @@ public class MessageActionEnricher extends AbstractActionEnricher {
         item.setTimingSuggestion(message.sendTiming());
         item.setEstimatedDurationMinutes(10);
         item.setPayloadJson(
-                payload(Map.of(
-                        "draft",
-                        message.text(),
-                        "tone",
-                        message.tone(),
-                        "sendTiming",
-                        message.sendTiming(),
-                        "channel",
-                        options.channel() == null ? "" : options.channel(),
-                        "toneStyle",
-                        options.toneStyle() == null ? "" : options.toneStyle(),
-                        "replyExpectation",
-                        options.replyExpectation() == null ? "" : options.replyExpectation(),
-                        "forbiddenExpressions",
-                        message.forbiddenExpressions())));
+                payload(
+                        Map.of(
+                                "draft",
+                                message.text(),
+                                "tone",
+                                message.tone(),
+                                "sendTiming",
+                                message.sendTiming(),
+                                "channel",
+                                options.channel() == null ? "" : options.channel(),
+                                "toneStyle",
+                                options.toneStyle() == null ? "" : options.toneStyle(),
+                                "replyExpectation",
+                                options.replyExpectation() == null
+                                        ? ""
+                                        : options.replyExpectation(),
+                                "forbiddenExpressions",
+                                message.forbiddenExpressions())));
         return new EnrichedAction(item, List.of());
     }
 
     /**
-     * 收集消息生成选项：优先取结构化参数（messageChannel/toneStyle/replyExpectation，
-     * 前端新版可单独透传），为空时回退解析 contextNotes 中的
-     * "发送渠道：/语气风格：/回复期待："行（创建页与编辑页都按该格式拼装）。
-     * 补充背景剔除这三行后原样透传，避免与指定参数重复。
+     * 收集消息生成选项：优先取结构化参数（messageChannel/toneStyle/replyExpectation， 前端新版可单独透传），为空时回退解析 contextNotes
+     * 中的 "发送渠道：/语气风格：/回复期待："行（创建页与编辑页都按该格式拼装）。 补充背景剔除这三行后原样透传，避免与指定参数重复。
      */
     private ActionLanguageService.MessageOptions messageOptions(PlanningContext context) {
         Map<String, Object> parameters = context.parameters();
@@ -84,7 +84,8 @@ public class MessageActionEnricher extends AbstractActionEnricher {
         Map<String, String> fields = new LinkedHashMap<>();
         for (String line : notes.split("\n")) {
             int idx = line.indexOf('：');
-            if (idx > 0) fields.putIfAbsent(line.substring(0, idx).trim(), line.substring(idx + 1).trim());
+            if (idx > 0)
+                fields.putIfAbsent(line.substring(0, idx).trim(), line.substring(idx + 1).trim());
         }
         String channel = pick(parameters.get("messageChannel"), fields.get("发送渠道"));
         String tone = pick(parameters.get("toneStyle"), fields.get("语气风格"));
@@ -115,6 +116,8 @@ public class MessageActionEnricher extends AbstractActionEnricher {
 
     private String goalText(ActionDraft draft, PlanningContext context) {
         String goal = draft.goalType() == null ? "" : draft.goalType().label();
-        return goal.isBlank() ? context.task().getObjective() : goal + "：" + context.task().getObjective();
+        return goal.isBlank()
+                ? context.task().getObjective()
+                : goal + "：" + context.task().getObjective();
     }
 }

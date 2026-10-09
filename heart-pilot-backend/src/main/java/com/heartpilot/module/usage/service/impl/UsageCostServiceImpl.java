@@ -14,31 +14,23 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 /**
- * 用量与成本统计服务实现。
- * 计费口径：不实时调用模型服务商账单，而是基于已落库的 ASSISTANT 消息记录做估算——
- * 每条 AI 回复消息在生成时已写入 inputTokens / outputTokens / estimatedCostMicros /
- * cacheSavedCostMicros / providerLatencyMs 等字段，这里按时间区间拉取后聚合。
+ * 用量与成本统计服务实现。 计费口径：不实时调用模型服务商账单，而是基于已落库的 ASSISTANT 消息记录做估算—— 每条 AI 回复消息在生成时已写入 inputTokens /
+ * outputTokens / estimatedCostMicros / cacheSavedCostMicros / providerLatencyMs 等字段，这里按时间区间拉取后聚合。
  *
- * 聚合维度：
- * - 总体汇总：请求数、Token、成本、缓存命中与节省、平均耗时
- * - 按日趋势（东八区日期归属）
- * - 按模型分组
- * 金额单位统一为 micros（百万分之一元），避免浮点误差。
+ * <p>聚合维度： - 总体汇总：请求数、Token、成本、缓存命中与节省、平均耗时 - 按日趋势（东八区日期归属） - 按模型分组 金额单位统一为 micros（百万分之一元），避免浮点误差。
  */
 @Service
 public class UsageCostServiceImpl implements UsageCostService {
     /** 按东八区日期归属统计每日数据 */
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+
     private final MessageRepository messages;
 
     public UsageCostServiceImpl(MessageRepository messages) {
         this.messages = messages;
     }
 
-    /**
-     * 统计近 N 天的成本看板。
-     * 天数被截断到 [1, 365]；只统计 ASSISTANT 角色消息（即真正消耗 Token 的模型回复）。
-     */
+    /** 统计近 N 天的成本看板。 天数被截断到 [1, 365]；只统计 ASSISTANT 角色消息（即真正消耗 Token 的模型回复）。 */
     @Override
     public UsageDtos.CostDashboardResponse dashboard(Long userId, int requestedDays) {
         // 限制查询天数范围，防止误传超大值拉全表

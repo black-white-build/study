@@ -19,37 +19,34 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * Agent 工具调用执行器。
- * 是所有外部工具调用（地点检索、ReAct/MCP 等）的统一入口，负责：
- * 审计落库（ToolCallRecord）、超时控制、失败重试、幂等复用与指标统计。
+ * Agent 工具调用执行器。 是所有外部工具调用（地点检索、ReAct/MCP 等）的统一入口，负责： 审计落库（ToolCallRecord）、超时控制、失败重试、幂等复用与指标统计。
  *
- * 可靠性设计要点：
- * - 幂等：以 taskId:versionNo:stepNo:toolName 作为幂等键，若该组合已有 SUCCEEDED 记录，
- *   直接反序列化上次结果返回，重试/恢复时不重复打外部接口
- * - 超时：每次调用都在独立线程池中执行，future.get 阻塞等待 timeoutSeconds，
- *   超时后 future.cancel(true) 中断底层线程
- * - 重试：失败最多尝试 maxAttempts 次，期间持续更新审计记录状态（TIMED_OUT/FAILED/CANCELLED）
- * - 异常分类：超时→TIMED_OUT 重试；线程中断→CANCELLED 立即向上抛并复位中断标志；
- *   业务异常→FAILED 重试；全部失败后记失败指标并抛出最后一次异常
+ * <p>可靠性设计要点： - 幂等：以 taskId:versionNo:stepNo:toolName 作为幂等键，若该组合已有 SUCCEEDED 记录，
+ * 直接反序列化上次结果返回，重试/恢复时不重复打外部接口 - 超时：每次调用都在独立线程池中执行，future.get 阻塞等待 timeoutSeconds， 超时后
+ * future.cancel(true) 中断底层线程 - 重试：失败最多尝试 maxAttempts 次，期间持续更新审计记录状态（TIMED_OUT/FAILED/CANCELLED） -
+ * 异常分类：超时→TIMED_OUT 重试；线程中断→CANCELLED 立即向上抛并复位中断标志； 业务异常→FAILED 重试；全部失败后记失败指标并抛出最后一次异常
  */
 @Service
 public class AgentToolExecutor {
     /** 工具调用审计 Repository */
     private final ToolCallRepository calls;
+
     /** Agent 任务专用线程池，工具动作在其中执行以便超时中断 */
     private final ExecutorService executor;
+
     /** 单次工具调用超时秒数，配置项 app.agent.tool-timeout-seconds，默认 30 */
     private final int timeoutSeconds;
+
     /** 失败最大尝试次数，配置项 app.agent.tool-max-attempts，默认 2 */
     private final int maxAttempts;
+
     /** 指标注册中心，统计幂等命中、耗时与失败 */
     private final MeterRegistry metrics;
+
     /** JSON 序列化，用于 executeJson 的结果落库与回读 */
     private final ObjectMapper json;
 
-    /**
-     * 构造器注入。executor 通过 @Qualifier 指定 Agent 任务专用线程池。
-     */
+    /** 构造器注入。executor 通过 @Qualifier 指定 Agent 任务专用线程池。 */
     public AgentToolExecutor(
             ToolCallRepository calls,
             @Qualifier("agentTaskExecutor") ExecutorService executor,
@@ -65,9 +62,7 @@ public class AgentToolExecutor {
         this.json = json;
     }
 
-    /**
-     * 执行一个返回纯文本的工具调用。结果落库前截断到 8000 字符。
-     */
+    /** 执行一个返回纯文本的工具调用。结果落库前截断到 8000 字符。 */
     public String execute(
             AgentTask task, int stepNo, String toolName, String arguments, Callable<String> action)
             throws Exception {
@@ -81,10 +76,7 @@ public class AgentToolExecutor {
                 value -> value);
     }
 
-    /**
-     * 执行一个返回结构化 JSON 的工具调用。
-     * 成功结果序列化为 JSON 字符串落库；幂等复用时再反序列化回 resultType。
-     */
+    /** 执行一个返回结构化 JSON 的工具调用。 成功结果序列化为 JSON 字符串落库；幂等复用时再反序列化回 resultType。 */
     public <T> T executeJson(
             AgentTask task,
             int stepNo,
@@ -216,10 +208,7 @@ public class AgentToolExecutor {
         return value.substring(0, Math.min(length, value.length()));
     }
 
-    /**
-     * 把参数字符串手动转义为 JSON 字符串字面量（带双引号）。
-     * 用于拼接 argumentsJson，转义反斜杠、引号与换行。
-     */
+    /** 把参数字符串手动转义为 JSON 字符串字面量（带双引号）。 用于拼接 argumentsJson，转义反斜杠、引号与换行。 */
     private String quote(String value) {
         if (value == null) return "null";
         return "\""

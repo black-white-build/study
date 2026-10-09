@@ -5,11 +5,9 @@ import jakarta.persistence.*;
 import lombok.*;
 
 /**
- * 知识库文档切片实体，对应数据库表 knowledge_chunk。
- * 一份文档上传后被切分为多个 chunk，每个 chunk 单独向量化写入 PGVector，
- * vectorId 对应 VectorStore 中的文档主键，用于删除时精确清理向量。
- * 通过 (documentId, chunkIndex) 唯一约束保证切片顺序不重复。
- * 继承 BaseEntity 获得 id、创建时间、更新时间等公共字段。
+ * 知识库文档切片实体，对应数据库表 knowledge_chunk。 一份文档上传后被切分为多个 chunk，每个 chunk 单独向量化写入 PGVector， vectorId 对应
+ * VectorStore 中的文档主键，用于删除时精确清理向量。 通过 (documentId, chunkIndex) 唯一约束保证切片顺序不重复。 继承 BaseEntity 获得
+ * id、创建时间、更新时间等公共字段。
  */
 @Entity
 @Table(

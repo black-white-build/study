@@ -6,20 +6,15 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
- * 规划安全检查器实现。
- * 与 AnswerSafetyPolicy 同源的确定性关键词规则，但作用于"计划草案"：
- * 逐条检查每条行动条目的 title / instruction / payload 文本，
- * 命中边界侵犯、现实危险、心理诊断或消息滥用规则时整单拒绝。
+ * 规划安全检查器实现。 与 AnswerSafetyPolicy 同源的确定性关键词规则，但作用于"计划草案"： 逐条检查每条行动条目的 title / instruction / payload
+ * 文本， 命中边界侵犯、现实危险、心理诊断或消息滥用规则时整单拒绝。
  *
- * 设计要点：
- * - 只做确定性兜底，不替代模型判断；所有规则均可被审计（reasonCode 记录）
- * - 识别否定语境："不要监控""不想跟踪"等表达不会被误判为违禁请求
- * - 观察型行动默认面向"自己"；若观察内容涉及记录对方行踪/位置/时间，判定为监控计划拒绝
+ * <p>设计要点： - 只做确定性兜底，不替代模型判断；所有规则均可被审计（reasonCode 记录） - 识别否定语境："不要监控""不想跟踪"等表达不会被误判为违禁请求 -
+ * 观察型行动默认面向"自己"；若观察内容涉及记录对方行踪/位置/时间，判定为监控计划拒绝
  */
 @Component
 public class PlanSafetyCheckerImpl implements PlanSafetyChecker {
@@ -43,16 +38,7 @@ public class PlanSafetyCheckerImpl implements PlanSafetyChecker {
 
     /** 观察型行动中出现"记录对方行踪/位置/时间"等监控特征时拒绝 */
     private static final List<String> OBSERVATION_SURVEILLANCE_TERMS =
-            List.of(
-                    "行踪",
-                    "定位",
-                    "几点回家",
-                    "几点出门",
-                    "和谁见面",
-                    "偷偷记录",
-                    "暗中观察",
-                    "偷看",
-                    "查岗");
+            List.of("行踪", "定位", "几点回家", "几点出门", "和谁见面", "偷偷记录", "暗中观察", "偷看", "查岗");
 
     @Override
     public Decision evaluate(List<DraftItem> items) {
@@ -64,18 +50,24 @@ public class PlanSafetyCheckerImpl implements PlanSafetyChecker {
             String text = flatten(item);
             String cleaned = stripNegatedDisallowed(text);
             // 第一组：边界侵犯类（含伪装成观察/消息行动的监控与骚扰）
-            if (containsAny(cleaned, "pua", "让他离不开", "让她离不开", "监控", "跟踪", "尾随", "纠缠",
-                            "骚扰", "死缠烂打", "冒充", "偷看", "窥探", "代聊", "精神控制", "查岗", "监视")
+            if (containsAny(
+                            cleaned, "pua", "让他离不开", "让她离不开", "监控", "跟踪", "尾随", "纠缠", "骚扰", "死缠烂打",
+                            "冒充", "偷看", "窥探", "代聊", "精神控制", "查岗", "监视")
                     || (item.kind() == ExecutionKind.OBSERVATION
                             && containsAny(cleaned, OBSERVATION_SURVEILLANCE_TERMS))) {
-                return refusal(item, blockedTitles, "BOUNDARY_VIOLATION",
+                return refusal(
+                        item,
+                        blockedTitles,
+                        "BOUNDARY_VIOLATION",
                         "这份计划包含跟踪、监控、纠缠或未经对方同意的行为，我不能生成。\n"
                                 + "可以改为：一次明确、尊重的沟通，主动询问对方感受并设置自己的边界，"
                                 + "或练习接受对方的选择。");
             }
             // 第二组：现实人身危险类 → 安全指引
             if (containsAny(stripNegatedDanger(text), DANGER_TERMS)) {
-                return new Decision(false, "REAL_WORLD_DANGER",
+                return new Decision(
+                        false,
+                        "REAL_WORLD_DANGER",
                         "这首先是安全问题，不适合继续生成行动建议。\n"
                                 + "如果危险正在发生，请立即离开可能受伤的环境，联系可信任的人，"
                                 + "并联系当地紧急服务或专业援助。不要独自与威胁者对峙。",
@@ -83,15 +75,20 @@ public class PlanSafetyCheckerImpl implements PlanSafetyChecker {
             }
             // 第三组：心理诊断类
             if (containsAny(text, DIAGNOSIS_TERMS)) {
-                return refusal(item, blockedTitles, "DIAGNOSIS_REQUEST",
+                return refusal(
+                        item,
+                        blockedTitles,
+                        "DIAGNOSIS_REQUEST",
                         "仅凭这些信息不能判断或诊断对方的人格、心理状态或疾病。\n"
                                 + "计划可以改为关注可观察的行为：发生了什么、频率如何、对你有什么影响、"
                                 + "你需要设置什么边界。");
             }
             // 第四组：消息行动内容审核
-            if (item.kind() == ExecutionKind.MESSAGE
-                    && containsAny(cleaned, MESSAGE_ABUSE_TERMS)) {
-                return refusal(item, blockedTitles, "MESSAGE_ABUSE",
+            if (item.kind() == ExecutionKind.MESSAGE && containsAny(cleaned, MESSAGE_ABUSE_TERMS)) {
+                return refusal(
+                        item,
+                        blockedTitles,
+                        "MESSAGE_ABUSE",
                         "这条消息草稿包含威胁、恐吓或贬低性表达，不能进入计划。\n"
                                 + "可以改为：陈述事实与感受（“当……发生时，我感到……”），"
                                 + "再提出一个具体、可执行的请求。");

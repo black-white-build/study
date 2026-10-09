@@ -10,9 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * 本地磁盘文件存储实现。
- * 当配置 app.storage.provider=local（或缺省）时生效，文件写入配置的本地目录。
- * 适合开发/单机部署；生产环境建议切换到 MinIO。
+ * 本地磁盘文件存储实现。 当配置 app.storage.provider=local（或缺省）时生效，文件写入配置的本地目录。 适合开发/单机部署；生产环境建议切换到 MinIO。
  * 安全要点：每次读写都规范化路径并校验是否落在根目录内，防止路径穿越攻击。
  */
 @Service
@@ -33,11 +31,7 @@ public class LocalStorageServiceImpl implements StorageService {
         return store(f.getBytes(), safe(f.getOriginalFilename()), f.getContentType(), prefix);
     }
 
-    /**
-     * 上传字节数组。
-     * 存储键 = 安全前缀/UUID-安全文件名，UUID 前缀避免文件名冲突。
-     * CREATE_NEW 选项保证文件不存在才写入，防止覆盖。
-     */
+    /** 上传字节数组。 存储键 = 安全前缀/UUID-安全文件名，UUID 前缀避免文件名冲突。 CREATE_NEW 选项保证文件不存在才写入，防止覆盖。 */
     public StoredObject store(byte[] data, String name, String type, String prefix)
             throws IOException {
         String key = safe(prefix) + "/" + UUID.randomUUID() + "-" + safe(name);
@@ -62,10 +56,7 @@ public class LocalStorageServiceImpl implements StorageService {
         if (p.startsWith(root)) Files.deleteIfExists(p);
     }
 
-    /**
-     * 清洗文件名/前缀：保留字母数字 . _ / -，其余替换为下划线；
-     * 同时把 ".." 替换掉，杜绝目录穿越。空值兜底为 "file"。
-     */
+    /** 清洗文件名/前缀：保留字母数字 . _ / -，其余替换为下划线； 同时把 ".." 替换掉，杜绝目录穿越。空值兜底为 "file"。 */
     private String safe(String s) {
         String v = s == null ? "file" : s.replaceAll("[^\\p{L}\\p{N}._/-]", "_").replace("..", "_");
         return v.isBlank() ? "file" : v;

@@ -13,7 +13,8 @@ import lombok.Setter;
 @Entity
 @Table(
         name = "conversation_context_state",
-        uniqueConstraints = @UniqueConstraint(name = "uk_context_conversation", columnNames = "conversationId"))
+        uniqueConstraints =
+                @UniqueConstraint(name = "uk_context_conversation", columnNames = "conversationId"))
 @Getter
 @Setter
 @NoArgsConstructor

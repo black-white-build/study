@@ -16,26 +16,21 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * 行动草案提议器实现。
- * 把用户目标与约束转换为"计划目标类型 + 多类型行动草案列表"。
- * 模型可用时按结构化输出生成（执行方式、标题、指令）；不可用时按规则降级，
+ * 行动草案提议器实现。 把用户目标与约束转换为"计划目标类型 + 多类型行动草案列表"。 模型可用时按结构化输出生成（执行方式、标题、指令）；不可用时按规则降级，
  * 保证任何输入都能得到至少一条可执行的草案（默认一次坦诚沟通）。
  *
- * 规则降级策略（关键词命中，不依赖模型）：
- * - 地点/见面/约会 → PLACE_VISIT（需城市）
- * - 消息/微信/短信 → MESSAGE
- * - 聊/谈/沟通/说开/道歉 → CONVERSATION
- * - 礼物/送 → GIFT_RITUAL
- * - 练习/复盘/自己/情绪/冷静/运动/健身/减肥/学习等 → SELF_PRACTICE（一次生成多套候选方案）
- * - 观察/留意 → OBSERVATION
- * - 均未命中 → CONVERSATION（最通用、最安全的一步）
+ * <p>规则降级策略（关键词命中，不依赖模型）： - 地点/见面/约会 → PLACE_VISIT（需城市） - 消息/微信/短信 → MESSAGE - 聊/谈/沟通/说开/道歉 →
+ * CONVERSATION - 礼物/送 → GIFT_RITUAL - 练习/复盘/自己/情绪/冷静/运动/健身/减肥/学习等 → SELF_PRACTICE（一次生成多套候选方案） -
+ * 观察/留意 → OBSERVATION - 均未命中 → CONVERSATION（最通用、最安全的一步）
  */
 @Service
 public class ActionDraftProposerImpl implements ActionDraftProposer {
     /** 每条草案的指令文本上限，防止模型输出超长污染预览 */
     private static final int MAX_INSTRUCTION_LENGTH = 500;
+
     /** 单份计划最多生成的草案条数 */
     private static final int MAX_DRAFTS = 8;
+
     /** 自我练习型生成的候选方案套数（多候选，参考送礼多方案思路） */
     private static final int SELF_PRACTICE_VARIANTS = 3;
 
@@ -68,7 +63,8 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
     public ActionProposal propose(PlanningContext context) {
         // 用户显式指定了目标类型/行动类型：走确定性的提示路径，不依赖模型
         GoalType goalHint = parseGoal(String.valueOf(context.parameters().get("goalType")));
-        List<ExecutionKind> kindHints = parseKinds(context.parameters().get("preferredActionKinds"));
+        List<ExecutionKind> kindHints =
+                parseKinds(context.parameters().get("preferredActionKinds"));
         if (goalHint != null || !kindHints.isEmpty()) {
             return proposeFromHints(goalHint, kindHints, context);
         }
@@ -96,7 +92,8 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
                                                     blank(context.budget()),
                                                     context.questions().isEmpty()
                                                             ? "无"
-                                                            : String.join("\n", context.questions()),
+                                                            : String.join(
+                                                                    "\n", context.questions()),
                                                     contextNotes.isBlank()
                                                             ? ""
                                                             : "背景补充（用户填写，须尊重，不得包含操控/监控意图）：\n"
@@ -109,10 +106,7 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
         }
     }
 
-    /**
-     * 用户指定提示路径：目标类型直接采用（未指定则从目标文本猜测），
-     * 行动类型按提示逐条生成默认草案；提示为空时回退规则降级。
-     */
+    /** 用户指定提示路径：目标类型直接采用（未指定则从目标文本猜测）， 行动类型按提示逐条生成默认草案；提示为空时回退规则降级。 */
     private ActionProposal proposeFromHints(
             GoalType goalHint, List<ExecutionKind> kindHints, PlanningContext context) {
         String text = context.task().getObjective();
@@ -133,48 +127,46 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
     }
 
     /** 每种执行方式的默认草案模板（提示路径与规则降级共用） */
-    private ActionDraft draftTemplate(ExecutionKind kind, GoalType goalType, PlanningContext context) {
+    private ActionDraft draftTemplate(
+            ExecutionKind kind, GoalType goalType, PlanningContext context) {
         boolean hasCity = context.city() != null && !context.city().isBlank();
         // 从用户输入字段动态提炼地点/目的关键词，地点行动的文案与检索不再依赖固定话语
         List<String> keywords = placeKeywords(context);
         return switch (kind) {
-            case PLACE_VISIT -> hasCity
-                    ? new ActionDraft(
+            case PLACE_VISIT ->
+                    hasCity
+                            ? new ActionDraft(
+                                    kind,
+                                    goalType,
+                                    placeTitle(keywords),
+                                    placeInstruction(keywords),
+                                    Map.of("placeCount", 3))
+                            : null;
+            case MESSAGE ->
+                    new ActionDraft(
+                            kind, goalType, "发送一条真诚的消息", messageInstruction(context), Map.of());
+            case CONVERSATION ->
+                    new ActionDraft(
                             kind,
                             goalType,
-                            placeTitle(keywords),
-                            placeInstruction(keywords),
-                            Map.of("placeCount", 3))
-                    : null;
-            case MESSAGE -> new ActionDraft(
-                    kind,
-                    goalType,
-                    "发送一条真诚的消息",
-                    messageInstruction(context),
-                    Map.of());
-            case CONVERSATION -> new ActionDraft(
-                    kind,
-                    goalType,
-                    "安排一次坦诚的沟通",
-                    "约一个双方都放松的时间，用开场白表达感受，给对方留出回应空间，约定不打断。",
-                    Map.of());
-            case GIFT_RITUAL -> new ActionDraft(
-                    kind,
-                    goalType,
-                    giftTitle(context),
-                    giftInstruction(context),
-                    Map.of());
+                            "安排一次坦诚的沟通",
+                            "约一个双方都放松的时间，用开场白表达感受，给对方留出回应空间，约定不打断。",
+                            Map.of());
+            case GIFT_RITUAL ->
+                    new ActionDraft(
+                            kind, goalType, giftTitle(context), giftInstruction(context), Map.of());
             case SELF_PRACTICE -> {
                 // 单条场景（如模型路径个别生成）返回第一套候选方案；批量场景走 selfPracticeDrafts
                 List<ActionDraft> variants = selfPracticeDrafts(goalType, context);
                 yield variants.isEmpty() ? null : variants.getFirst();
             }
-            case OBSERVATION -> new ActionDraft(
-                    kind,
-                    goalType,
-                    "记录自己的反应模式",
-                    "接下来几次互动中，只观察并记录自己的情绪与身体信号，不推断对方。",
-                    Map.of());
+            case OBSERVATION ->
+                    new ActionDraft(
+                            kind,
+                            goalType,
+                            "记录自己的反应模式",
+                            "接下来几次互动中，只观察并记录自己的情绪与身体信号，不推断对方。",
+                            Map.of());
         };
     }
 
@@ -208,12 +200,9 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
             if (kind == null) continue;
             String instruction = shorten(raw.instruction(), MAX_INSTRUCTION_LENGTH);
             if (instruction.isBlank()) instruction = context.task().getObjective();
-            drafts.add(new ActionDraft(
-                    kind,
-                    goalType,
-                    shorten(raw.title(), 120),
-                    instruction,
-                    Map.of()));
+            drafts.add(
+                    new ActionDraft(
+                            kind, goalType, shorten(raw.title(), 120), instruction, Map.of()));
         }
         if (drafts.isEmpty()) return fallbackPropose(context);
         return new ActionProposal(goalType, drafts, true);
@@ -250,7 +239,9 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
         if (matchesAny(text, "礼物", "送", "纪念日", "生日", "表白")) {
             addIfNotNull(drafts, draftTemplate(ExecutionKind.GIFT_RITUAL, goalType, context));
         }
-        if (matchesAny(text, "练习", "复盘", "自己", "情绪", "冷静", "焦虑", "成长", "减肥", "运动", "健身", "学习", "英语", "自律")) {
+        if (matchesAny(
+                text, "练习", "复盘", "自己", "情绪", "冷静", "焦虑", "成长", "减肥", "运动", "健身", "学习", "英语",
+                "自律")) {
             drafts.addAll(selfPracticeDrafts(goalType, context));
         }
         if (matchesAny(text, "观察", "留意", "记录")) {
@@ -269,12 +260,13 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
     }
 
     /**
-     * 动态切句生成多条 PLACE_VISIT 草案：按标点把用户目标拆成子句，
-     * 每个子句直接作为 instruction（不加 wrapper 元描述），不依赖固定类别枚举。
-     * 富化时 PlaceSearchService 会对这句原词做切句+归一化+高德搜索。
+     * 动态切句生成多条 PLACE_VISIT 草案：按标点把用户目标拆成子句， 每个子句直接作为 instruction（不加 wrapper 元描述），不依赖固定类别枚举。 富化时
+     * PlaceSearchService 会对这句原词做切句+归一化+高德搜索。
      */
-    private List<ActionDraft> placeDraftsByIntent(String text, GoalType goalType, PlanningContext context) {
-        String objective = context.task().getObjective() == null ? "" : context.task().getObjective();
+    private List<ActionDraft> placeDraftsByIntent(
+            String text, GoalType goalType, PlanningContext context) {
+        String objective =
+                context.task().getObjective() == null ? "" : context.task().getObjective();
         List<ActionDraft> result = new ArrayList<>();
         for (String clause : objective.split("[｜；。！？，,、？?\\n]+")) {
             String trimmed = clause.trim();
@@ -299,15 +291,16 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
     }
 
     /**
-     * 自我练习型多候选草案：一次生成 SELF_PRACTICE_VARIANTS 套差异化候选方案
-     * （参考送礼多方案思路），每套方案带 variant 序号，供富化器向语言服务请求对应思路；
+     * 自我练习型多候选草案：一次生成 SELF_PRACTICE_VARIANTS 套差异化候选方案 （参考送礼多方案思路），每套方案带 variant 序号，供富化器向语言服务请求对应思路；
      * 标题与指令引用用户填写的计划内容/期望效果关键词，禁止套用情绪复盘等无关固定措辞。
      */
     private List<ActionDraft> selfPracticeDrafts(GoalType goalType, PlanningContext context) {
         List<ActionDraft> drafts = new ArrayList<>();
         String keyword = practiceKeyword(context);
         String suffix = keyword.isBlank() ? "" : "（围绕：" + keyword + "）";
-        for (int variant = 1; variant <= SELF_PRACTICE_VARIANTS && drafts.size() < MAX_DRAFTS; variant++) {
+        for (int variant = 1;
+                variant <= SELF_PRACTICE_VARIANTS && drafts.size() < MAX_DRAFTS;
+                variant++) {
             String cn = cnNum(variant);
             drafts.add(
                     new ActionDraft(
@@ -316,7 +309,9 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
                             "候选方案" + cn + suffix,
                             "围绕计划内容与期望效果（"
                                     + (keyword.isBlank() ? "用户目标" : keyword)
-                                    + "）设计第" + cn + "套自我练习方案，内容必须紧扣关键词，"
+                                    + "）设计第"
+                                    + cn
+                                    + "套自我练习方案，内容必须紧扣关键词，"
                                     + "不得套用情绪复盘等与输入无关的模板。",
                             Map.of("variant", variant)));
         }
@@ -325,7 +320,8 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
 
     /** 从计划内容/期望效果行或任务目标提取练习关键词（最多 8 字），用于草案标题与指令 */
     private String practiceKeyword(PlanningContext context) {
-        String objective = context.task().getObjective() == null ? "" : context.task().getObjective();
+        String objective =
+                context.task().getObjective() == null ? "" : context.task().getObjective();
         Object rawNotes = context.parameters().get("contextNotes");
         if (rawNotes != null) {
             for (String line : String.valueOf(rawNotes).split("[\\r\\n]+")) {
@@ -338,7 +334,8 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
                 }
             }
         }
-        if (!objective.isBlank()) return objective.length() > 8 ? objective.substring(0, 8) : objective;
+        if (!objective.isBlank())
+            return objective.length() > 8 ? objective.substring(0, 8) : objective;
         return "";
     }
 
@@ -353,9 +350,7 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
     }
 
     /**
-     * 从用户输入字段动态提炼地点/目的关键词（最多 3 个）。
-     * 聚合任务目标、待回答问题、背景补充与城市，按标点切句，
-     * 过滤否定句、纯预算句与空句，保留用户原词，
+     * 从用户输入字段动态提炼地点/目的关键词（最多 3 个）。 聚合任务目标、待回答问题、背景补充与城市，按标点切句， 过滤否定句、纯预算句与空句，保留用户原词，
      * 避免固定词表漏掉用户真实的地点或目的诉求。
      */
     private List<String> placeKeywords(PlanningContext context) {
@@ -389,10 +384,7 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
         return "按你的需求安排见面（" + String.join("、", keywords) + "）";
     }
 
-    /**
-     * 地点行动指令：直接用用户原句，不加系统元描述（"选个安静地方见面"等），
-     * 避免这些元描述被后续地点检索当成搜索词，污染高德 keywords。
-     */
+    /** 地点行动指令：直接用用户原句，不加系统元描述（"选个安静地方见面"等）， 避免这些元描述被后续地点检索当成搜索词，污染高德 keywords。 */
     private String placeInstruction(List<String> keywords) {
         return keywords.isEmpty() ? "" : String.join("，", keywords);
     }
@@ -420,13 +412,9 @@ public class ActionDraftProposerImpl implements ActionDraftProposer {
         return buf.toString();
     }
 
-    /**
-     * 消息行动指令：引用用户填写的发送渠道/语气风格/回复期待与背景补充，
-     * 让草案标题与指令引用用户输入的关键词（满足"禁止套用与用户输入无关的固定措辞"）。
-     */
+    /** 消息行动指令：引用用户填写的发送渠道/语气风格/回复期待与背景补充， 让草案标题与指令引用用户输入的关键词（满足"禁止套用与用户输入无关的固定措辞"）。 */
     private String messageInstruction(PlanningContext context) {
-        StringBuilder buf =
-                new StringBuilder("用“事实+感受+请求”写一条短消息，先表达在乎，再提出一个具体的小请求。");
+        StringBuilder buf = new StringBuilder("用“事实+感受+请求”写一条短消息，先表达在乎，再提出一个具体的小请求。");
         Object notes = context.parameters().get("contextNotes");
         if (notes != null && !String.valueOf(notes).isBlank()) {
             buf.append("用户补充：").append(String.valueOf(notes).trim()).append("。");

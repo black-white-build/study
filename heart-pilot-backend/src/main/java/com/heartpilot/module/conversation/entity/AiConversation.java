@@ -6,9 +6,8 @@ import java.time.Instant;
 import lombok.*;
 
 /**
- * AI 对话会话实体，对应数据库表 ai_conversation。
- * 一条会话代表用户与 AI 的一轮连续对话，下挂多条消息（AiMessage）。
- * 继承 BaseEntity 获得 id、创建时间、更新时间等公共字段。
+ * AI 对话会话实体，对应数据库表 ai_conversation。 一条会话代表用户与 AI 的一轮连续对话，下挂多条消息（AiMessage）。 继承 BaseEntity 获得
+ * id、创建时间、更新时间等公共字段。
  */
 @Entity
 @Table(

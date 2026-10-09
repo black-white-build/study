@@ -3,11 +3,7 @@ package com.heartpilot.module.agent.service;
 import com.heartpilot.module.agent.entity.AgentTask;
 import java.util.List;
 
-/**
- * Agent 最终报告生成服务。
- * 在用户确认候选计划后，基于实时检索到的行程证据，调用大模型生成最终行动报告
- * （含逐问题解答、地点与路线建议、预算说明等）。
- */
+/** Agent 最终报告生成服务。 在用户确认候选计划后，基于实时检索到的行程证据，调用大模型生成最终行动报告 （含逐问题解答、地点与路线建议、预算说明等）。 */
 public interface AgentFinalReportService {
     /**
      * 生成最终行动报告。

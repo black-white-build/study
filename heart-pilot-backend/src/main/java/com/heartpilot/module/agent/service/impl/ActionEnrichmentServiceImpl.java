@@ -2,10 +2,10 @@ package com.heartpilot.module.agent.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heartpilot.module.agent.entity.PlanActionItem;
-import com.heartpilot.module.agent.service.ActionEnrichmentService;
 import com.heartpilot.module.agent.service.ActionEnricher;
 import com.heartpilot.module.agent.service.ActionEnricher.ActionDraft;
 import com.heartpilot.module.agent.service.ActionEnricher.EnrichedAction;
+import com.heartpilot.module.agent.service.ActionEnrichmentService;
 import com.heartpilot.module.agent.service.PlanningContext;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -14,16 +14,13 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 /**
- * 行动富化编排服务实现。
- * 按执行方式把草案分派给对应的 ActionEnricher：
- * - 未注册类型的草案生成降级条目（保留指令，payload 标记 UNSUPPORTED），不阻断整体规划
- * - 单个富化器失败（工具调用异常等）时生成降级条目并继续，其余行动不受影响
- * 条目顺序与输入草案一致，sequenceNo 从 1 开始。
+ * 行动富化编排服务实现。 按执行方式把草案分派给对应的 ActionEnricher： - 未注册类型的草案生成降级条目（保留指令，payload 标记 UNSUPPORTED），不阻断整体规划
+ * - 单个富化器失败（工具调用异常等）时生成降级条目并继续，其余行动不受影响 条目顺序与输入草案一致，sequenceNo 从 1 开始。
  */
 @Service
 public class ActionEnrichmentServiceImpl implements ActionEnrichmentService {
-    private final Map<com.heartpilot.module.agent.entity.enums.ExecutionKind, ActionEnricher> registry =
-            new LinkedHashMap<>();
+    private final Map<com.heartpilot.module.agent.entity.enums.ExecutionKind, ActionEnricher>
+            registry = new LinkedHashMap<>();
     private final ObjectMapper json;
 
     public ActionEnrichmentServiceImpl(List<ActionEnricher> enrichers, ObjectMapper json) {
@@ -89,11 +86,12 @@ public class ActionEnrichmentServiceImpl implements ActionEnrichmentService {
                         + "该行动的信息检索暂时不可用，可在确认前补充或修改。");
         item.setSequenceNo(sequence);
         item.setPayloadJson(
-                write(Map.of(
-                        "status",
-                        "ENRICHMENT_FAILED",
-                        "message",
-                        failure.getMessage() == null ? "未知错误" : failure.getMessage())));
+                write(
+                        Map.of(
+                                "status",
+                                "ENRICHMENT_FAILED",
+                                "message",
+                                failure.getMessage() == null ? "未知错误" : failure.getMessage())));
         return new EnrichedAction(item, List.of());
     }
 

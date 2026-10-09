@@ -20,42 +20,43 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * 负责外部地点/路线检索，以及可选的受约束 ReAct 补充核验。
- * Owns external place/route research and the optional constrained ReAct supplement.
+ * 负责外部地点/路线检索，以及可选的受约束 ReAct 补充核验。 Owns external place/route research and the optional constrained
+ * ReAct supplement.
  *
- * 职责拆分：
- * - researchJourney：按类别调用高德地图 + 网页检索拿到真实地点与路线，
- *   把证据序列化为 JSON 持久化到任务上，并逐类别写检索/筛选/路线轨迹
- * - supplementPublicInfo：在 ReAct/MCP 开关开启时，让 PublicInfoResearchAgent
- *   动态判断是否需要补充公开信息；失败自动降级回退到已有证据，不阻断主流程
+ * <p>职责拆分： - researchJourney：按类别调用高德地图 + 网页检索拿到真实地点与路线， 把证据序列化为 JSON 持久化到任务上，并逐类别写检索/筛选/路线轨迹 -
+ * supplementPublicInfo：在 ReAct/MCP 开关开启时，让 PublicInfoResearchAgent
+ * 动态判断是否需要补充公开信息；失败自动降级回退到已有证据，不阻断主流程
  *
- * 可靠性设计要点：
- * - 所有外部调用都经过 AgentToolExecutor 包裹，获得幂等缓存、超时与重试能力
- * - 检索结果（JourneyEvidence）回写任务时同步乐观锁版本号，避免并发覆盖
- * - ReAct 异常只记录 WARNING 轨迹并降级，不向上抛出导致任务失败
+ * <p>可靠性设计要点： - 所有外部调用都经过 AgentToolExecutor 包裹，获得幂等缓存、超时与重试能力 -
+ * 检索结果（JourneyEvidence）回写任务时同步乐观锁版本号，避免并发覆盖 - ReAct 异常只记录 WARNING 轨迹并降级，不向上抛出导致任务失败
  */
 @Service
 public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchService {
     /** 地点检索服务（高德 + 网页搜索） */
     private final PlaceSearchService placeSearch;
+
     /** 候选挑选 Agent（Tier2 候选池前置：只从池内挑选排序，不编造地点） */
     private final CandidateSelector candidateSelector;
+
     /** 工具执行器：统一处理外部调用的幂等、超时、重试与审计 */
     private final AgentToolExecutor toolExecutor;
+
     /** 执行轨迹记录器 */
     private final AgentExecutionTraceService executionTrace;
+
     /** ReAct 公开信息研究 Agent（Spring AI ToolCall/MCP） */
     private final PublicInfoResearchAgent researchAgent;
+
     /** 任务 Repository，用于回写行程证据 JSON */
     private final TaskRepository tasks;
+
     /** JSON 序列化工具，把证据对象写入任务 */
     private final ObjectMapper json;
+
     /** ReAct/MCP 总开关，配置项 app.agent.react-enabled，默认开启 */
     private final boolean reactEnabled;
 
-    /**
-     * 构造器注入。reactEnabled 来自配置项，关闭时 supplementPublicInfo 直接走降级路径。
-     */
+    /** 构造器注入。reactEnabled 来自配置项，关闭时 supplementPublicInfo 直接走降级路径。 */
     public AgentJourneyResearchServiceImpl(
             PlaceSearchService placeSearch,
             CandidateSelector candidateSelector,
@@ -76,10 +77,8 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
     }
 
     /**
-     * 执行一轮完整的地点与路线检索。
-     * 流程：记录检索开始轨迹 → 经工具执行器调用 placeSearch.researchJourney（带幂等/超时/重试）→
-     * 把证据序列化持久化到任务（同步乐观锁版本号）→ 逐类别写 OBSERVATION 轨迹 →
-     * 写筛选结果轨迹 → 写路线结果轨迹。
+     * 执行一轮完整的地点与路线检索。 流程：记录检索开始轨迹 → 经工具执行器调用 placeSearch.researchJourney（带幂等/超时/重试）→
+     * 把证据序列化持久化到任务（同步乐观锁版本号）→ 逐类别写 OBSERVATION 轨迹 → 写筛选结果轨迹 → 写路线结果轨迹。
      *
      * @param task 当前任务
      * @param stepNo 当前步骤编号
@@ -199,10 +198,8 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
     }
 
     /**
-     * 候选池前置的行程研究（Tier2，参考 ITINERA）。
-     * 与 researchJourney 的差异：先拉大候选池（每类更多 POI），
-     * 再让候选挑选 Agent 只从池内挑选排序（禁止凭空编造地点），
-     * 最后基于挑选点位规划路线产出证据。挑选结果非法时自动重试（Tier3 重试闭环）。
+     * 候选池前置的行程研究（Tier2，参考 ITINERA）。 与 researchJourney 的差异：先拉大候选池（每类更多 POI）， 再让候选挑选 Agent
+     * 只从池内挑选排序（禁止凭空编造地点）， 最后基于挑选点位规划路线产出证据。挑选结果非法时自动重试（Tier3 重试闭环）。
      */
     @Override
     public JourneyResearch researchJourneyFromPool(
@@ -250,9 +247,7 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
         task.setPlacePoolJson(json.writeValueAsString(pool));
         // 用当前时间做种子，把候选池里每类多取的 POI 一并扩成地图卡片：
         // 主线卡片排最前带路线，其余按类别均衡补到最多 12 张，让前端"展开全部"按钮有内容可点。
-        evidence =
-                placeSearch.reshuffleCandidateCards(
-                        evidence, pool, System.nanoTime());
+        evidence = placeSearch.reshuffleCandidateCards(evidence, pool, System.nanoTime());
         // 把证据 JSON 持久化到任务，供后续静态路线图、最终报告复用
         task.setJourneyEvidenceJson(json.writeValueAsString(evidence));
         task.setEvidenceUpdatedAt(Instant.now());
@@ -314,16 +309,17 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
                                 .toList()));
         return new JourneyResearch(
                 (evidence.places().isEmpty()
-                        ? evidence.notice()
-                        : "候选池挑选了 "
-                                + evidence.places().size()
-                                + " 个地点：\n"
-                                + String.join(
-                                        "、",
-                                        evidence.places().stream()
-                                                .map(PlaceSearchService.Place::name)
-                                                .toList()))
-                        + "\n" + routeDetail,
+                                ? evidence.notice()
+                                : "候选池挑选了 "
+                                        + evidence.places().size()
+                                        + " 个地点：\n"
+                                        + String.join(
+                                                "、",
+                                                evidence.places().stream()
+                                                        .map(PlaceSearchService.Place::name)
+                                                        .toList()))
+                        + "\n"
+                        + routeDetail,
                 evidence);
     }
 
@@ -337,10 +333,8 @@ public class AgentJourneyResearchServiceImpl implements AgentJourneyResearchServ
     }
 
     /**
-     * 用 ReAct/MCP 补充核验公开信息（步骤 3）。
-     * 开关关闭时直接返回基础筛选说明；开启时构造受限 Prompt 交给 researchAgent 动态判断，
-     * 把补充观察追加到地点文本与核验说明里。
-     * 任何异常都被 catch 住：降级为"补充核验暂不可用"，继续使用已有本地检索证据，绝不向上抛。
+     * 用 ReAct/MCP 补充核验公开信息（步骤 3）。 开关关闭时直接返回基础筛选说明；开启时构造受限 Prompt 交给 researchAgent 动态判断，
+     * 把补充观察追加到地点文本与核验说明里。 任何异常都被 catch 住：降级为"补充核验暂不可用"，继续使用已有本地检索证据，绝不向上抛。
      *
      * @param task 当前任务
      * @param city 限定城市

@@ -9,9 +9,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 富化器公共基类。
- * 统一负责：基础条目字段填充（执行方式/目标/标题/指令）、JSON 序列化
- * （payload / sourceReferences），子类只实现 supports 与类型专属的 enrich 逻辑。
+ * 富化器公共基类。 统一负责：基础条目字段填充（执行方式/目标/标题/指令）、JSON 序列化 （payload / sourceReferences），子类只实现 supports 与类型专属的
+ * enrich 逻辑。
  */
 public abstract class AbstractActionEnricher implements ActionEnricher {
     protected final ObjectMapper json;
@@ -48,8 +47,7 @@ public abstract class AbstractActionEnricher implements ActionEnricher {
     /** 把引用来源列表序列化为 JSON 字符串数组 */
     protected String refs(List<String> sourceReferences) {
         try {
-            return json.writeValueAsString(
-                    sourceReferences == null ? List.of() : sourceReferences);
+            return json.writeValueAsString(sourceReferences == null ? List.of() : sourceReferences);
         } catch (Exception ignored) {
             return "[]";
         }

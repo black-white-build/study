@@ -8,8 +8,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class AnswerSafetyPolicy {
     /**
-     * 对用户输入做规则式安全分流：先识别上下文场景（引用/假设/否定等），再按关键词规则
-     * 返回拒绝（REFUSAL）、安全指引（SAFETY）或放行模型（CONTINUE）三类决策。
+     * 对用户输入做规则式安全分流：先识别上下文场景（引用/假设/否定等），再按关键词规则 返回拒绝（REFUSAL）、安全指引（SAFETY）或放行模型（CONTINUE）三类决策。
      * 仅作确定性关键词兜底，不替代模型判断。
      */
     public Decision evaluate(String input) {
@@ -62,6 +61,7 @@ public class AnswerSafetyPolicy {
 
     /**
      * 识别用户输入文本所处的上下文场景，返回对应的Context枚举，给上层安全策略做判断依据
+     *
      * @param text 用户原始输入文本
      * @return 上下文类型：NEGATED/QUOTED/HYPOTHETICAL/THIRD_PARTY/REAL
      */
@@ -80,9 +80,8 @@ public class AnswerSafetyPolicy {
     }
 
     /**
-     * 消去"没有/没/从未/不是/不会/非/不/拒绝/反对"等否定式风险表达（如"没有威胁""不会自杀""非暴力沟通"），
-     * 用于判断上下文是否属于 NEGATED——用户明确否定了风险，不应触发安全拦截。
-     * 注意先替换更长、更具体的搭配（如"非暴力沟通"），再替换一般性否定搭配，避免残余词被误判。
+     * 消去"没有/没/从未/不是/不会/非/不/拒绝/反对"等否定式风险表达（如"没有威胁""不会自杀""非暴力沟通"）， 用于判断上下文是否属于
+     * NEGATED——用户明确否定了风险，不应触发安全拦截。 注意先替换更长、更具体的搭配（如"非暴力沟通"），再替换一般性否定搭配，避免残余词被误判。
      */
     private String stripNegatedRisk(String text) {
         return text.replace("非暴力沟通", "")
@@ -101,18 +100,14 @@ public class AnswerSafetyPolicy {
                 .replace("没有强迫", "");
     }
 
-    /**
-     * 否定词 + 违禁词 或 违禁词 + 否定词 两种语序的预编译匹配器。
-     * 否定词与违禁词之间最多允许 {0,3} 个汉字；绝不放宽为 .*?，否则会跨句误删大量文本。
-     */
+    /** 否定词 + 违禁词 或 违禁词 + 否定词 两种语序的预编译匹配器。 否定词与违禁词之间最多允许 {0,3} 个汉字；绝不放宽为 .*?，否则会跨句误删大量文本。 */
     private static final Pattern NEGATED_DISALLOWED =
             Pattern.compile(
                     "(?:不要|不想|不会|别)[\\u4e00-\\u9fa5]{0,3}(?:监控|跟踪|纠缠)"
                             + "|(?:监控|跟踪|纠缠)[\\u4e00-\\u9fa5]{0,3}(?:不要|不想|不会|别)");
 
     /**
-     * 消去"否定 + 违禁"两类语序的片段：既支持否定在前（"不要监控"），也支持违禁词在前、
-     * 否定在后（"监控我不想做"）。目的是避免用户表达"不想被监控/不想跟踪"时被第一组规则
+     * 消去"否定 + 违禁"两类语序的片段：既支持否定在前（"不要监控"），也支持违禁词在前、 否定在后（"监控我不想做"）。目的是避免用户表达"不想被监控/不想跟踪"时被第一组规则
      * 误判为违禁请求。仅作轻量规则兜底，复杂长句与多重否定不处理。
      */
     private String stripNegatedDisallowed(String text) {
@@ -124,10 +119,7 @@ public class AnswerSafetyPolicy {
         return false;
     }
 
-    /**
-     * 一次安全评估的决策结果：决策类型、需要直接回复给用户的文案（放行时为 null）、
-     * 命中的原因码，以及识别出的输入上下文场景。
-     */
+    /** 一次安全评估的决策结果：决策类型、需要直接回复给用户的文案（放行时为 null）、 命中的原因码，以及识别出的输入上下文场景。 */
     public record Decision(Kind kind, String directResponse, String reasonCode, Context context) {
         /** 未命中任何拦截规则，把请求交给大模型继续处理。 */
         public static Decision continueWithModel(Context context) {

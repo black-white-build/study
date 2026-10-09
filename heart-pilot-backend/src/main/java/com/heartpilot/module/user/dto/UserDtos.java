@@ -7,14 +7,13 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 
-/**
- * 用户模块相关 DTO 集合，包含用户信息响应、更新请求与关系档案的请求/响应。
- */
+/** 用户模块相关 DTO 集合，包含用户信息响应、更新请求与关系档案的请求/响应。 */
 public final class UserDtos {
     private UserDtos() {}
 
     /**
      * 当前用户基础信息响应。
+     *
      * @param id 用户 ID
      * @param username 登录用户名
      * @param nickname 展示昵称
@@ -43,6 +42,7 @@ public final class UserDtos {
 
     /**
      * 局部更新用户信息请求，字段均可选，传 null 表示不修改。
+     *
      * @param nickname 昵称
      * @param emotionStatus 情绪状态
      * @param avatarUrl 头像 URL
@@ -54,6 +54,7 @@ public final class UserDtos {
 
     /**
      * 保存关系档案请求，与用户一对一。
+     *
      * @param relationshipStatus 关系状态（如恋爱中/已婚等）
      * @param relationshipMonths 关系持续月数，范围 0~1200
      * @param communicationStyle 沟通方式
@@ -71,6 +72,7 @@ public final class UserDtos {
 
     /**
      * 关系档案响应。
+     *
      * @param id 档案 ID
      * @param relationshipStatus 关系状态
      * @param relationshipMonths 关系持续月数

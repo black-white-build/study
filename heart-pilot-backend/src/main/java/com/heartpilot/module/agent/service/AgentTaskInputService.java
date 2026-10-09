@@ -6,14 +6,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 任务输入参数处理服务。
- * 集中负责任务输入参数的规范化、校验、序列化/反序列化、城市解析、预算归一化、问题列表合并等，
- * 是 AgentTaskService 与各子服务之间处理用户输入的工具层。
+ * 任务输入参数处理服务。 集中负责任务输入参数的规范化、校验、序列化/反序列化、城市解析、预算归一化、问题列表合并等， 是 AgentTaskService 与各子服务之间处理用户输入的工具层。
  */
 public interface AgentTaskInputService {
-    /**
-     * 构造等待用户确认阶段展示的候选计划预览文本。
-     */
+    /** 构造等待用户确认阶段展示的候选计划预览文本。 */
     String buildPreview(
             AgentTask task,
             String city,
@@ -22,9 +18,7 @@ public interface AgentTaskInputService {
             List<String> questions,
             List<String> revisions);
 
-    /**
-     * 合并全部需求（目标、问题、修订）为完整检索需求文本。
-     */
+    /** 合并全部需求（目标、问题、修订）为完整检索需求文本。 */
     String combinedRequirements(AgentTask task, Map<String, Object> parameters);
 
     /** 从参数中提取检索需求文本（不含任务目标） */
@@ -68,6 +62,7 @@ public interface AgentTaskInputService {
 
     /**
      * 校验并解析地区参数（省/市），返回标准化城市名。
+     *
      * @throws com.heartpilot.common.exception.ApiException 地区非法时抛出 400
      */
     String validateAndResolveRegion(Map<String, Object> parameters);

@@ -7,9 +7,8 @@ import java.time.Instant;
 import lombok.*;
 
 /**
- * Agent 任务步骤实体，对应数据库表 agent_task_step。
- * 一个任务拆分为多个有序执行步骤（分析、检索、生成等），每步有独立状态与重试计数。
- * taskId + stepNo 组成唯一约束，防止同一步骤重复创建。
+ * Agent 任务步骤实体，对应数据库表 agent_task_step。 一个任务拆分为多个有序执行步骤（分析、检索、生成等），每步有独立状态与重试计数。 taskId + stepNo
+ * 组成唯一约束，防止同一步骤重复创建。
  */
 @Entity
 @Table(
@@ -45,6 +44,7 @@ public class AgentTaskStep extends BaseEntity {
 
     /** 步骤开始执行时间 */
     private Instant startedAt;
+
     /** 步骤完成时间 */
     private Instant completedAt;
 

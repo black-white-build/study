@@ -1,9 +1,6 @@
 package com.heartpilot.module.conversation.entity.enums;
 
-/**
- * AI 消息生成状态枚举。
- * 标记一条 assistant 消息在流式生成过程中所处的阶段，由对话服务在 SSE 流程中更新。
- */
+/** AI 消息生成状态枚举。 标记一条 assistant 消息在流式生成过程中所处的阶段，由对话服务在 SSE 流程中更新。 */
 public enum AiMessageStatus {
     /** 正在流式生成中，内容尚未完整 */
     STREAMING,

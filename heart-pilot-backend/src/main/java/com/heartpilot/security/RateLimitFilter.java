@@ -27,12 +27,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * 接口限流过滤器。
- * 过滤顺序：位于 JwtAuthenticationFilter 之后（见 SecurityConfig），此时 SecurityContext 已有用户信息。
- * 按"已登录用户 ID / 客户端 IP"为维度做每分钟滑动窗口计数：
- * 认证类接口（/auth/...）使用更严格的 authLimit，其余接口使用 defaultLimit。
- * 优先使用 Redis 计数以支持多实例部署；Redis 不可用时降级到本机 Caffeine 缓存（仅单实例有效），
- * 并通过 Micrometer 指标记录降级事件。超限返回 429，并在响应头暴露限流配额。
+ * 接口限流过滤器。 过滤顺序：位于 JwtAuthenticationFilter 之后（见 SecurityConfig），此时 SecurityContext 已有用户信息。 按"已登录用户
+ * ID / 客户端 IP"为维度做每分钟滑动窗口计数： 认证类接口（/auth/...）使用更严格的 authLimit，其余接口使用 defaultLimit。 优先使用 Redis
+ * 计数以支持多实例部署；Redis 不可用时降级到本机 Caffeine 缓存（仅单实例有效）， 并通过 Micrometer 指标记录降级事件。超限返回 429，并在响应头暴露限流配额。
  */
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
@@ -43,18 +40,25 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     /** Redis 不可用时的本机兜底计数器（Caffeine 缓存） */
     private final Cache<String, Window> local;
+
     /** 普通接口每分钟限流阈值 */
     private final int defaultLimit;
+
     /** 认证接口（登录/注册等）每分钟限流阈值，防暴力破解 */
     private final int authLimit;
+
     /** 用于把 429 错误信息序列化为 JSON */
     private final ObjectMapper mapper;
+
     /** Redis 计数器客户端，可空（未启用或不可用时使用本机缓存） */
     private final StringRedisTemplate redis;
+
     /** 是否启用 Redis 分布式限流 */
     private final boolean redisEnabled;
+
     /** 可信代理 IP 列表，仅从这些代理转发时才采信 X-Forwarded-For，防止伪造真实 IP */
     private final Set<String> trustedProxies;
+
     /** 指标注册器，用于统计 Redis 降级次数 */
     private final MeterRegistry metrics;
 
@@ -88,10 +92,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     /**
-     * 单次请求限流执行逻辑。
-     * 实现要点：跳过 /health 探活请求；认证接口按 IP 用 authLimit 严格限流，其余接口按登录用户 ID 用 defaultLimit；
-     * 计数优先走 Redis 原子 incr（多实例共享），Redis 异常时降级到本机 Caffeine 窗口计数；
-     * 无论是否超限都在响应头写入 X-RateLimit-Limit / X-RateLimit-Remaining；超限直接写 429 JSON 并中断过滤链。
+     * 单次请求限流执行逻辑。 实现要点：跳过 /health 探活请求；认证接口按 IP 用 authLimit 严格限流，其余接口按登录用户 ID 用 defaultLimit； 计数优先走
+     * Redis 原子 incr（多实例共享），Redis 异常时降级到本机 Caffeine 窗口计数； 无论是否超限都在响应头写入 X-RateLimit-Limit /
+     * X-RateLimit-Remaining；超限直接写 429 JSON 并中断过滤链。
      */
     @Override
     protected void doFilterInternal(
@@ -125,9 +128,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
-    /**
-     * 解析限流身份：已登录用户按用户 ID，未登录按客户端 IP。
-     */
+    /** 解析限流身份：已登录用户按用户 ID，未登录按客户端 IP。 */
     private String identity(HttpServletRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null
@@ -138,10 +139,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         return "ip:" + clientIp(request);
     }
 
-    /**
-     * 获取真实客户端 IP。仅当请求来自可信代理时才解析 X-Forwarded-For 首段，
-     * 否则直接取 remoteAddr，防止客户端伪造头绕过单 IP 限流。
-     */
+    /** 获取真实客户端 IP。仅当请求来自可信代理时才解析 X-Forwarded-For 首段， 否则直接取 remoteAddr，防止客户端伪造头绕过单 IP 限流。 */
     private String clientIp(HttpServletRequest request) {
         String remoteAddress = request.getRemoteAddr();
         if (!trustedProxies.contains(remoteAddress)) return remoteAddress;
@@ -153,6 +151,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     /**
      * 计数：优先 Redis 原子自增实现分布式限流；失败则降级本机 Caffeine 窗口计数。
+     *
      * @param identity 带前缀的限流身份（user:xxx / ip:xxx / auth:ip:xxx）
      * @param minute 当前分钟窗口编号
      * @return 该窗口内累计请求次数

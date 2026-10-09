@@ -1,9 +1,6 @@
 package com.heartpilot.module.agent.entity.enums;
 
-/**
- * 行动条目（PlanActionItem）的完成状态。
- * 用户按条目勾选完成情况，"我的计划"页面据此展示逐条进度。
- */
+/** 行动条目（PlanActionItem）的完成状态。 用户按条目勾选完成情况，"我的计划"页面据此展示逐条进度。 */
 public enum ActionItemStatus {
     /** 待执行 */
     PENDING,

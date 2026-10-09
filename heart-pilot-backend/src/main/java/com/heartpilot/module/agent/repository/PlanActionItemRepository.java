@@ -4,10 +4,7 @@ import com.heartpilot.module.agent.entity.PlanActionItem;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-/**
- * 计划行动条目（PlanActionItem）数据访问层。
- * 条目归属计划版本（versionId），并冗余 planId 便于按计划直接查询。
- */
+/** 计划行动条目（PlanActionItem）数据访问层。 条目归属计划版本（versionId），并冗余 planId 便于按计划直接查询。 */
 public interface PlanActionItemRepository extends JpaRepository<PlanActionItem, Long> {
     /** 按版本列出条目，保持用户调整后的顺序 */
     List<PlanActionItem> findByVersionIdOrderBySequenceNoAsc(Long versionId);

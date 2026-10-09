@@ -1,9 +1,8 @@
 package com.heartpilot.module.agent.entity.enums;
 
 /**
- * 行动的执行方式。
- * 与目标类型（GoalType）正交：执行方式回答"用什么动作实现"，目标类型回答"想达到什么"。
- * 例如"吵架后的咖啡店沟通" = PLACE_VISIT（执行方式）+ REPAIR（行动目标）。
+ * 行动的执行方式。 与目标类型（GoalType）正交：执行方式回答"用什么动作实现"，目标类型回答"想达到什么"。 例如"吵架后的咖啡店沟通" = PLACE_VISIT（执行方式）+
+ * REPAIR（行动目标）。
  */
 public enum ExecutionKind {
     /** 地点型：约定在某个地点进行见面/活动 */

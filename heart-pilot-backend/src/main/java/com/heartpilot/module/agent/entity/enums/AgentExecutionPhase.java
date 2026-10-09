@@ -1,8 +1,6 @@
 package com.heartpilot.module.agent.entity.enums;
 
-/**
- * Agent 任务执行阶段枚举，描述任务从开始到完成的宏观阶段划分。
- */
+/** Agent 任务执行阶段枚举，描述任务从开始到完成的宏观阶段划分。 */
 public enum AgentExecutionPhase {
     /** 分析用户需求 */
     ANALYZE,

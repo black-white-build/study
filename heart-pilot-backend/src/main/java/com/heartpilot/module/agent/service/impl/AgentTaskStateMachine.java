@@ -9,27 +9,21 @@ import java.time.Instant;
 import org.springframework.stereotype.Service;
 
 /**
- * Agent 任务状态机。
- * 是全系统唯一允许修改任务 status 的地方，业务代码一律通过 transition() 流转状态，
- * 禁止直接 setStatus，以此集中管理合法的状态迁移规则。
+ * Agent 任务状态机。 是全系统唯一允许修改任务 status 的地方，业务代码一律通过 transition() 流转状态， 禁止直接 setStatus，以此集中管理合法的状态迁移规则。
  *
- * 状态流转规则由 {@link AgentTaskStatus#canTransitionTo} 定义，非法迁移直接抛冲突异常；
- * 每次合法流转都会：
- * - 记录 Micrometer 计数器（from/to 标签），便于监控任务状态分布
- * - 刷新心跳时间（heartbeatAt），供僵死任务扫描
- * - 进入 RUNNING 时记录开始时间并清空下次重试时间
+ * <p>状态流转规则由 {@link AgentTaskStatus#canTransitionTo} 定义，非法迁移直接抛冲突异常； 每次合法流转都会： - 记录 Micrometer
+ * 计数器（from/to 标签），便于监控任务状态分布 - 刷新心跳时间（heartbeatAt），供僵死任务扫描 - 进入 RUNNING 时记录开始时间并清空下次重试时间
  * 保存后同步乐观锁版本号到内存对象，避免后续更新版本冲突。
  */
 @Service
 public class AgentTaskStateMachine {
     /** 任务 Repository */
     private final TaskRepository tasks;
+
     /** 指标注册中心，统计状态迁移次数 */
     private final MeterRegistry metrics;
 
-    /**
-     * 构造器注入。
-     */
+    /** 构造器注入。 */
     public AgentTaskStateMachine(TaskRepository tasks, MeterRegistry metrics) {
         this.tasks = tasks;
         this.metrics = metrics;
@@ -38,10 +32,8 @@ public class AgentTaskStateMachine {
     /**
      * 执行一次状态迁移。
      *
-     * 边界处理：
-     * - 源状态 == 目标状态：视为一次心跳刷新，不记迁移指标
-     * - 源 → 目标不在白名单内：抛 INVALID_TASK_TRANSITION 冲突异常
-     * - 迁移到 RUNNING：记录 lastStartedAt 并清空 nextRetryAt
+     * <p>边界处理： - 源状态 == 目标状态：视为一次心跳刷新，不记迁移指标 - 源 → 目标不在白名单内：抛 INVALID_TASK_TRANSITION 冲突异常 - 迁移到
+     * RUNNING：记录 lastStartedAt 并清空 nextRetryAt
      *
      * @param task 当前任务（内存对象，状态会被就地修改）
      * @param target 目标状态
@@ -77,10 +69,7 @@ public class AgentTaskStateMachine {
         return saved;
     }
 
-    /**
-     * 仅刷新任务心跳时间，不改变状态。
-     * 长步骤执行期间周期性调用，告诉恢复扫描器"任务还活着"，避免被误判为僵死。
-     */
+    /** 仅刷新任务心跳时间，不改变状态。 长步骤执行期间周期性调用，告诉恢复扫描器"任务还活着"，避免被误判为僵死。 */
     public AgentTask heartbeat(AgentTask task) {
         task.setHeartbeatAt(Instant.now());
         AgentTask saved = tasks.saveAndFlush(task);

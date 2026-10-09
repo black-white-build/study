@@ -12,16 +12,15 @@ import lombok.Setter;
 
 /**
  * 结构化需求持久化实体（对应表 agent_requirement_state）。
- * <p>数据库不只保存对话文本，额外保存解析后的结构化 JSON，
- * 支持增量局部修改约束（PATCH 单条字段直接更新 JSON，不用整段重写 prompt）。
- * 每个任务一条（taskId 唯一），与 agent_task 1:1。
+ *
+ * <p>数据库不只保存对话文本，额外保存解析后的结构化 JSON， 支持增量局部修改约束（PATCH 单条字段直接更新 JSON，不用整段重写 prompt）。 每个任务一条（taskId
+ * 唯一），与 agent_task 1:1。
  */
 @Entity
 @Table(
         name = "agent_requirement_state",
         indexes = @Index(name = "idx_req_state_user", columnList = "userId"),
-        uniqueConstraints =
-                @UniqueConstraint(name = "uk_req_state_task", columnNames = "taskId"))
+        uniqueConstraints = @UniqueConstraint(name = "uk_req_state_task", columnNames = "taskId"))
 @Getter
 @Setter
 @NoArgsConstructor

@@ -12,7 +12,8 @@
       <span class="badge green">按行动类型定制</span>
       <h2>每一步都看得见，关键决定由你确认。</h2>
       <p>
-        Agent 会先分析你的目标与约束，再按行动类型调用对应能力：地点见面检索真实餐厅/景点与路线，礼物联网检索公开商品推荐，发消息与自我计划生成定制方案。你确认后才生成最终计划。
+        Agent
+        会先分析你的目标与约束，再按行动类型调用对应能力：地点见面检索真实餐厅/景点与路线，礼物联网检索公开商品推荐，发消息与自我计划生成定制方案。你确认后才生成最终计划。
       </p>
     </div>
     <div class="mini-flow">
@@ -223,11 +224,7 @@
         <div class="grid-2">
           <div class="field">
             <label>预算范围</label
-            ><input
-              v-model="form.giftBudget"
-              class="input"
-              placeholder="例如：200到500元"
-            />
+            ><input v-model="form.giftBudget" class="input" placeholder="例如：200到500元" />
           </div>
           <div class="field">
             <label>场合类型</label>
@@ -518,7 +515,7 @@ async function create() {
     if (place) {
       if (form.partySize) extraLines.push(`参与人数：${form.partySize}人`)
       if (form.venueTypes.length) {
-        const types = form.venueTypes.filter(t => t !== '其他')
+        const types = form.venueTypes.filter((t) => t !== '其他')
         if (types.length) extraLines.push(`场所偏好：${types.join('、')}`)
         if (form.customVenue) extraLines.push(`其他场所：${form.customVenue}`)
       }
@@ -539,10 +536,7 @@ async function create() {
       if (form.expectedOutcome) extraLines.push(`期望效果：${form.expectedOutcome}`)
       if (form.frequency) extraLines.push(`频率：${form.frequency}`)
     }
-    const background = [
-      form.boundary ? `明确边界：${form.boundary}` : '',
-      ...extraLines
-    ]
+    const background = [form.boundary ? `明确边界：${form.boundary}` : '', ...extraLines]
       .filter(Boolean)
       .join('\n')
     const key = createIdempotencyKey()
@@ -559,7 +553,8 @@ async function create() {
           goalType: form.goalType || undefined,
           preferredActionKinds: [form.actionKind],
           // 消息行动：渠道/语气/回复期待单独透传，供后端结构化读取；contextNotes 仍保留文本行用于展示
-          messageChannel: form.actionKind === 'MESSAGE' ? form.messageChannel || undefined : undefined,
+          messageChannel:
+            form.actionKind === 'MESSAGE' ? form.messageChannel || undefined : undefined,
           toneStyle: form.actionKind === 'MESSAGE' ? form.toneStyle || undefined : undefined,
           replyExpectation:
             form.actionKind === 'MESSAGE' ? form.replyExpectation || undefined : undefined,

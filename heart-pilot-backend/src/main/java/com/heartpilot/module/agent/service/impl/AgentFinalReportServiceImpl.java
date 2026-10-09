@@ -16,27 +16,24 @@ import java.util.concurrent.TimeUnit;
 import org.springframework.stereotype.Service;
 
 /**
- * 基于已持久化、可核验的行程证据，生成最终面向用户的行动报告。
- * Generates the final user-facing report from persisted, verifiable journey evidence.
+ * 基于已持久化、可核验的行程证据，生成最终面向用户的行动报告。 Generates the final user-facing report from persisted, verifiable
+ * journey evidence.
  *
- * 可靠性设计要点：
- * - 调用大模型流式生成（90 秒超时），一旦超时或异常，降级为已生成的计划预览 + 固定沟通/安全提示，
- *   保证用户至少能拿到一份可用报告，而不是整个任务失败
- * - 若模型输出遗漏了"可核验地点与路线"章节，主动把证据列表追加到报告末尾，防止编造
- * - 生成前后各写一条执行轨迹（RUNNING / SUCCEEDED），记录耗时与地点、路线数量
+ * <p>可靠性设计要点： - 调用大模型流式生成（90 秒超时），一旦超时或异常，降级为已生成的计划预览 + 固定沟通/安全提示， 保证用户至少能拿到一份可用报告，而不是整个任务失败 -
+ * 若模型输出遗漏了"可核验地点与路线"章节，主动把证据列表追加到报告末尾，防止编造 - 生成前后各写一条执行轨迹（RUNNING / SUCCEEDED），记录耗时与地点、路线数量
  */
 @Service
 public class AgentFinalReportServiceImpl implements AgentFinalReportService {
     /** 大模型客户端（DashScope），用于流式生成报告正文 */
     private final RelationshipAiClient ai;
+
     /** 任务输入参数与文案格式化工具 */
     private final AgentTaskInputService taskInput;
+
     /** 执行轨迹记录器，用于审计报告生成过程 */
     private final AgentExecutionTraceService executionTrace;
 
-    /**
-     * 构造器注入 AI 客户端、输入服务与轨迹服务。
-     */
+    /** 构造器注入 AI 客户端、输入服务与轨迹服务。 */
     public AgentFinalReportServiceImpl(
             RelationshipAiClient ai,
             AgentTaskInputService taskInput,
@@ -47,9 +44,7 @@ public class AgentFinalReportServiceImpl implements AgentFinalReportService {
     }
 
     /**
-     * 生成最终行动报告正文。
-     * 流程：构造 Prompt → 流式调用大模型（90 秒超时）→ 失败降级为计划预览 →
-     * 若模型遗漏证据章节则追加 → 写轨迹。
+     * 生成最终行动报告正文。 流程：构造 Prompt → 流式调用大模型（90 秒超时）→ 失败降级为计划预览 → 若模型遗漏证据章节则追加 → 写轨迹。
      *
      * @param task 任务实体（含 planPreview、版本号等）
      * @param allRequirements 汇总后的全部需求文本（目标 + 问题 + 修改 + 档案偏好）
@@ -110,10 +105,8 @@ public class AgentFinalReportServiceImpl implements AgentFinalReportService {
     }
 
     /**
-     * 构造最终报告的大模型 Prompt。
-     * 用文本块（text block）编写严格的客服角色与输出约束，强调：
-     * 不得编造店名/距离/链接、按问题原顺序回答、预算以当前有效值为准。
-     * 用 %s 占位注入预算、全部需求、问题列表、已确认资料和补充说明。
+     * 构造最终报告的大模型 Prompt。 用文本块（text block）编写严格的客服角色与输出约束，强调： 不得编造店名/距离/链接、按问题原顺序回答、预算以当前有效值为准。 用 %s
+     * 占位注入预算、全部需求、问题列表、已确认资料和补充说明。
      */
     private String buildPrompt(
             AgentTask task,
@@ -163,10 +156,7 @@ public class AgentFinalReportServiceImpl implements AgentFinalReportService {
                         note == null ? "无" : note);
     }
 
-    /**
-     * 记录一条报告生成阶段的执行轨迹（步骤 6）。
-     * ACTION 类型记为 RUNNING，RESULT 类型记为 SUCCEEDED，provider 固定为 DashScope。
-     */
+    /** 记录一条报告生成阶段的执行轨迹（步骤 6）。 ACTION 类型记为 RUNNING，RESULT 类型记为 SUCCEEDED，provider 固定为 DashScope。 */
     private void trace(
             AgentTask task,
             AgentExecutionEventType type,

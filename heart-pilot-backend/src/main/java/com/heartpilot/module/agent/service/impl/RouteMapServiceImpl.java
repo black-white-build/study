@@ -17,40 +17,34 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
- * 基于已持久化的 POI 与路线折线，调用高德静态图接口生成带鉴权的路线地图图片。
- * Builds an authenticated AMap static image from persisted POIs and route polylines.
+ * 基于已持久化的 POI 与路线折线，调用高德静态图接口生成带鉴权的路线地图图片。 Builds an authenticated AMap static image from persisted
+ * POIs and route polylines.
  *
- * 设计要点：
- * - 数据来源是任务上已落库的 JourneyEvidence JSON，不重新检索
- * - 路线折线点过多时等距抽样到 70 个点，控制静态图 URL/参数长度
- * - 最多画 10 个标号点（A~J）和 4 条路线，循环配色
- * - 未配 Key 返回 503，高德返回非图片内容返回 502，便于前端降级提示
+ * <p>设计要点： - 数据来源是任务上已落库的 JourneyEvidence JSON，不重新检索 - 路线折线点过多时等距抽样到 70 个点，控制静态图 URL/参数长度 - 最多画 10
+ * 个标号点（A~J）和 4 条路线，循环配色 - 未配 Key 返回 503，高德返回非图片内容返回 502，便于前端降级提示
  */
 @Service
 public class RouteMapServiceImpl implements RouteMapService {
     /** 高德静态图接口地址 */
     private static final String STATIC_MAP_URL = "https://restapi.amap.com/v3/staticmap";
+
     /** 多条路线的循环配色 */
     private static final List<String> PATH_COLORS =
             List.of("0xD66755", "0x43835C", "0x4678A8", "0xA06B3B");
 
     /** 高德 Web 服务 Key */
     private final String amapKey;
+
     /** 解析任务上的 JourneyEvidence JSON */
     private final ObjectMapper json;
 
-    /**
-     * 构造器注入。
-     */
+    /** 构造器注入。 */
     public RouteMapServiceImpl(@Value("${AMAP_MAPS_API_KEY:}") String amapKey, ObjectMapper json) {
         this.amapKey = amapKey == null ? "" : amapKey.trim();
         this.json = json;
     }
 
-    /**
-     * 渲染任务的路线地图图片字节。
-     * 读取证据 → 构造静态图参数（标号点 + 路线折线）→ 12 秒超时请求高德 → 校验返回确为图片。
-     */
+    /** 渲染任务的路线地图图片字节。 读取证据 → 构造静态图参数（标号点 + 路线折线）→ 12 秒超时请求高德 → 校验返回确为图片。 */
     @Override
     public RouteMapImage render(AgentTask task) {
         if (amapKey.isBlank()) {
@@ -77,10 +71,7 @@ public class RouteMapServiceImpl implements RouteMapService {
         }
     }
 
-    /**
-     * 构造高德静态图请求参数。至少需要 2 个地点和至少 1 条路线，否则 400。
-     * 输出 900*420、2 倍清晰度、关闭路况，附带标号点与路径。
-     */
+    /** 构造高德静态图请求参数。至少需要 2 个地点和至少 1 条路线，否则 400。 输出 900*420、2 倍清晰度、关闭路况，附带标号点与路径。 */
     Map<String, Object> buildParameters(PlaceSearchService.JourneyEvidence evidence) {
         List<String> locations = locations(evidence);
         if (locations.size() < 2 || evidence.routes().isEmpty()) {
@@ -144,10 +135,7 @@ public class RouteMapServiceImpl implements RouteMapService {
         return String.join("|", paths);
     }
 
-    /**
-     * 把折线坐标等距抽样到最多 maxPoints 个点。
-     * 点不多时原样返回；过多时按索引均匀采样（保留首尾），控制静态图参数长度。
-     */
+    /** 把折线坐标等距抽样到最多 maxPoints 个点。 点不多时原样返回；过多时按索引均匀采样（保留首尾），控制静态图参数长度。 */
     String simplifyPolyline(String polyline, int maxPoints) {
         if (polyline == null || polyline.isBlank()) return "";
         List<String> points =

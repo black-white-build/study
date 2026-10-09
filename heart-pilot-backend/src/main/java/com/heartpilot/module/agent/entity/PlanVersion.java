@@ -14,17 +14,17 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * 计划版本实体，对应数据库表 plan_version。
- * 每次重新规划（含用户驳回后的重规划）都会产生一个不可变版本，
- * 旧版本只读保留，用于"我的计划"页面的历史版本查看与回溯。
- * 同一计划下 versionNo 唯一，且与 AgentTask.versionNo 对齐。
+ * 计划版本实体，对应数据库表 plan_version。 每次重新规划（含用户驳回后的重规划）都会产生一个不可变版本， 旧版本只读保留，用于"我的计划"页面的历史版本查看与回溯。 同一计划下
+ * versionNo 唯一，且与 AgentTask.versionNo 对齐。
  */
 @Entity
 @Table(
         name = "plan_version",
         indexes = @Index(name = "idx_plan_version_plan", columnList = "planId"),
         uniqueConstraints =
-                @UniqueConstraint(name = "uk_plan_version", columnNames = {"planId", "versionNo"}))
+                @UniqueConstraint(
+                        name = "uk_plan_version",
+                        columnNames = {"planId", "versionNo"}))
 @Getter
 @Setter
 @NoArgsConstructor

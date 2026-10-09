@@ -1,9 +1,6 @@
 package com.heartpilot.module.agent.entity.enums;
 
-/**
- * 行动/计划的目标类型。
- * 回答"这个计划想达到什么"，与执行方式（ExecutionKind）正交。
- */
+/** 行动/计划的目标类型。 回答"这个计划想达到什么"，与执行方式（ExecutionKind）正交。 */
 public enum GoalType {
     /** 加深/维系连接 */
     CONNECTION,

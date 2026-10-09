@@ -6,10 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-/**
- * 计划版本（PlanVersion）数据访问层。
- * 同一计划下 versionNo 唯一；每次重规划产生新版本，旧版本只读保留。
- */
+/** 计划版本（PlanVersion）数据访问层。 同一计划下 versionNo 唯一；每次重规划产生新版本，旧版本只读保留。 */
 public interface PlanVersionRepository extends JpaRepository<PlanVersion, Long> {
     /** 按计划列出全部版本，最新在前 */
     List<PlanVersion> findByPlanIdOrderByVersionNoDesc(Long planId);

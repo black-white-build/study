@@ -4,11 +4,7 @@ import com.heartpilot.common.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
-/**
- * 应用用户实体，对应数据库表 app_user。
- * 存储登录账号、密码哈希、昵称、角色、情绪状态与头像等基础信息。
- * 继承 BaseEntity 获得 id、创建时间、更新时间等公共字段。
- */
+/** 应用用户实体，对应数据库表 app_user。 存储登录账号、密码哈希、昵称、角色、情绪状态与头像等基础信息。 继承 BaseEntity 获得 id、创建时间、更新时间等公共字段。 */
 @Entity
 @Table(
         name = "app_user",

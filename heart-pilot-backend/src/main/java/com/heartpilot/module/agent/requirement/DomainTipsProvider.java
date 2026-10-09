@@ -7,10 +7,9 @@ import org.springframework.stereotype.Service;
 
 /**
  * 领域提示提供器（Tier3 RAG 的轻量简化版）。
- * <p>原型阶段先用内置规则词库补充领域常识（礼品优缺点、地点避坑），
- * 以纯文本约束形式注入候选挑选 / 关键词生成 Prompt，减少编造内容；
- * 完整 PGVector RAG 知识库（Vaiage 方案）作为后续增强保留扩展点，
- * 原型演示不需要接入。
+ *
+ * <p>原型阶段先用内置规则词库补充领域常识（礼品优缺点、地点避坑）， 以纯文本约束形式注入候选挑选 / 关键词生成 Prompt，减少编造内容； 完整 PGVector RAG
+ * 知识库（Vaiage 方案）作为后续增强保留扩展点， 原型演示不需要接入。
  */
 @Service
 public class DomainTipsProvider {
@@ -36,6 +35,7 @@ public class DomainTipsProvider {
 
     /**
      * 按需求类型返回领域提示文本（纯文本约束，注入 Prompt）。
+     *
      * @param requirement 结构化需求
      * @return 提示行列表（可能为空）
      */

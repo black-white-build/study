@@ -17,18 +17,16 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.*;
 
 /**
- * Spring Security 全局安全配置类。
- * 负责三件事：密码编码器、CORS 跨域策略、HTTP 安全过滤链（鉴权规则 + JWT 过滤器 + 限流过滤器）。
- * 采用无状态（STATELESS）会话策略，所有认证依赖 JWT 令牌，不使用 HttpSession。
- * @EnableMethodSecurity 开启方法级权限注解（如 @PreAuthorize），可在 Controller/Service 上细粒度控制。
+ * Spring Security 全局安全配置类。 负责三件事：密码编码器、CORS 跨域策略、HTTP 安全过滤链（鉴权规则 + JWT 过滤器 + 限流过滤器）。
+ * 采用无状态（STATELESS）会话策略，所有认证依赖 JWT 令牌，不使用 HttpSession。 @EnableMethodSecurity
+ * 开启方法级权限注解（如 @PreAuthorize），可在 Controller/Service 上细粒度控制。
  */
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
     /**
-     * 密码编码器 Bean，使用 BCrypt 算法。
-     * BCrypt 自带盐值和工作因子，是 Spring Security 推荐的密码哈希方案。
-     * 用户注册时加密存储，登录时通过 matches 比对。
+     * 密码编码器 Bean，使用 BCrypt 算法。 BCrypt 自带盐值和工作因子，是 Spring Security 推荐的密码哈希方案。 用户注册时加密存储，登录时通过
+     * matches 比对。
      */
     @Bean
     PasswordEncoder passwordEncoder() {
@@ -36,11 +34,10 @@ public class SecurityConfig {
     }
 
     /**
-     * CORS 跨域配置 Bean。
-     * 从配置项 app.cors.allowed-origins 读取允许的前端域名（逗号分隔），
-     * 允许全部常用 HTTP 方法和请求头，开启携带凭证（Cookie/Authorization）。
-     * 额外暴露 Content-Disposition（文件下载文件名）和 X-RateLimit-Remaining（限流剩余次数）响应头，
-     * 否则浏览器侧 JavaScript 无法读取这些头。
+     * CORS 跨域配置 Bean。 从配置项 app.cors.allowed-origins 读取允许的前端域名（逗号分隔）， 允许全部常用 HTTP
+     * 方法和请求头，开启携带凭证（Cookie/Authorization）。 额外暴露 Content-Disposition（文件下载文件名）和
+     * X-RateLimit-Remaining（限流剩余次数）响应头， 否则浏览器侧 JavaScript 无法读取这些头。
+     *
      * @param origins 配置文件中逗号分隔的允许源列表
      * @return 注册到所有路径 /** 的 CORS 配置源
      */
@@ -60,12 +57,10 @@ public class SecurityConfig {
     }
 
     /**
-     * 核心安全过滤链。
-     * 过滤顺序：JWT 认证过滤器 → 限流过滤器 → 授权规则。
-     * 放行路径：ASYNC/ERROR 派发、登录注册 /auth/**、健康检查 /health、Swagger 文档；其余接口必须认证。
-     * ASYNC/ERROR 派发放行是 SSE（SseEmitter）异步接口正常运行的前提：接口返回后容器会发起
-     * 异步派发并再次经过本过滤链，此时认证上下文在线程间不传递，若再次执行
-     * anyRequest().authenticated() 会误判为匿名并中断 SSE 流。
+     * 核心安全过滤链。 过滤顺序：JWT 认证过滤器 → 限流过滤器 → 授权规则。 放行路径：ASYNC/ERROR 派发、登录注册 /auth/**、健康检查
+     * /health、Swagger 文档；其余接口必须认证。 ASYNC/ERROR 派发放行是 SSE（SseEmitter）异步接口正常运行的前提：接口返回后容器会发起
+     * 异步派发并再次经过本过滤链，此时认证上下文在线程间不传递，若再次执行 anyRequest().authenticated() 会误判为匿名并中断 SSE 流。
+     *
      * @param http Spring Security 的 HttpSecurity 构建器
      * @param jwt JWT 认证过滤器，从请求头解析令牌并设置 SecurityContext
      * @param rate 限流过滤器，在认证通过后按用户维度限流

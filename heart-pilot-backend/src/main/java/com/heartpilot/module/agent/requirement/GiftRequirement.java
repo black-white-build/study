@@ -5,9 +5,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * 礼物表达需求的业务实体。
- * 归入 StructuredRequirement 的 gift 字段。关键词生成、黑名单过滤、
- * 多平台跳转链接均以本实体为约束来源。
+ * 礼物表达需求的业务实体。 归入 StructuredRequirement 的 gift 字段。关键词生成、黑名单过滤、 多平台跳转链接均以本实体为约束来源。
  *
  * @param recipient 送礼对象（女朋友/朋友/家人等）
  * @param recipientAge 对象年龄（可为空）
@@ -35,7 +33,9 @@ public record GiftRequirement(
     }
 
     private static List<String> safe(List<String> values) {
-        return values == null ? List.of() : values.stream().filter(v -> v != null && !v.isBlank()).toList();
+        return values == null
+                ? List.of()
+                : values.stream().filter(v -> v != null && !v.isBlank()).toList();
     }
 
     public String summary() {
@@ -44,9 +44,15 @@ public record GiftRequirement(
         if (recipientAge != null) out.append("（约 ").append(recipientAge).append(" 岁）");
         out.append("\n");
         out.append("- **场合**：").append(blankTo(occasion, "未指定")).append("\n");
-        out.append("- **预算**：").append(budgetText == null || budgetText.isBlank() ? "未限定" : budgetText).append("\n");
-        out.append("- **风格偏好**：").append(stylePreferences.isEmpty() ? "无" : String.join("；", stylePreferences)).append("\n");
-        out.append("- **禁止品类**：").append(forbiddenCategories.isEmpty() ? "无" : String.join("；", forbiddenCategories)).append("\n");
+        out.append("- **预算**：")
+                .append(budgetText == null || budgetText.isBlank() ? "未限定" : budgetText)
+                .append("\n");
+        out.append("- **风格偏好**：")
+                .append(stylePreferences.isEmpty() ? "无" : String.join("；", stylePreferences))
+                .append("\n");
+        out.append("- **禁止品类**：")
+                .append(forbiddenCategories.isEmpty() ? "无" : String.join("；", forbiddenCategories))
+                .append("\n");
         return out.toString();
     }
 

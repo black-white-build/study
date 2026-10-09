@@ -77,10 +77,7 @@ public final class ResourceDtos {
         }
     }
 
-    /**
-     * 管理端文档内容响应体。content 是 knowledge_chunk 中现有切片按序拼接的纯文本，
-     * 不包含 HTML，也不会触发原文件重新解析。
-     */
+    /** 管理端文档内容响应体。content 是 knowledge_chunk 中现有切片按序拼接的纯文本， 不包含 HTML，也不会触发原文件重新解析。 */
     public record KnowledgeDocumentContentResponse(
             Long documentId, String originalName, int chunkCount, String content) {
         /** 由知识服务的切片拼接结果转换为接口响应。 */

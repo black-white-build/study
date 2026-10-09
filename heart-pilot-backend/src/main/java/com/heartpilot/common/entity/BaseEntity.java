@@ -9,10 +9,8 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 /**
- * 所有 JPA 实体的公共基类。
- * 集中维护主键、创建时间、更新时间三个跨表通用字段，
- * 子类只需关注业务字段，避免重复声明。
- * 标注 @MappedSuperclass 表示本身不映射为数据库表，字段被子类继承。
+ * 所有 JPA 实体的公共基类。 集中维护主键、创建时间、更新时间三个跨表通用字段， 子类只需关注业务字段，避免重复声明。 标注 @MappedSuperclass
+ * 表示本身不映射为数据库表，字段被子类继承。
  */
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener.class)
