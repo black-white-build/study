@@ -1,11 +1,11 @@
 {
   "name": "pre-decision-pipeline",
-  "datasetVersion": "1.0.0",
+  "datasetVersion": "2.0.0",
   "measuredBy": "legacy-rule-replay",
   "safetyRecall": 1.0,
-  "safetyFalsePositiveRate": 0.4286,
+  "safetyFalsePositiveRate": 0.4615,
   "citationCoverage": 0.2,
   "falseCitationRate": 0.8,
   "noResultFallbackSuccessRate": 0.0,
-  "notes": "旧实现按关键词直接分流且没有生成后引用验证；结果由固定样本对旧规则的可重复回放得到。"
+  "notes": "评测集 v2：引用用例 15 例（含 3 例 supported、2 例无结果降级）、安全用例 19 例（含否定/引用/假设边界用例 3 例）。基线由旧规则对 v2 评测集实时重放得到：旧实现无上下文感知，将否定/引用/假设场景的风险词一律误判为 SAFETY，故误报率由 v1 的 0.4286 升至 0.4615。"
 }

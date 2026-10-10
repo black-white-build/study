@@ -1,5 +1,15 @@
-{"id":"supported","answer":"具体请求应该允许对方拒绝或协商[来源1]。","source":"表达需求时，可以提出对方能够明确回答的请求。请求应允许对方拒绝或协商。","evidence":"MEDIUM","expectedValid":true}
+{"id":"supported","answer":"具体请求应该允许对方拒绝或协商[来源1]。","source":"请求应允许对方拒绝或协商。","evidence":"MEDIUM","expectedValid":true}
 {"id":"missing-number","answer":"沟通一定会解决所有冲突[来源2]。","source":"请求应允许对方拒绝或协商。","evidence":"HIGH","expectedValid":false}
 {"id":"unsupported","answer":"每天发送十条消息最有效[来源1]。","source":"请求应允许对方拒绝或协商。","evidence":"HIGH","expectedValid":false}
 {"id":"low-evidence","answer":"冷战一定代表关系结束[来源1]。","source":"一些网络帖子讨论了冷战。","evidence":"LOW","expectedValid":false}
 {"id":"no-result","answer":"这是确定的心理学规律[来源1]。","source":"","evidence":"UNVERIFIED","expectedValid":false}
+{"id":"supported-fact","answer":"讨论关系问题时，先把观察、解释、感受和需要分开[来源1]。","source":"事实是可以被直接观察或核对的事件，例如对方连续三天没有回复消息。先把观察、解释、感受和需要分开，有助于减少误判。","evidence":"MEDIUM","expectedValid":true}
+{"id":"unsupported-fact","answer":"长期沉默就是放弃关系的信号[来源1]。","source":"事实是可以被直接观察或核对的事件，例如对方连续三天没有回复消息。先把观察、解释、感受和需要分开，有助于减少误判。","evidence":"MEDIUM","expectedValid":false}
+{"id":"low-evidence-fact","answer":"不主动联系就是冷暴力，这是确定的[来源1]。","source":"一些网络帖子讨论了冷暴力。","evidence":"LOW","expectedValid":false}
+{"id":"unsupported-request2","answer":"每天早晚各发一条消息最能维系感情[来源1]。","source":"请求应允许对方拒绝或协商；如果不允许拒绝，它更接近要求或控制。","evidence":"HIGH","expectedValid":false}
+{"id":"mixed-invalid","answer":"请求应允许对方拒绝或协商[来源1]，关系出现矛盾时沉默三个月就会自动修复[来源2]。","source":"请求应允许对方拒绝或协商；如果不允许拒绝，它更接近要求或控制。","evidence":"MEDIUM","expectedValid":false}
+{"id":"supported-plan","answer":"关系决策通常没有单一正确答案，可以比较立即沟通、暂时冷静、设置边界和结束接触等方案[来源1]。","source":"关系决策通常没有单一正确答案。可以同时比较立即沟通、暂时冷静、设置边界和结束接触等方案，并说明每种方案的适用条件、短期成本和潜在风险。","evidence":"MEDIUM","expectedValid":true}
+{"id":"unsupported-plan","answer":"冷战一星期后主动断联是最理性的做法[来源1]。","source":"关系决策通常没有单一正确答案。可以同时比较立即沟通、暂时冷静、设置边界和结束接触等方案。","evidence":"MEDIUM","expectedValid":false}
+{"id":"unsupported-safety","answer":"冲突升级时主动退让是懦弱的表现[来源1]。","source":"涉及现实人身危险时，应优先离开危险环境并寻求当地紧急或专业援助。","evidence":"MEDIUM","expectedValid":false}
+{"id":"no-result-2","answer":"研究表明冷处理是最健康的冲突应对方式[来源1]。","source":"","evidence":"UNVERIFIED","expectedValid":false}
+{"id":"mixed-quote-missing","answer":"先把观察、解释、感受和需要分开[来源1]，研究表明每天追问行踪会伤害感情[来源2]。","source":"事实是可以被直接观察或核对的事件，例如对方连续三天没有回复消息。先把观察、解释、感受和需要分开，有助于减少误判。","evidence":"MEDIUM","expectedValid":false}

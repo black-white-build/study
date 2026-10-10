@@ -53,7 +53,7 @@ class DecisionAssistantEvaluationTest {
             if (expectedValid && result.supportedCitedClaimCount() > 0) coveredClaims++;
             if (!expectedValid) invalidExpected++;
             if (!expectedValid && result.issues().isEmpty()) invalidRemaining++;
-            if ("no-result".equals(item.get("id").asText())
+            if (item.get("id").asText().startsWith("no-result")
                     && result.answer().contains("当前知识库没有可靠依据")
                     && result.usedSourceNumbers().isEmpty()) noResultPassed++;
         }
@@ -73,8 +73,8 @@ class DecisionAssistantEvaluationTest {
         assertEquals(0.0, falsePositiveRate);
         assertEquals(0.0, falseCitationRate);
         assertEquals(0.2, citationCoverage);
-        assertEquals(1, noResultPassed);
-        assertTrue(citationCases.size() >= 5);
+        assertEquals(2, noResultPassed);
+        assertTrue(citationCases.size() >= 15);
     }
 
     /** 把评测用例里的来源与证据等级字段组装成单条固定知识来源，供引用校验使用。 */
